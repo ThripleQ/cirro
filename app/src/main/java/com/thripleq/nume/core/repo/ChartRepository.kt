@@ -1,5 +1,6 @@
 package com.thripleq.nume.core.repo
 
+import com.thripleq.nume.BuildConfig
 import com.thripleq.nume.core.db.CollectionCache
 import com.thripleq.nume.core.net.NetEaseGateway
 import com.thripleq.nume.core.net.NeteaseOp
@@ -32,13 +33,20 @@ class ChartRepository @Inject constructor(
     suspend fun charts(): List<Chart> = withContext(Dispatchers.IO) {
         val r = gateway.call(NeteaseOp.TOPLIST_DETAIL)
         if (r.err != 0) {
-            val preview = String(r.body, 0, minOf(200, r.body.size), Charsets.UTF_8)
-            Log.e("ChartRepository", "toplist failed: err=${r.err} code=${r.code} body=${preview}")
+            // 响应体预览只在 debug 打：release 下既不刷屏，也不把接口内容写进 logcat。
+            val detail = if (BuildConfig.DEBUG) {
+                " body=${String(r.body, 0, minOf(200, r.body.size), Charsets.UTF_8)}"
+            } else {
+                ""
+            }
+            Log.e("ChartRepository", "toplist failed: err=${r.err} code=${r.code}$detail")
             return@withContext emptyList()
         }
         try {
             val root = JSONObject(String(r.body, Charsets.UTF_8))
-            Log.d("ChartRepository", "toplist ok, root keys=${root.length()}, has list=${root.has("list")}")
+            if (BuildConfig.DEBUG) {
+                Log.d("ChartRepository", "toplist ok, root keys=${root.length()}, has list=${root.has("list")}")
+            }
             val list = root.optJSONArray("list") ?: return@withContext emptyList()
             buildList {
                 for (i in 0 until list.length()) {

@@ -62,7 +62,10 @@ class SearchViewModel @Inject constructor(
     private val offsets = mutableMapOf<SearchTab, Int>()
     private val started = mutableSetOf<SearchTab>()
     private val done = mutableSetOf<SearchTab>()
-    private var job: Job? = null
+
+    /** 每个分类各自的加载 job。共用一个 job 会在切页签时误杀其他分类的请求，
+     *  而被打断的分类已记入 started 却永远进不了 done，切回去就再也不会重拉（永久空白）。 */
+    private val jobs = mutableMapOf<SearchTab, Job>()
 
     fun onQueryChange(text: String) {
         _uiState.update { it.copy(query = text) }
@@ -98,7 +101,8 @@ class SearchViewModel @Inject constructor(
     }
 
     fun onClear() {
-        job?.cancel()
+        jobs.values.forEach { it.cancel() }
+        jobs.clear()
         offsets.clear(); started.clear(); done.clear()
         _uiState.value = SearchUiState()
     }
@@ -124,7 +128,8 @@ class SearchViewModel @Inject constructor(
     }
 
     private fun resetTo(keyword: String) {
-        job?.cancel()
+        jobs.values.forEach { it.cancel() }
+        jobs.clear()
         offsets.clear(); started.clear(); done.clear()
         _uiState.update {
             it.copy(
@@ -153,8 +158,8 @@ class SearchViewModel @Inject constructor(
         } else {
             _uiState.update { it.copy(loadingMore = true) }
         }
-        job?.cancel()
-        job = viewModelScope.launch {
+        jobs[tab]?.cancel()
+        jobs[tab] = viewModelScope.launch {
             try {
                 val page = fetch(tab, kw, offset)
                 offsets[tab] = offset + page.size

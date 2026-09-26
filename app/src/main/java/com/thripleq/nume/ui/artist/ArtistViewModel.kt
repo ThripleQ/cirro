@@ -10,6 +10,7 @@ import com.thripleq.nume.core.repo.ArtistRepository
 import com.thripleq.nume.core.repo.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -51,11 +52,16 @@ class ArtistViewModel @Inject constructor(
 
     private var loadedId: String? = null
 
+    /** 当前加载 job。id 快速变化时取消上一个，避免旧请求的结果（尤其是 Error）
+     *  在新请求之后落地，把新歌手的页面覆盖掉。 */
+    private var job: Job? = null
+
     fun load(id: String) {
         if (loadedId == id) return
         loadedId = id
         _uiState.value = ArtistUiState.Loading
-        viewModelScope.launch {
+        job?.cancel()
+        job = viewModelScope.launch {
             try {
                 val (page, albums) = coroutineScope {
                     val p = async { repo.page(id) }

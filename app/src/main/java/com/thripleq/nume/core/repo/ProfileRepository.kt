@@ -176,13 +176,16 @@ class ProfileRepository @Inject constructor(
         purchasedSongsCache?.let { return@withContext it }
         val all = mutableListOf<Track>()
         var offset = 0
+        var completed = true
         while (true) {
-            val page = fetchPurchasedSongPage(offset) ?: break
+            val page = fetchPurchasedSongPage(offset) ?: run { completed = false; break }
             all += page
             if (page.size < PAGE_SIZE) break
             offset += PAGE_SIZE
         }
-        if (all.isNotEmpty()) {
+        // 只有整轮分页都成功才落缓存（含"确实没有已购"的空结果）：请求失败若被固化，
+        // 会让用户看到"无已购"；而空结果不入缓存，已购为 0 的人每次进"我的"都要重拉。
+        if (completed) {
             diag("purchasedSongs complete offset=$offset total=${all.size}")
             purchasedSongsCache = all
         }
@@ -231,13 +234,15 @@ class ProfileRepository @Inject constructor(
         purchasedAlbumsCache?.let { return@withContext it }
         val all = mutableListOf<Album>()
         var offset = 0
+        var completed = true
         while (true) {
-            val page = fetchPurchasedAlbumPage(offset) ?: break
+            val page = fetchPurchasedAlbumPage(offset) ?: run { completed = false; break }
             all += page
             if (page.size < PAGE_SIZE) break
             offset += PAGE_SIZE
         }
-        if (all.isNotEmpty()) {
+        // 同上：整轮成功才落缓存，失败不固化。
+        if (completed) {
             diag("purchasedAlbums complete offset=$offset total=${all.size}")
             purchasedAlbumsCache = all
         }

@@ -121,6 +121,8 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         playerListener?.let { PlayerHolder.get(this).removeListener(it) }
         playerListener = null
+        // 复位前台标记：服务结束后下一次播放必须能重新拉起，否则通知不再出现。
+        PlayerHolder.onServiceDestroyed()
         mediaSession?.release()
         mediaSession = null
         // Do NOT release the player here. PlayerHolder is a process-scoped

@@ -90,9 +90,12 @@ class LyricRepository @Inject constructor(
                 root.optJSONObject("tlyric")?.optString("lyric"),
             )
         } catch (_: Exception) {
-            Lyrics(emptyList())
+            // 解析失败返回 null（不是"无歌词"），据此不写缓存。
+            null
         }
-        cache[songId] = parsed
-        parsed
+        // 只有真正解析成功才落缓存：把 JSON 抖动固化成空歌词，会让这首歌整个会话
+        // 都显示"无歌词"且无法重试。纯音乐/未收录（解析成功但为空）才缓存空结果。
+        if (parsed != null) cache[songId] = parsed
+        parsed ?: Lyrics(emptyList())
     }
 }

@@ -76,6 +76,15 @@ object PlayerHolder {
         currentQueue = tracks
     }
 
+    /**
+     * 前台服务销毁时回调（用户划掉通知 / 系统回收服务）：复位标记。
+     * 否则标记仍为 true，之后的播放路径会跳过 [ensureForegroundService]，
+     * 导致没有媒体通知、进程在后台也更易被系统回收。
+     */
+    fun onServiceDestroyed() {
+        foregroundServiceStarted = false
+    }
+
     // 错误恢复用的协程作用域。object 单例的普通属性在类初始化时就求值；
     // 用 lazy 推迟到首次真正需要时再取 Main dispatcher，避免在非 UI 线程
     // （如无 Looper 的工作线程）首次触碰对象导致 Main.immediate 初始化失败。
