@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -26,6 +27,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -40,11 +42,15 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Explore
@@ -63,6 +69,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -119,6 +126,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -130,6 +138,8 @@ import androidx.compose.ui.zIndex
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -142,6 +152,7 @@ import com.thripleq.nume.Profile
 import com.thripleq.nume.Search
 import com.thripleq.nume.core.playback.PlaybackPreferences
 import com.thripleq.nume.core.playback.PlayerHolder
+import com.thripleq.nume.core.repo.LyricLine
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -164,6 +175,7 @@ enum class BottomTab(val route: Any, val label: String, val icon: ImageVector) {
 data class PlayerUiState(
     val title: String = "",
     val artist: String = "",
+    val trackId: String? = null,
     val coverUrl: String? = null,
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
@@ -196,9 +208,14 @@ fun rememberPlayerState(
                 meta = meta.copy(
                     title = mediaMetadata.title?.toString() ?: "",
                     artist = mediaMetadata.artist?.toString() ?: "",
+                    trackId = player.currentMediaItem?.mediaId,
                     coverUrl = mediaMetadata.artworkUri?.toString(),
                     errorText = null,
                 )
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                if (meta.trackId != mediaItem?.mediaId) meta = meta.copy(trackId = mediaItem?.mediaId)
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
@@ -232,6 +249,7 @@ fun rememberPlayerState(
         meta = PlayerUiState(
             title = mediaMetadata.title?.toString() ?: "",
             artist = mediaMetadata.artist?.toString() ?: "",
+            trackId = player.currentMediaItem?.mediaId,
             coverUrl = mediaMetadata.artworkUri?.toString(),
             isPlaying = player.isPlaying,
             isBuffering = player.playbackState == Player.STATE_BUFFERING,
@@ -1252,7 +1270,14 @@ private fun PlayerPageContent(
     var dragMs by remember { mutableLongStateOf(0L) }
     var queueOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
+    var lyricsOpen by remember { mutableStateOf(false) }
     val state = rememberPlayerState(player)
+    // 歌词：惰性加载 —— 只有歌词面板打开时才按当前曲目请求（切换曲目自动重载）。
+    val lyricsVm: LyricsViewModel = hiltViewModel()
+    val lyricsState by lyricsVm.state.collectAsStateWithLifecycle()
+    LaunchedEffect(lyricsOpen, state.trackId) {
+        if (lyricsOpen) lyricsVm.load(state.trackId)
+    }
     // 进度是高频状态：单独订阅（拖动时冻结，避免轮询跟手指打架）。
     val positionMs by rememberPlayerPosition(player) { seekPending }
     val rangeMax = state.durationMs.toFloat().coerceAtLeast(1f)
@@ -1299,12 +1324,44 @@ private fun PlayerPageContent(
         // 全屏时顶部让出状态栏（卡片档壳顶已在状态栏下，无需让位）。
         Spacer(Modifier.height(androidx.compose.ui.unit.lerp(0.dp, statusBarDp + 16.dp, sc)))
 
-        CoverArt(
-            state = state,
-            dim = coverDim,
-            corner = coverCorner,
-            iconSize = androidx.compose.ui.unit.lerp(88.dp, 96.dp, sc),
-        )
+        // 封面 / 歌词二选一：点封面切到歌词（有曲目时），再点回封面。同尺寸同圆角，
+        // 切换零位移 —— 歌词占用封面矩形，标题/进度/控制不动。
+        Box(
+            modifier = Modifier
+                .size(coverDim)
+                .clip(RoundedCornerShape(coverCorner))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { if (state.trackId != null) lyricsOpen = !lyricsOpen },
+        ) {
+            if (lyricsOpen) {
+                LyricsView(
+                    uiState = lyricsState,
+                    positionMs = positionMs,
+                    onSeek = { PlayerHolder.seekTo(player, it) },
+                    modifier = Modifier.fillMaxSize(),
+                )
+                // 歌词打开时点行=跳转，需要一个明确的「回封面」出口（点空白处也不保险）。
+                IconButton(
+                    onClick = { lyricsOpen = false },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Album,
+                        contentDescription = "封面",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                CoverArt(
+                    state = state,
+                    dim = coverDim,
+                    corner = coverCorner,
+                    iconSize = androidx.compose.ui.unit.lerp(88.dp, 96.dp, sc),
+                )
+            }
+        }
 
         Spacer(Modifier.height(titleGap))
 
@@ -1727,6 +1784,148 @@ private fun PlayerSettingsSheet(onDismiss: () -> Unit) {
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+/** 当前行索引：最后一个 timeMs <= position 的行；position 早于首行时返回 -1。二分。 */
+private fun currentLyricIndex(lines: List<LyricLine>, positionMs: Long): Int {
+    var lo = 0
+    var hi = lines.size - 1
+    var result = -1
+    while (lo <= hi) {
+        val mid = (lo + hi) / 2
+        if (lines[mid].timeMs <= positionMs) {
+            result = mid
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    return result
+}
+
+/**
+ * 歌词面板：随播放进度自动滚动 + 高亮当前行，点某行跳到该行时间。
+ * 用户手动滚动后暂停自动滚动 4s，避免和阅读抢（用 [LazyListState.isScrollInProgress]
+ * 分辨，本组件自己触发的滚动用 programmatic 标记排除）。
+ */
+@Composable
+private fun LyricsView(
+    uiState: LyricsUiState,
+    positionMs: Long,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (uiState) {
+        LyricsUiState.Idle, LyricsUiState.Loading ->
+            LyricsMessage("加载歌词…", modifier, loading = true)
+
+        LyricsUiState.Empty -> LyricsMessage("暂无歌词", modifier)
+
+        is LyricsUiState.Ready -> {
+            val lines = uiState.lyrics.lines
+            val currentIndex = currentLyricIndex(lines, positionMs)
+            val listState = rememberLazyListState()
+            var programmatic by remember { mutableStateOf(false) }
+            var lastUserScrollAt by remember { mutableLongStateOf(0L) }
+
+            LaunchedEffect(listState) {
+                snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
+                    if (scrolling && !programmatic) lastUserScrollAt = System.currentTimeMillis()
+                }
+            }
+            LaunchedEffect(currentIndex) {
+                if (currentIndex < 0) return@LaunchedEffect
+                if (System.currentTimeMillis() - lastUserScrollAt < 4_000L) return@LaunchedEffect
+                programmatic = true
+                try {
+                    // 当前行滚到视口约 1/3 处（留上方上下文），负偏移把行往下带。
+                    val viewport = listState.layoutInfo.viewportSize.height
+                    listState.animateScrollToItem(currentIndex, -(viewport * 0.35f).roundToInt())
+                } finally {
+                    programmatic = false
+                }
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = modifier,
+                contentPadding = PaddingValues(vertical = 32.dp, horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                itemsIndexed(lines) { i, line ->
+                    LyricRow(
+                        line = line,
+                        selected = i == currentIndex,
+                        onClick = { onSeek(line.timeMs) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 单行歌词：选中行放大加粗高亮，未选中行弱化；有翻译时在下方补一行小字。 */
+@Composable
+private fun LyricRow(line: LyricLine, selected: Boolean, onClick: () -> Unit) {
+    val alpha by animateFloatAsState(if (selected) 1f else 0.55f, label = "lyricAlpha")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = line.text,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                fontSize = if (selected) 19.sp else 16.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            ),
+            color = (
+                if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant
+                ).copy(alpha = alpha),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        line.translation?.let { translation ->
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = translation,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha * 0.85f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/** 歌词占位态：加载中（转圈+文案）或空（仅文案），在封面矩形内居中。 */
+@Composable
+private fun LyricsMessage(text: String, modifier: Modifier = Modifier, loading: Boolean = false) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(
+                strokeWidth = 2.dp,
+                modifier = Modifier.size(26.dp),
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
