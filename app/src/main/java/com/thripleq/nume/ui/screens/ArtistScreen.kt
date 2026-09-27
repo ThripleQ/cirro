@@ -1,5 +1,6 @@
 package com.thripleq.nume.ui.screens
 
+import com.thripleq.nume.ui.theme.Motion
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -98,6 +99,8 @@ fun ArtistScreen(
             Modifier.sharedElement(
                 rememberSharedContentState(key = SharedKeys.artistAvatar(id)),
                 animatedVisibilityScope = avScope,
+                // 与 SearchScreen 对侧同 spec：Emphasized 族（见 Motion.sharedBoundsSpec）。
+                boundsTransform = { _, _ -> Motion.sharedBoundsSpec() },
             )
         }
     } else {

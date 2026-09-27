@@ -22,8 +22,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -257,8 +255,8 @@ fun NumeApp() {
                         // 详情页进入：视觉全交给 RevealLayer。这里让**进入页**全程不透明即可。
                         fadeIn(tween(revealInMs), initialAlpha = 1f)
                     } else {
-                        fadeIn(tween(220, easing = FastOutSlowInEasing)) +
-                            slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it / 24 }
+                        fadeIn(tween(Motion.NavEnterMs, easing = Motion.Standard)) +
+                            slideInVertically(tween(Motion.NavEnterMs, easing = Motion.Standard)) { it / 24 }
                     }
                 },
                 exitTransition = {
@@ -266,7 +264,7 @@ fun NumeApp() {
                         // 来源页要在浮现窗口长满屏前一直铺底：0.999f 撑住 revealInMs。
                         fadeOut(tween(revealInMs), targetAlpha = 0.999f)
                     } else {
-                        fadeOut(tween(90, easing = LinearEasing))
+                        fadeOut(tween(Motion.NavExitMs, easing = Motion.Standard))
                     }
                 },
                 popEnterTransition = {
@@ -274,8 +272,8 @@ fun NumeApp() {
                         // 从详情返回：下层页需在浮现退场期间一直铺底。
                         fadeIn(tween(revealOutMs), initialAlpha = 0.999f)
                     } else {
-                        fadeIn(tween(220, easing = FastOutSlowInEasing)) +
-                            slideInVertically(tween(220, easing = FastOutSlowInEasing)) { -it / 24 }
+                        fadeIn(tween(Motion.NavEnterMs, easing = Motion.Standard)) +
+                            slideInVertically(tween(Motion.NavEnterMs, easing = Motion.Standard)) { -it / 24 }
                     }
                 },
                 popExitTransition = {
@@ -283,8 +281,8 @@ fun NumeApp() {
                         // 关键：退出子页必须保留 revealOutMs，羽化收回才看得到（见上注）。
                         fadeOut(tween(revealOutMs), targetAlpha = 0.999f)
                     } else {
-                        fadeOut(tween(160, easing = FastOutSlowInEasing)) +
-                            slideOutVertically(tween(160, easing = FastOutSlowInEasing)) { it / 24 }
+                        fadeOut(tween(Motion.NavPopExitMs, easing = Motion.Standard)) +
+                            slideOutVertically(tween(Motion.NavPopExitMs, easing = Motion.Standard)) { it / 24 }
                     }
                 },
             ) {

@@ -1,5 +1,6 @@
 package com.thripleq.nume.ui.screens
 
+import com.thripleq.nume.ui.theme.Motion
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
@@ -482,6 +483,9 @@ private fun ResultList(
                         Modifier.sharedElement(
                             rememberSharedContentState(key = SharedKeys.artistAvatar(a.id)),
                             animatedVisibilityScope = avScope,
+                            // 共享元素位移用 Emphasized 族（与壳动画同族——"同一个物体在动"），
+                            // 默认弹簧尾巴过长、跨页拖沓。见 Motion.sharedBoundsSpec。
+                            boundsTransform = { _, _ -> Motion.sharedBoundsSpec() },
                         )
                     }
                 } else {

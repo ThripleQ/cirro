@@ -1897,10 +1897,20 @@ private fun LyricsView(
     }
 }
 
-/** 单行歌词：选中行放大加粗高亮，未选中行弱化；有翻译时在下方补一行小字。 */
+/** 单行歌词：选中行放大加粗高亮，未选中行弱化；有翻译时在下方补一行小字。
+ *
+ * 选中态做**连续插值**（进度值 sel: 0→1）：颜色 onSurfaceVariant→primary、字号 16→19sp、
+ * 透明度 0.55→1 全部随 sel 平滑过渡，字重在 sel 过半瞬间切换（Compose 不支持字重插值，
+ * 中点切换落在两条曲线交叉处，视觉突兀最小）。tween(Standard) 与全局微交互同族——
+ * 逐行高亮是播放页最频繁的动画，默认 spring 的尾巴会拖出"果冻感"。
+ * 只有发生选中/失选的行在动画，其余行 target 不变零开销。 */
 @Composable
 private fun LyricRow(line: LyricLine, selected: Boolean, onClick: () -> Unit) {
-    val alpha by animateFloatAsState(if (selected) 1f else 0.55f, label = "lyricAlpha")
+    val sel by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
+        label = "lyricSel",
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1914,13 +1924,14 @@ private fun LyricRow(line: LyricLine, selected: Boolean, onClick: () -> Unit) {
         Text(
             text = line.text,
             style = MaterialTheme.typography.bodyLarge.copy(
-                fontSize = if (selected) 19.sp else 16.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                fontSize = androidx.compose.ui.unit.lerp(16.sp, 19.sp, sel),
+                fontWeight = if (sel > 0.5f) FontWeight.SemiBold else FontWeight.Normal,
             ),
-            color = (
-                if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant
-                ).copy(alpha = alpha),
+            color = lerp(
+                MaterialTheme.colorScheme.onSurfaceVariant,
+                MaterialTheme.colorScheme.primary,
+                sel,
+            ).copy(alpha = lerp(0.55f, 1f, sel)),
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -1929,7 +1940,9 @@ private fun LyricRow(line: LyricLine, selected: Boolean, onClick: () -> Unit) {
             Text(
                 text = translation,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha * 0.85f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                    alpha = lerp(0.55f, 0.85f, sel),
+                ),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )

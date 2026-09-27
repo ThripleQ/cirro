@@ -6,6 +6,7 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Rect
 import kotlin.math.roundToInt
 
 /**
@@ -147,6 +148,32 @@ object Motion {
         dampingRatio = Spring.DampingRatioNoBouncy,
         stiffness = Spring.StiffnessMedium,
     )
+
+    // ── 导航转场 ────────────────────────────────────────────────────
+    /**
+     * 页面级转场时长：比 [MicroMs] 略长（页面位移行程长于浮层显隐），同时明显短于
+     * 壳动画（[ShellOpenMs]）——导航是"换地方"，壳是"同一个物体变形"，后者才配 400ms 级。
+     */
+    const val NavEnterMs = 220
+
+    /**
+     * 退出让位时长：被覆盖的旧页快速淡走，把屏幕交给进来的新页；90ms 内曲线差异
+     * 不可感知，用 [Standard] 即可。
+     */
+    const val NavExitMs = 90
+
+    /** pop 收回：比进入慢于让位、快于进入——"跟手返回"要能看见页面滑走。 */
+    const val NavPopExitMs = 160
+
+    // ── 共享元素 ────────────────────────────────────────────────────
+    /**
+     * sharedElement/sharedBounds 的 boundsTransform：与壳展开同族的 [Emphasized]——
+     * 共享元素位移本质也是"同一个物体在动"，弹簧默认值（StiffnessMediumLow）位移
+     * 尾巴过长、跨页时看着拖。350ms 覆盖典型跨页行 程，且与 [ShellOpenMs] 同量级。
+     */
+    fun sharedBoundsSpec(): FiniteAnimationSpec<Rect> =
+        tween(350, easing = Emphasized)
+
 
     /** 点击直达全屏：低阻尼带一点弹性，让"生长"过程看得见。 */
     val SheetExpand: AnimationSpec<Float> = spring(
