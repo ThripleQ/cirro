@@ -1,6 +1,8 @@
 package com.thripleq.nume.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -71,6 +73,7 @@ import coil.request.ImageRequest
 import com.thripleq.nume.core.repo.SearchAlbum
 import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
+import com.thripleq.nume.ui.components.SharedKeys
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
 import com.thripleq.nume.ui.search.SearchTab
@@ -90,9 +93,13 @@ import java.util.Locale
 fun SearchScreen(
     onOpenPlayer: () -> Unit,
     onOpenTracks: (source: String, id: String, title: String, origin: Rect) -> Unit,
-    onOpenArtist: (id: String, name: String, origin: Rect) -> Unit,
+    onOpenArtist: (id: String, name: String, avatarUrl: String, origin: Rect) -> Unit,
     onOpenRadio: (id: String, name: String, origin: Rect) -> Unit,
     islandHeight: Float = 0f,
+    // 共享元素试验：歌手头像在「搜索结果行 ↔ 歌手页头部」间做官方 sharedElement。
+    // 为空则退化为普通图片（不影响其他调用方）。
+    shared: SharedTransitionScope? = null,
+    avScope: AnimatedVisibilityScope? = null,
     vm: SearchViewModel = hiltViewModel(),
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
@@ -123,6 +130,8 @@ fun SearchScreen(
                 onOpenTracks = onOpenTracks,
                 onOpenArtist = onOpenArtist,
                 onOpenRadio = onOpenRadio,
+                shared = shared,
+                avScope = avScope,
             )
         }
     }
@@ -322,8 +331,10 @@ private fun ResultsContent(
     onLoadMore: () -> Unit,
     onPlayTrack: (Int) -> Unit,
     onOpenTracks: (String, String, String, Rect) -> Unit,
-    onOpenArtist: (String, String, Rect) -> Unit,
+    onOpenArtist: (String, String, String, Rect) -> Unit,
     onOpenRadio: (String, String, Rect) -> Unit,
+    shared: SharedTransitionScope?,
+    avScope: AnimatedVisibilityScope?,
 ) {
     Column(Modifier.fillMaxSize()) {
         TabStrip(state.tab, onTab)
@@ -349,6 +360,8 @@ private fun ResultsContent(
                     onOpenTracks = onOpenTracks,
                     onOpenArtist = onOpenArtist,
                     onOpenRadio = onOpenRadio,
+                    shared = shared,
+                    avScope = avScope,
                 )
             }
         }
@@ -397,8 +410,10 @@ private fun ResultList(
     bottomPadding: androidx.compose.ui.unit.Dp,
     onPlayTrack: (Int) -> Unit,
     onOpenTracks: (String, String, String, Rect) -> Unit,
-    onOpenArtist: (String, String, Rect) -> Unit,
+    onOpenArtist: (String, String, String, Rect) -> Unit,
     onOpenRadio: (String, String, Rect) -> Unit,
+    shared: SharedTransitionScope?,
+    avScope: AnimatedVisibilityScope?,
 ) {
     LazyColumn(
         state = listState,
@@ -462,12 +477,23 @@ private fun ResultList(
                 key = { _, a -> "ar_${a.id}" },
                 contentType = { _, _ -> "artist" },
             ) { _, a ->
+                val coverModifier = if (shared != null && avScope != null) {
+                    with(shared) {
+                        Modifier.sharedElement(
+                            rememberSharedContentState(key = SharedKeys.artistAvatar(a.id)),
+                            animatedVisibilityScope = avScope,
+                        )
+                    }
+                } else {
+                    Modifier
+                }
                 MediaRow(
                     coverUrl = a.avatarUrl,
                     title = a.name,
                     subtitle = null,
                     circle = true,
-                ) { rect -> onOpenArtist(a.id, a.name, rect) }
+                    coverModifier = coverModifier,
+                ) { rect -> onOpenArtist(a.id, a.name, a.avatarUrl.orEmpty(), rect) }
             }
         }
 
@@ -547,6 +573,7 @@ private fun MediaRow(
     title: String,
     subtitle: String?,
     circle: Boolean,
+    coverModifier: Modifier = Modifier,
     onClick: (Rect) -> Unit,
 ) {
     var rect by remember { mutableStateOf(Rect.Zero) }
@@ -558,7 +585,7 @@ private fun MediaRow(
             .padding(horizontal = 16.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Cover(coverUrl, title, 52.dp, circle)
+        Cover(coverUrl, title, 52.dp, circle, modifier = coverModifier)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -588,6 +615,7 @@ private fun Cover(
     contentDescription: String?,
     size: androidx.compose.ui.unit.Dp,
     circle: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val shape = if (circle) CircleShape else NumeShape.Chip
     val context = LocalContext.current
@@ -595,7 +623,7 @@ private fun Cover(
         url?.let { ImageRequest.Builder(context).data(it).size(120).build() }
     }
     Box(
-        Modifier
+        modifier
             .size(size)
             .clip(shape),
     ) {

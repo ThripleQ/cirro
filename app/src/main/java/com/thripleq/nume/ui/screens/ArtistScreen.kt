@@ -2,6 +2,8 @@ package com.thripleq.nume.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,6 +58,7 @@ import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.ui.artist.ArtistUiState
 import com.thripleq.nume.ui.artist.ArtistViewModel
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
+import com.thripleq.nume.ui.components.SharedKeys
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
 import com.thripleq.nume.ui.theme.NumeShape
@@ -71,10 +74,17 @@ import java.util.Locale
 @Composable
 fun ArtistScreen(
     id: String,
+    // 来源页带来的资料：数据未回来前先把头部头像/名字画出来，
+    // 这是共享元素能成立的前提（目标端必须立即存在）。
+    name: String = "",
+    avatarUrl: String = "",
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
     onOpenAlbum: (id: String, title: String, origin: Rect) -> Unit,
     islandHeight: Float = 0f,
+    // 共享元素试验：头部头像与「搜索结果里的歌手行头像」共享（键见 [SharedKeys]）。
+    shared: SharedTransitionScope? = null,
+    avScope: AnimatedVisibilityScope? = null,
     vm: ArtistViewModel = hiltViewModel(),
 ) {
     BackHandler { onBack() }
@@ -83,10 +93,25 @@ fun ArtistScreen(
     val state by vm.uiState.collectAsStateWithLifecycle()
     val bottomPadding = (islandHeight + 16f).dp
 
+    val avatarModifier = if (shared != null && avScope != null) {
+        with(shared) {
+            Modifier.sharedElement(
+                rememberSharedContentState(key = SharedKeys.artistAvatar(id)),
+                animatedVisibilityScope = avScope,
+            )
+        }
+    } else {
+        Modifier
+    }
+
     Column(Modifier.fillMaxSize()) {
         TopBar(onBack = onBack, title = (state as? ArtistUiState.Ready)?.profile?.name ?: "歌手")
         when (val s = state) {
-            is ArtistUiState.Loading -> ArtistSkeleton()
+            is ArtistUiState.Loading -> LoadingContent(
+                name = name,
+                avatarUrl = avatarUrl,
+                avatarModifier = avatarModifier,
+            )
             is ArtistUiState.Error -> Center {
                 Text(
                     text = "歌手加载失败",
@@ -101,6 +126,7 @@ fun ArtistScreen(
                 bottomPadding = bottomPadding,
                 onPlayTrack = vm::onPlayTrack,
                 onOpenAlbum = onOpenAlbum,
+                avatarModifier = avatarModifier,
             )
         }
     }
@@ -114,6 +140,7 @@ private fun ReadyContent(
     bottomPadding: androidx.compose.ui.unit.Dp,
     onPlayTrack: (Int) -> Unit,
     onOpenAlbum: (String, String, Rect) -> Unit,
+    avatarModifier: Modifier = Modifier,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -126,7 +153,7 @@ private fun ReadyContent(
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Avatar(profile.avatarUrl, profile.name)
+                Avatar(profile.avatarUrl, profile.name, avatarModifier)
                 Spacer(Modifier.height(14.dp))
                 Text(
                     text = profile.name,
@@ -268,8 +295,8 @@ private fun SongRow(track: Track, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Avatar(url: String?, name: String) {
-    Cover(url, name, 96.dp, circle = true)
+private fun Avatar(url: String?, name: String, modifier: Modifier = Modifier) {
+    Cover(url, name, 96.dp, circle = true, modifier = modifier)
 }
 
 @Composable
@@ -278,6 +305,7 @@ private fun Cover(
     contentDescription: String?,
     size: androidx.compose.ui.unit.Dp,
     circle: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val shape = if (circle) CircleShape else NumeShape.CardSmall
     val context = LocalContext.current
@@ -285,7 +313,7 @@ private fun Cover(
         ImageRequest.Builder(context).data(it).size(360).build()
     }
     Box(
-        Modifier
+        modifier
             .size(size)
             .clip(shape),
     ) {
@@ -347,14 +375,17 @@ private fun Center(content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
 }
 
-/** 歌手页骨架：圆形头像 + 名字/简介 + 专辑横滑 + 热门歌曲行。 */
+/**
+ * 加载态：头部头像**立即用来源页带来的 url/name 渲染**（不放进骨架），
+ * 让共享元素目标在转场期间就存在；其余（专辑/歌曲）仍是骨架。
+ */
 @Composable
-private fun ArtistSkeleton() {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .shimmer(),
-    ) {
+private fun LoadingContent(
+    name: String,
+    avatarUrl: String,
+    avatarModifier: Modifier,
+) {
+    Column(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -362,11 +393,31 @@ private fun ArtistSkeleton() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            SkeletonBox(Modifier.size(96.dp), CircleShape)
-            SkeletonLine(widthFraction = 0.45f, height = 20.dp)
-            SkeletonLine(widthFraction = 0.3f, height = 12.dp)
-            SkeletonLine(widthFraction = 0.7f, height = 12.dp)
+            Avatar(avatarUrl, name, avatarModifier)
+            if (name.isNotBlank()) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                )
+            } else {
+                SkeletonLine(modifier = Modifier.shimmer(), widthFraction = 0.45f, height = 20.dp)
+            }
         }
+        ArtistSkeletonBody()
+    }
+}
+
+/** 歌手页骨架（头部以下）：专辑横滑 + 热门歌曲行。 */
+@Composable
+private fun ArtistSkeletonBody() {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .shimmer(),
+    ) {
         SkeletonHeading()
         Row(
             modifier = Modifier

@@ -2,6 +2,7 @@ package com.thripleq.nume
 
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -86,9 +87,14 @@ data class TrackListDestination(val source: String, val id: String, val title: S
 @Serializable
 object WebLogin
 
-/** 歌手主页（资料 + 热门单曲 + 专辑）。 */
+/** 歌手主页（资料 + 热门单曲 + 专辑）。name/avatarUrl 由来源页带过来，
+ *  让歌手页在数据回来前就能先把头部头像画出来（共享元素目标必须立即存在）。 */
 @Serializable
-data class ArtistDestination(val id: String)
+data class ArtistDestination(
+    val id: String,
+    val name: String = "",
+    val avatarUrl: String = "",
+)
 
 /** 播客/电台详情（资料 + 节目列表）。 */
 @Serializable
@@ -241,207 +247,219 @@ fun NumeApp() {
         // 曾写成 `targetAlpha = 1f`（起点==终点），Compose 的 Transition 会判定该动画**瞬时
         // 完成**，于是退出页在 pop 的同一帧就被移除——羽化层根本没机会逐帧收回，观感就是
         // 「关闭没有动画」。0.999f 肉眼不可见，却是一个真实变化，能把退出页保活到窗口收回。
-        NavHost(
-            navController = navController,
-            startDestination = Home,
-            modifier = Modifier.fillMaxSize(),
-            enterTransition = {
-                if (targetState.isRevealTarget()) {
-                    // 详情页进入：视觉全交给 RevealLayer。这里让**进入页**全程不透明即可。
-                    fadeIn(tween(revealInMs), initialAlpha = 1f)
-                } else {
-                    fadeIn(tween(220, easing = FastOutSlowInEasing)) +
-                        slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it / 24 }
+        SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
+            NavHost(
+                navController = navController,
+                startDestination = Home,
+                modifier = Modifier.fillMaxSize(),
+                enterTransition = {
+                    if (targetState.isRevealTarget()) {
+                        // 详情页进入：视觉全交给 RevealLayer。这里让**进入页**全程不透明即可。
+                        fadeIn(tween(revealInMs), initialAlpha = 1f)
+                    } else {
+                        fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+                            slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it / 24 }
+                    }
+                },
+                exitTransition = {
+                    if (targetState.isRevealTarget()) {
+                        // 来源页要在浮现窗口长满屏前一直铺底：0.999f 撑住 revealInMs。
+                        fadeOut(tween(revealInMs), targetAlpha = 0.999f)
+                    } else {
+                        fadeOut(tween(90, easing = LinearEasing))
+                    }
+                },
+                popEnterTransition = {
+                    if (initialState.isRevealTarget()) {
+                        // 从详情返回：下层页需在浮现退场期间一直铺底。
+                        fadeIn(tween(revealOutMs), initialAlpha = 0.999f)
+                    } else {
+                        fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+                            slideInVertically(tween(220, easing = FastOutSlowInEasing)) { -it / 24 }
+                    }
+                },
+                popExitTransition = {
+                    if (initialState.isRevealTarget()) {
+                        // 关键：退出子页必须保留 revealOutMs，羽化收回才看得到（见上注）。
+                        fadeOut(tween(revealOutMs), targetAlpha = 0.999f)
+                    } else {
+                        fadeOut(tween(160, easing = FastOutSlowInEasing)) +
+                            slideOutVertically(tween(160, easing = FastOutSlowInEasing)) { it / 24 }
+                    }
+                },
+            ) {
+                composable<Home> {
+                    HomeScreen(
+                        onOpenPlayer = ::openPlayer,
+                        onWebLogin = { navController.navigate(WebLogin) },
+                        islandHeight = islandHeightDp,
+                        onShellOpenChange = { shellOpen = it },
+                    )
                 }
-            },
-            exitTransition = {
-                if (targetState.isRevealTarget()) {
-                    // 来源页要在浮现窗口长满屏前一直铺底：0.999f 撑住 revealInMs。
-                    fadeOut(tween(revealInMs), targetAlpha = 0.999f)
-                } else {
-                    fadeOut(tween(90, easing = LinearEasing))
+                composable<Library> {
+                    LibraryScreen(
+                        onOpenChart = { id, name, origin ->
+                            openWithOrigin(origin) {
+                                navController.navigate(ChartDestination(chartId = id, name = name))
+                            }
+                        },
+                    )
                 }
-            },
-            popEnterTransition = {
-                if (initialState.isRevealTarget()) {
-                    // 从详情返回：下层页需在浮现退场期间一直铺底。
-                    fadeIn(tween(revealOutMs), initialAlpha = 0.999f)
-                } else {
-                    fadeIn(tween(220, easing = FastOutSlowInEasing)) +
-                        slideInVertically(tween(220, easing = FastOutSlowInEasing)) { -it / 24 }
-                }
-            },
-            popExitTransition = {
-                if (initialState.isRevealTarget()) {
-                    // 关键：退出子页必须保留 revealOutMs，羽化收回才看得到（见上注）。
-                    fadeOut(tween(revealOutMs), targetAlpha = 0.999f)
-                } else {
-                    fadeOut(tween(160, easing = FastOutSlowInEasing)) +
-                        slideOutVertically(tween(160, easing = FastOutSlowInEasing)) { it / 24 }
-                }
-            },
-        ) {
-            composable<Home> {
-                HomeScreen(
-                    onOpenPlayer = ::openPlayer,
-                    onWebLogin = { navController.navigate(WebLogin) },
-                    islandHeight = islandHeightDp,
-                    onShellOpenChange = { shellOpen = it },
-                )
-            }
-            composable<Library> {
-                LibraryScreen(
-                    onOpenChart = { id, name, origin ->
-                        openWithOrigin(origin) {
-                            navController.navigate(ChartDestination(chartId = id, name = name))
+                composable<ChartDestination> { entry ->
+                    val args = entry.toRoute<ChartDestination>()
+                    val origin = remember { navOriginRect }
+                    val (revealProgress, armReveal) = rememberRevealProgress(navForward)
+                    RevealLayer(
+                        fromRect = origin,
+                        progress = revealProgress,
+                        onFirstLayout = armReveal,
+                    ) {
+                    val listVm: TrackListViewModel = hiltViewModel()
+                    val listState by listVm.uiState.collectAsStateWithLifecycle()
+                    val listCol = (listState as? TrackListUiState.Ready)?.collection
+                    LaunchedEffect(listCol) { listCollection = listCol }
+                    LaunchedEffect(listCol) {
+                        listPlayAll = { listCol?.let(listVm::onPlayAll) }
+                    }
+                    DisposableEffect(Unit) {
+                        onDispose {
+                            listCollection = null
+                            listPlayAll = null
+                            listActionsOffscreen = false
                         }
-                    },
-                )
-            }
-            composable<ChartDestination> { entry ->
-                val args = entry.toRoute<ChartDestination>()
-                val origin = remember { navOriginRect }
-                val (revealProgress, armReveal) = rememberRevealProgress(navForward)
-                RevealLayer(
-                    fromRect = origin,
-                    progress = revealProgress,
-                    onFirstLayout = armReveal,
-                ) {
-                val listVm: TrackListViewModel = hiltViewModel()
-                val listState by listVm.uiState.collectAsStateWithLifecycle()
-                val listCol = (listState as? TrackListUiState.Ready)?.collection
-                LaunchedEffect(listCol) { listCollection = listCol }
-                LaunchedEffect(listCol) {
-                    listPlayAll = { listCol?.let(listVm::onPlayAll) }
-                }
-                DisposableEffect(Unit) {
-                    onDispose {
-                        listCollection = null
-                        listPlayAll = null
-                        listActionsOffscreen = false
+                    }
+                    TrackListScreen(
+                        source = "chart",
+                        id = args.chartId,
+                        title = args.name,
+                        onBack = { goBack() },
+                        onOpenPlayer = ::openPlayer,
+                        onActionsOffscreen = { listActionsOffscreen = it },
+                    )
                     }
                 }
-                TrackListScreen(
-                    source = "chart",
-                    id = args.chartId,
-                    title = args.name,
-                    onBack = { goBack() },
-                    onOpenPlayer = ::openPlayer,
-                    onActionsOffscreen = { listActionsOffscreen = it },
-                )
+                composable<Search> {
+                    SearchScreen(
+                        onOpenPlayer = ::openPlayer,
+                        onOpenTracks = { source, id, title, origin ->
+                            openWithOrigin(origin) {
+                                navController.navigate(TrackListDestination(source, id, title))
+                            }
+                        },
+                        onOpenArtist = { id, name, avatarUrl, origin ->
+                            openWithOrigin(origin) {
+                                navController.navigate(ArtistDestination(id, name, avatarUrl))
+                            }
+                        },
+                        onOpenRadio = { id, _, origin ->
+                            openWithOrigin(origin) { navController.navigate(RadioDestination(id)) }
+                        },
+                        islandHeight = islandHeightDp,
+                        shared = this@SharedTransitionLayout,
+                        avScope = this,
+                    )
                 }
-            }
-            composable<Search> {
-                SearchScreen(
-                    onOpenPlayer = ::openPlayer,
-                    onOpenTracks = { source, id, title, origin ->
-                        openWithOrigin(origin) {
-                            navController.navigate(TrackListDestination(source, id, title))
-                        }
-                    },
-                    onOpenArtist = { id, _, origin ->
-                        openWithOrigin(origin) { navController.navigate(ArtistDestination(id)) }
-                    },
-                    onOpenRadio = { id, _, origin ->
-                        openWithOrigin(origin) { navController.navigate(RadioDestination(id)) }
-                    },
-                    islandHeight = islandHeightDp,
-                )
-            }
-            composable<Profile> {
-                ProfileScreen(
-                    onOpenTracks = { source, id, title ->
-                        // Profile 卡片自有展开壳；其余（喜欢/已购/歌单网格）无起点 → 居中浮现。
-                        openWithOrigin(null) {
-                            navController.navigate(TrackListDestination(source, id, title))
-                        }
-                    },
-                    onWebLogin = { navController.navigate(WebLogin) },
-                    onOpenPlayer = ::openPlayer,
-                    islandHeight = islandHeightDp,
-                    onShellOpenChange = { shellOpen = it },
-                    vm = profileVm,
-                )
-            }
-            composable<WebLogin> {
-                // 复用 Activity 作用域的 ProfileViewModel（与 Profile 页同一实例）：
-                // 登录成功 loadProfile 直接更新该实例，返回 Profile 页即已刷新。
-                WebLoginScreen(
-                    onDone = { navController.popBackStack() },
-                    onBack = { goBack() },
-                    vm = profileVm,
-                )
-            }
-            composable<TrackListDestination> { entry ->
-                val args = entry.toRoute<TrackListDestination>()
-                val origin = remember { navOriginRect }
-                val (revealProgress, armReveal) = rememberRevealProgress(navForward)
-                RevealLayer(
-                    fromRect = origin,
-                    progress = revealProgress,
-                    onFirstLayout = armReveal,
-                ) {
-                val listVm: TrackListViewModel = hiltViewModel()
-                val listState by listVm.uiState.collectAsStateWithLifecycle()
-                val listCol = (listState as? TrackListUiState.Ready)?.collection
-                LaunchedEffect(listCol) { listCollection = listCol }
-                LaunchedEffect(listCol) {
-                    listPlayAll = { listCol?.let(listVm::onPlayAll) }
+                composable<Profile> {
+                    ProfileScreen(
+                        onOpenTracks = { source, id, title ->
+                            // Profile 卡片自有展开壳；其余（喜欢/已购/歌单网格）无起点 → 居中浮现。
+                            openWithOrigin(null) {
+                                navController.navigate(TrackListDestination(source, id, title))
+                            }
+                        },
+                        onWebLogin = { navController.navigate(WebLogin) },
+                        onOpenPlayer = ::openPlayer,
+                        islandHeight = islandHeightDp,
+                        onShellOpenChange = { shellOpen = it },
+                        vm = profileVm,
+                    )
                 }
-                DisposableEffect(Unit) {
-                    onDispose {
-                        listCollection = null
-                        listPlayAll = null
-                        listActionsOffscreen = false
+                composable<WebLogin> {
+                    // 复用 Activity 作用域的 ProfileViewModel（与 Profile 页同一实例）：
+                    // 登录成功 loadProfile 直接更新该实例，返回 Profile 页即已刷新。
+                    WebLoginScreen(
+                        onDone = { navController.popBackStack() },
+                        onBack = { goBack() },
+                        vm = profileVm,
+                    )
+                }
+                composable<TrackListDestination> { entry ->
+                    val args = entry.toRoute<TrackListDestination>()
+                    val origin = remember { navOriginRect }
+                    val (revealProgress, armReveal) = rememberRevealProgress(navForward)
+                    RevealLayer(
+                        fromRect = origin,
+                        progress = revealProgress,
+                        onFirstLayout = armReveal,
+                    ) {
+                    val listVm: TrackListViewModel = hiltViewModel()
+                    val listState by listVm.uiState.collectAsStateWithLifecycle()
+                    val listCol = (listState as? TrackListUiState.Ready)?.collection
+                    LaunchedEffect(listCol) { listCollection = listCol }
+                    LaunchedEffect(listCol) {
+                        listPlayAll = { listCol?.let(listVm::onPlayAll) }
+                    }
+                    DisposableEffect(Unit) {
+                        onDispose {
+                            listCollection = null
+                            listPlayAll = null
+                            listActionsOffscreen = false
+                        }
+                    }
+                    TrackListScreen(
+                        source = args.source,
+                        id = args.id,
+                        title = args.title,
+                        onBack = { goBack() },
+                        onOpenPlayer = ::openPlayer,
+                        onActionsOffscreen = { listActionsOffscreen = it },
+                    )
                     }
                 }
-                TrackListScreen(
-                    source = args.source,
-                    id = args.id,
-                    title = args.title,
-                    onBack = { goBack() },
-                    onOpenPlayer = ::openPlayer,
-                    onActionsOffscreen = { listActionsOffscreen = it },
-                )
+                composable<ArtistDestination> { entry ->
+                    val args = entry.toRoute<ArtistDestination>()
+                    val avScope = this
+                    val shared = this@SharedTransitionLayout
+                    val origin = remember { navOriginRect }
+                    val (revealProgress, armReveal) = rememberRevealProgress(navForward)
+                    RevealLayer(
+                        fromRect = origin,
+                        progress = revealProgress,
+                        onFirstLayout = armReveal,
+                    ) {
+                    ArtistScreen(
+                        id = args.id,
+                        name = args.name,
+                        avatarUrl = args.avatarUrl,
+                        onBack = { goBack() },
+                        onOpenPlayer = ::openPlayer,
+                        onOpenAlbum = { albumId, title, rect ->
+                            openWithOrigin(rect) {
+                                navController.navigate(TrackListDestination("album", albumId, title))
+                            }
+                        },
+                        islandHeight = islandHeightDp,
+                        shared = shared,
+                        avScope = avScope,
+                    )
+                    }
                 }
-            }
-            composable<ArtistDestination> { entry ->
-                val args = entry.toRoute<ArtistDestination>()
-                val origin = remember { navOriginRect }
-                val (revealProgress, armReveal) = rememberRevealProgress(navForward)
-                RevealLayer(
-                    fromRect = origin,
-                    progress = revealProgress,
-                    onFirstLayout = armReveal,
-                ) {
-                ArtistScreen(
-                    id = args.id,
-                    onBack = { goBack() },
-                    onOpenPlayer = ::openPlayer,
-                    onOpenAlbum = { albumId, title, rect ->
-                        openWithOrigin(rect) {
-                            navController.navigate(TrackListDestination("album", albumId, title))
-                        }
-                    },
-                    islandHeight = islandHeightDp,
-                )
-                }
-            }
-            composable<RadioDestination> { entry ->
-                val args = entry.toRoute<RadioDestination>()
-                val origin = remember { navOriginRect }
-                val (revealProgress, armReveal) = rememberRevealProgress(navForward)
-                RevealLayer(
-                    fromRect = origin,
-                    progress = revealProgress,
-                    onFirstLayout = armReveal,
-                ) {
-                PodcastScreen(
-                    id = args.id,
-                    onBack = { goBack() },
-                    onOpenPlayer = ::openPlayer,
-                    islandHeight = islandHeightDp,
-                )
+                composable<RadioDestination> { entry ->
+                    val args = entry.toRoute<RadioDestination>()
+                    val origin = remember { navOriginRect }
+                    val (revealProgress, armReveal) = rememberRevealProgress(navForward)
+                    RevealLayer(
+                        fromRect = origin,
+                        progress = revealProgress,
+                        onFirstLayout = armReveal,
+                    ) {
+                    PodcastScreen(
+                        id = args.id,
+                        onBack = { goBack() },
+                        onOpenPlayer = ::openPlayer,
+                        islandHeight = islandHeightDp,
+                    )
+                    }
                 }
             }
         }
