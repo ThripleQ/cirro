@@ -34,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -96,6 +97,14 @@ fun TrackListScreen(
     onOpenPlayer: () -> Unit,
     onActionsOffscreen: (Boolean) -> Unit = {},
     showTopBar: Boolean = true,
+    /**
+     * 是否由本屏注册系统返回键的 `BackHandler`。
+     *
+     * 作为 **nav 详情页**时 true：系统返回走 [onBack]（而非 NavHost 直接 pop），返回才是
+     * 「浮现收回」。作为**胶囊壳内容**时 false：返回键交回 [ExpandableShell] 处理，否则本屏
+     * 后注册的 BackHandler 会抢在壳之前、直接触发 onBack（=移除壳），跳过壳的收起动画。
+     */
+    backHandlerEnabled: Boolean = true,
     /** 封面是否显示集合名；调用方已在顶栏/壳顶标题栏显示标题时可传 false 避免重复。 */
     showName: Boolean = true,
     /**
@@ -118,6 +127,9 @@ fun TrackListScreen(
     watermarkIcon: ImageVector? = null,
     bottomPadding: Dp = 16.dp,
 ) {
+    // 系统返回键走 onBack（而非 NavHost 直接 pop）：返回是「浮现收回」，需先把导航方向
+    // 标成逆向，子页才会沿原路缩回、父页直接露底。壳内容里禁用（见 [backHandlerEnabled]）。
+    BackHandler(enabled = backHandlerEnabled) { onBack() }
     val vm: TrackListViewModel = hiltViewModel()
     val state by vm.uiState.collectAsStateWithLifecycle()
     val src = remember(source) { TrackListSource.from(source) }

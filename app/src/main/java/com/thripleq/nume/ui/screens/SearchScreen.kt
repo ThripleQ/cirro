@@ -40,10 +40,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -51,6 +54,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
@@ -66,10 +71,13 @@ import coil.request.ImageRequest
 import com.thripleq.nume.core.repo.SearchAlbum
 import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
+import com.thripleq.nume.ui.components.SkeletonBox
+import com.thripleq.nume.ui.components.SkeletonLine
 import com.thripleq.nume.ui.search.SearchTab
 import com.thripleq.nume.ui.search.SearchUiState
 import com.thripleq.nume.ui.search.SearchViewModel
 import com.thripleq.nume.ui.theme.NumeShape
+import com.valentinilk.shimmer.shimmer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -81,9 +89,9 @@ import java.util.Locale
 @Composable
 fun SearchScreen(
     onOpenPlayer: () -> Unit,
-    onOpenTracks: (source: String, id: String, title: String) -> Unit,
-    onOpenArtist: (id: String, name: String) -> Unit,
-    onOpenRadio: (id: String, name: String) -> Unit,
+    onOpenTracks: (source: String, id: String, title: String, origin: Rect) -> Unit,
+    onOpenArtist: (id: String, name: String, origin: Rect) -> Unit,
+    onOpenRadio: (id: String, name: String, origin: Rect) -> Unit,
     islandHeight: Float = 0f,
     vm: SearchViewModel = hiltViewModel(),
 ) {
@@ -313,9 +321,9 @@ private fun ResultsContent(
     onTab: (SearchTab) -> Unit,
     onLoadMore: () -> Unit,
     onPlayTrack: (Int) -> Unit,
-    onOpenTracks: (String, String, String) -> Unit,
-    onOpenArtist: (String, String) -> Unit,
-    onOpenRadio: (String, String) -> Unit,
+    onOpenTracks: (String, String, String, Rect) -> Unit,
+    onOpenArtist: (String, String, Rect) -> Unit,
+    onOpenRadio: (String, String, Rect) -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
         TabStrip(state.tab, onTab)
@@ -324,7 +332,7 @@ private fun ResultsContent(
 
         val empty = !state.loading && isTabEmpty(state)
         when {
-            state.loading -> CenteredBox { CircularProgressIndicator() }
+            state.loading -> SearchSkeleton()
             empty -> CenteredBox {
                 Text(
                     text = if (state.error) "搜索失败，请稍后重试" else "没有找到相关内容",
@@ -388,9 +396,9 @@ private fun ResultList(
     listState: LazyListState,
     bottomPadding: androidx.compose.ui.unit.Dp,
     onPlayTrack: (Int) -> Unit,
-    onOpenTracks: (String, String, String) -> Unit,
-    onOpenArtist: (String, String) -> Unit,
-    onOpenRadio: (String, String) -> Unit,
+    onOpenTracks: (String, String, String, Rect) -> Unit,
+    onOpenArtist: (String, String, Rect) -> Unit,
+    onOpenRadio: (String, String, Rect) -> Unit,
 ) {
     LazyColumn(
         state = listState,
@@ -420,7 +428,7 @@ private fun ResultList(
                         p.playCount,
                     ),
                     circle = false,
-                ) { onOpenTracks("playlist", p.id, p.name) }
+                ) { rect -> onOpenTracks("playlist", p.id, p.name, rect) }
             }
 
             SearchTab.RADIOS -> itemsIndexed(
@@ -433,7 +441,7 @@ private fun ResultList(
                     title = r.name,
                     subtitle = mediaSubtitle("${r.programCount}个声音", r.djName, r.playCount),
                     circle = false,
-                ) { onOpenRadio(r.id, r.name) }
+                ) { rect -> onOpenRadio(r.id, r.name, rect) }
             }
 
             SearchTab.ALBUMS -> itemsIndexed(
@@ -446,7 +454,7 @@ private fun ResultList(
                     title = a.name,
                     subtitle = albumSubtitle(a),
                     circle = false,
-                ) { onOpenTracks("album", a.id, a.name) }
+                ) { rect -> onOpenTracks("album", a.id, a.name, rect) }
             }
 
             SearchTab.ARTISTS -> itemsIndexed(
@@ -459,7 +467,7 @@ private fun ResultList(
                     title = a.name,
                     subtitle = null,
                     circle = true,
-                ) { onOpenArtist(a.id, a.name) }
+                ) { rect -> onOpenArtist(a.id, a.name, rect) }
             }
         }
 
@@ -539,12 +547,14 @@ private fun MediaRow(
     title: String,
     subtitle: String?,
     circle: Boolean,
-    onClick: () -> Unit,
+    onClick: (Rect) -> Unit,
 ) {
+    var rect by remember { mutableStateOf(Rect.Zero) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .onGloballyPositioned { rect = it.boundsInWindow() }
+            .clickable { onClick(rect) }
             .padding(horizontal = 16.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -619,6 +629,36 @@ private fun Cover(
 @Composable
 private fun CenteredBox(content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
+}
+
+/** 搜索结果骨架：分类页签下方重复结果行（封面 + 标题/副标题）。四类页签行高一致，通用。 */
+@Composable
+private fun SearchSkeleton() {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .shimmer()
+            .padding(top = 4.dp),
+    ) {
+        repeat(9) { SearchSkeletonRow() }
+    }
+}
+
+@Composable
+private fun SearchSkeletonRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SkeletonBox(Modifier.size(52.dp), NumeShape.Chip)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SkeletonLine(widthFraction = 0.6f, height = 14.dp)
+            SkeletonLine(widthFraction = 0.35f, height = 12.dp)
+        }
+    }
 }
 
 /* ── 小工具 ─────────────────────────────────────────── */

@@ -23,18 +23,24 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -50,7 +56,10 @@ import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.ui.artist.ArtistUiState
 import com.thripleq.nume.ui.artist.ArtistViewModel
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
+import com.thripleq.nume.ui.components.SkeletonBox
+import com.thripleq.nume.ui.components.SkeletonLine
 import com.thripleq.nume.ui.theme.NumeShape
+import com.valentinilk.shimmer.shimmer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -64,10 +73,11 @@ fun ArtistScreen(
     id: String,
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
-    onOpenAlbum: (id: String, title: String) -> Unit,
+    onOpenAlbum: (id: String, title: String, origin: Rect) -> Unit,
     islandHeight: Float = 0f,
     vm: ArtistViewModel = hiltViewModel(),
 ) {
+    BackHandler { onBack() }
     LaunchedEffect(id) { vm.load(id) }
     LaunchedEffect(Unit) { vm.openPlayer.collect { onOpenPlayer() } }
     val state by vm.uiState.collectAsStateWithLifecycle()
@@ -76,7 +86,7 @@ fun ArtistScreen(
     Column(Modifier.fillMaxSize()) {
         TopBar(onBack = onBack, title = (state as? ArtistUiState.Ready)?.profile?.name ?: "歌手")
         when (val s = state) {
-            is ArtistUiState.Loading -> Center { CircularProgressIndicator() }
+            is ArtistUiState.Loading -> ArtistSkeleton()
             is ArtistUiState.Error -> Center {
                 Text(
                     text = "歌手加载失败",
@@ -103,7 +113,7 @@ private fun ReadyContent(
     albums: List<ArtistAlbum>,
     bottomPadding: androidx.compose.ui.unit.Dp,
     onPlayTrack: (Int) -> Unit,
-    onOpenAlbum: (String, String) -> Unit,
+    onOpenAlbum: (String, String, Rect) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -161,7 +171,7 @@ private fun ReadyContent(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(albums.size, key = { "al_${albums[it].id}" }) { i ->
-                        AlbumCard(albums[i]) { onOpenAlbum(albums[i].id, albums[i].name) }
+                        AlbumCard(albums[i]) { rect -> onOpenAlbum(albums[i].id, albums[i].name, rect) }
                     }
                 }
             }
@@ -192,11 +202,13 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
-private fun AlbumCard(album: ArtistAlbum, onClick: () -> Unit) {
+private fun AlbumCard(album: ArtistAlbum, onClick: (Rect) -> Unit) {
+    var rect by remember { mutableStateOf(Rect.Zero) }
     Column(
         modifier = Modifier
             .width(118.dp)
-            .clickable(onClick = onClick),
+            .onGloballyPositioned { rect = it.boundsInWindow() }
+            .clickable { onClick(rect) },
     ) {
         Cover(album.coverUrl, album.name, 118.dp, circle = false)
         Spacer(Modifier.height(6.dp))
@@ -333,4 +345,69 @@ private fun TopBar(onBack: () -> Unit, title: String) {
 @Composable
 private fun Center(content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
+}
+
+/** 歌手页骨架：圆形头像 + 名字/简介 + 专辑横滑 + 热门歌曲行。 */
+@Composable
+private fun ArtistSkeleton() {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .shimmer(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SkeletonBox(Modifier.size(96.dp), CircleShape)
+            SkeletonLine(widthFraction = 0.45f, height = 20.dp)
+            SkeletonLine(widthFraction = 0.3f, height = 12.dp)
+            SkeletonLine(widthFraction = 0.7f, height = 12.dp)
+        }
+        SkeletonHeading()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            repeat(3) {
+                Column(Modifier.width(118.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SkeletonBox(Modifier.size(118.dp), NumeShape.CardSmall)
+                    SkeletonLine(widthFraction = 0.9f, height = 12.dp)
+                }
+            }
+        }
+        SkeletonHeading()
+        repeat(6) { ArtistSkeletonSongRow() }
+    }
+}
+
+@Composable
+private fun SkeletonHeading() {
+    SkeletonLine(
+        modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 10.dp),
+        widthFraction = 0.22f,
+        height = 18.dp,
+    )
+}
+
+@Composable
+private fun ArtistSkeletonSongRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SkeletonBox(Modifier.size(48.dp), NumeShape.CardSmall)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SkeletonLine(widthFraction = 0.6f, height = 14.dp)
+            SkeletonLine(widthFraction = 0.35f, height = 12.dp)
+        }
+    }
 }

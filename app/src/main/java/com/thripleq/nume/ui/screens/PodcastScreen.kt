@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -48,9 +50,12 @@ import coil.request.ImageRequest
 import com.thripleq.nume.core.repo.Program
 import com.thripleq.nume.core.repo.RadioDetail
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
+import com.thripleq.nume.ui.components.SkeletonBox
+import com.thripleq.nume.ui.components.SkeletonLine
 import com.thripleq.nume.ui.podcast.PodcastUiState
 import com.thripleq.nume.ui.podcast.PodcastViewModel
 import com.thripleq.nume.ui.theme.NumeShape
+import com.valentinilk.shimmer.shimmer
 import java.util.Locale
 
 /**
@@ -65,6 +70,7 @@ fun PodcastScreen(
     islandHeight: Float = 0f,
     vm: PodcastViewModel = hiltViewModel(),
 ) {
+    BackHandler { onBack() }
     LaunchedEffect(id) { vm.load(id) }
     LaunchedEffect(Unit) { vm.openPlayer.collect { onOpenPlayer() } }
     val state by vm.uiState.collectAsStateWithLifecycle()
@@ -73,7 +79,7 @@ fun PodcastScreen(
     Column(Modifier.fillMaxSize()) {
         TopBar(onBack = onBack, title = state.detail?.name ?: "播客")
         when {
-            state.loading -> Center { CircularProgressIndicator() }
+            state.loading -> PodcastSkeleton()
             state.error -> Center {
                 Text(
                     text = "播客加载失败",
@@ -287,6 +293,48 @@ private fun TopBar(onBack: () -> Unit, title: String) {
 @Composable
 private fun Center(content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
+}
+
+/** 播客详情骨架：电台头（大封面 + 标题/元信息） + 节目行。 */
+@Composable
+private fun PodcastSkeleton() {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .shimmer(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+        ) {
+            SkeletonBox(Modifier.size(112.dp), NumeShape.CardSmall)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SkeletonLine(widthFraction = 0.7f, height = 16.dp)
+                SkeletonLine(widthFraction = 0.4f, height = 12.dp)
+                SkeletonLine(widthFraction = 0.85f, height = 12.dp)
+            }
+        }
+        repeat(6) { ProgramSkeletonRow() }
+    }
+}
+
+@Composable
+private fun ProgramSkeletonRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SkeletonBox(Modifier.size(52.dp), NumeShape.CardSmall)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SkeletonLine(widthFraction = 0.85f, height = 14.dp)
+            SkeletonLine(widthFraction = 0.45f, height = 12.dp)
+        }
+    }
 }
 
 private fun formatDuration(ms: Long): String {

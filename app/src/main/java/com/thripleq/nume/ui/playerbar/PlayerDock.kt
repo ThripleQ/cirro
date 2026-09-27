@@ -119,6 +119,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -485,8 +486,8 @@ fun PlayerDock(
     navVisible: Boolean = true,
     onPlayAll: () -> Unit = {},
     onPlaceholderAction: () -> Unit = {},
-    /** 评论按钮：打开当前曲目的评论页（由上层按 mediaId 路由）。 */
-    onComments: () -> Unit = {},
+    /** 评论按钮：打开当前曲目的评论页（携带按钮窗口矩形作浮现起点）。 */
+    onComments: (Rect) -> Unit = {},
     /** dock 总高（dp）实时上报，供上层内容避让/Profile 展开壳让位。 */
     onIslandHeightChange: (Float) -> Unit = {},
 ) {
@@ -973,11 +974,12 @@ private fun NavRow(
 private fun ActionNavRow(
     onPlayAll: () -> Unit,
     onPlaceholderAction: () -> Unit,
-    onComments: () -> Unit,
+    onComments: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pill = RoundedCornerShape(50)
     val haptics = LocalHapticFeedback.current
+    var commentRect by remember { mutableStateOf(Rect.Zero) }
     Row(
         modifier = modifier.padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1023,7 +1025,8 @@ private fun ActionNavRow(
                 .fillMaxHeight()
                 .clip(pill)
                 .background(Color.Transparent)
-                .clickable { onComments() },
+                .onGloballyPositioned { commentRect = it.boundsInWindow() }
+                .clickable { onComments(commentRect) },
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -1048,7 +1051,7 @@ private fun PlayerPage(
     /** 导航收起时整块壳要下移的量（px）；导航可见时为 0。 */
     dockShiftPx: Float,
     onPlaceholderAction: () -> Unit,
-    onComments: () -> Unit,
+    onComments: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -1286,7 +1289,7 @@ private fun PlayerPageContent(
     shellHeightPx: Float,
     shellWidthPx: Float,
     onPlaceholderAction: () -> Unit,
-    onComments: () -> Unit,
+    onComments: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var seekPending by remember { mutableStateOf(false) }
@@ -1294,6 +1297,7 @@ private fun PlayerPageContent(
     var queueOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
     var lyricsOpen by remember { mutableStateOf(false) }
+    var commentRect by remember { mutableStateOf(Rect.Zero) }
     val state = rememberPlayerState(player)
     // 歌词：惰性加载 —— 只有歌词面板打开时才按当前曲目请求（切换曲目自动重载）。
     val lyricsVm: LyricsViewModel = hiltViewModel()
@@ -1428,7 +1432,12 @@ private fun PlayerPageContent(
                 IconButton(onClick = onPlaceholderAction, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.Filled.Favorite, "收藏", tint = MaterialTheme.colorScheme.primary)
                 }
-                IconButton(onClick = onComments, modifier = Modifier.size(40.dp)) {
+                IconButton(
+                    onClick = { onComments(commentRect) },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .onGloballyPositioned { commentRect = it.boundsInWindow() },
+                ) {
                     Icon(Icons.Filled.Chat, "评论", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

@@ -43,23 +43,31 @@ fun SkeletonLine(
 /**
  * 图片加载中的微光占位。
  *
- * **仅**在 [painter] 处于 Loading/Empty 时组合并跑扫光动画，加载完成（Success/Error）后
- * 立即从组合中移除——因此不会像「图片下方常驻 shimmer Box」那样空转无限动画
- * （那是之前列表/网格卡顿的主要来源之一）。
+ * - **Loading/Empty**：跑扫光动画的 `surfaceVariant`。
+ * - **Error**：静态 `surfaceVariant`（加载失败也要留一块灰底，否则外层 Box 无底色 → 空白洞）。
+ * - **Success**：不组合（由不透明图片自然覆盖）。
  *
- * 与图片同层、放在图片之前即可：加载完成由不透明图片自然覆盖。
+ * 扫光仅在 Loading/Empty 时跑，加载结束即从组合中移除，不会像「图片下方常驻 shimmer Box」
+ * 那样空转无限动画（那是之前列表/网格卡顿的主要来源之一）。
+ *
+ * 与图片同层、放在图片之前即可。
  */
 @Composable
 fun ShimmerImagePlaceholder(
     painter: AsyncImagePainter,
     modifier: Modifier = Modifier,
 ) {
-    val state = painter.state
-    if (state is AsyncImagePainter.State.Loading || state is AsyncImagePainter.State.Empty) {
-        Box(
+    when (painter.state) {
+        is AsyncImagePainter.State.Loading,
+        is AsyncImagePainter.State.Empty,
+        -> Box(
             modifier
                 .shimmer()
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         )
+        is AsyncImagePainter.State.Error -> Box(
+            modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        )
+        else -> Unit
     }
 }

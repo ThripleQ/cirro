@@ -464,6 +464,9 @@ private fun HomeExpandShell(
             onBack = onDismiss,
             onOpenPlayer = onOpenPlayer,
             showTopBar = false,
+            // 壳内容：返回键交回 ExpandableShell 处理（本屏不再注册 BackHandler），
+            // 否则本屏后注册的 BackHandler 会抢在壳之前触发 onBack、跳过壳的收起动画。
+            backHandlerEnabled = false,
             // 封面内缩用常量（不随壳每帧重排 banner/LazyColumn）——封面形变交给 hero。
             coverInsetFollowsShell = false,
             onCoverReady = onCoverReady,

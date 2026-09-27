@@ -107,6 +107,18 @@ val LocalShellClosing: androidx.compose.runtime.ProvidableCompositionLocal<State
     staticCompositionLocalOf { mutableStateOf(false) }
 
 /**
+ * 请求收起整只壳：调用后由 [ExpandableShell] 统一播放**收起动画**，动画彻底复位后才 [onDismiss]。
+ *
+ * 供壳内**非返回键**的关闭入口（收起按钮、下滑手势等）使用。它们**必须**走这里，
+ * 不能直接调 `onDismiss`——后者语义是「收起动画已结束」，直接调会跳过收起动画、壳瞬没
+ * （正是「关闭看不到动画」的来源）。
+ *
+ * 非壳环境默认 no-op。
+ */
+val LocalShellRequestClose: androidx.compose.runtime.ProvidableCompositionLocal<() -> Unit> =
+    staticCompositionLocalOf { {} }
+
+/**
  * 水平内缩随壳展开进度收缩：语义等价于 `padding(horizontal = maxInset * progress)`，
  * 但在 **layout 阶段**读取 [progress]——因此宿主 composable 不会被每帧重组，
  * 只触发这一处重排。banner 封面 / 骨架封面用它替代组合期的 `16.dp * p`。
@@ -482,6 +494,7 @@ fun ExpandableShell(
                             LocalShellSettled provides settled,
                             LocalShellHeroAlpha provides heroAlphaState,
                             LocalShellClosing provides closingState,
+                            LocalShellRequestClose provides ::startClose,
                         ) {
                             content()
                         }
@@ -637,6 +650,7 @@ fun CoverExpandShell(
                 content { coverReady.value = true }
                 // 关闭按钮：浮在左上、不随列表滚，随展开进度淡入（p=0 不可见、不响应点击）。
                 val shellProgress = LocalShellProgress.current
+                val requestClose = LocalShellRequestClose.current
                 Box(
                     Modifier
                         .align(Alignment.TopStart)
@@ -645,7 +659,9 @@ fun CoverExpandShell(
                         .graphicsLayer { alpha = shellProgress.value }
                         .clip(CircleShape)
                         .background(Color.Black.copy(alpha = NumeFade.CONTROL_SCRIM))
-                        .clickable { if (shellProgress.value > 0.5f) onDismiss() },
+                        // 走 requestClose（= startClose），完整播放收起动画后才 onDismiss；
+                        // 绝不可直接 onDismiss——那会跳过动画、壳瞬没。
+                        .clickable { if (shellProgress.value > 0.5f) requestClose() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(

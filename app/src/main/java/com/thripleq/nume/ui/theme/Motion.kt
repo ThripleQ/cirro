@@ -2,6 +2,7 @@ package com.thripleq.nume.ui.theme
 
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -30,6 +31,14 @@ object Motion {
 
     /** 微交互：对称的进出曲线，适合短时长淡入淡出/尺寸伸缩（不与 Emphasized 撞值）。 */
     val Standard = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
+
+    /**
+     * 浮现收回专用：对称的缓入缓出，把「全屏 → 源矩形」的尺寸变化**均匀铺满整段时长**。
+     *
+     * 不能用 [Emphasized]（0.2,0,0,1）：它前段极快，收缩的大半发生在头一两帧，
+     * 人眼只看到"闪没了"。收回是"物体归位"，需要每一帧都在明显变小才读得出动线。
+     */
+    val RevealExitEasing = CubicBezierEasing(0.33f, 0f, 0.33f, 1f)
 
     // ── 时长族（ms） ────────────────────────────────────────────────
     /** 壳展开总时长。 */
@@ -156,5 +165,66 @@ object Motion {
         if (t <= hold) return 1f
         val k = (t - hold) / (1f - hold)
         return 1f - k * k * (3f - 2f * k)
+    }
+
+    // ── Origin-Reveal（从点击处浮现）──────────────────────────────────
+    // 与胶囊展开（`PlayerDock` 的 container-morph，**仅限播放器**）不同：
+    // 本族是**通用**的 origin 浮现——任意被点对象矩形 → 全屏，靠「边界羽化」
+    // 免去逐像素起点对齐的硬契约。见 `ui/components/RevealTransition.kt`。
+    //
+    // ⚠️ 当前**关闭**：这套浮现转场先不启用，全部详情页/评论浮层回到常规导航转场
+    // （NavHost 的 fade+slide）。代码整体保留，改这一个开关即可重新启用。
+    // 关闭时：`isRevealTarget()` 恒 false → 走常规转场；`RevealLayer` 直接透传内容
+    // （不再叠离屏层/羽化/模糊）；浮层进度恒 1（立即呈现）。开关为编译期常量，
+    // 分支不随重组变化。
+    const val RevealEnabled = false
+
+    /** 进入时长。 */
+    const val RevealEnterMs = 360
+
+    /**
+     * 收起时长。曾用 280（"回原处比去新地方快"），但配合 Emphasized 的前段极快，
+     * 收缩大半在头 ~80ms 内就跑完了，观感成了"啪一下消失、看不出收回动画"。
+     * 放慢到与进入同量级，让整段收拢过程可被看见。
+     */
+    const val RevealExitMs = 420
+
+    /**
+     * 进入前的「起手延迟」：重内容页（评论列表、详情页）首次组合/measure 会吃掉一两帧，
+     * 若进度此刻已在跑，**第一个画出来的帧就已长大**，看着不贴着被点对象。延迟这段时间
+     * 让窗口先以 p=0 精确停在对象上（此态透明度为 0，只露出源页），内容就绪后再开始长。
+     */
+    const val RevealArmDelayMs = 48
+
+    /** 起点圆角（dp）：t=1 时收敛到 0（全屏硬边）。 */
+    const val RevealCornerDp = 22f
+
+    /** 羽化边界峰值宽度（px）：t=0 最宽，t=1 归零。 */
+    const val RevealFeatherMaxPx = 14f
+
+    /** 失焦峰值半径（px）：起点最强（软团），落定/收回终点前归零。 */
+    const val RevealBlurMaxPx = 7f
+
+    /** 进入 spec（起手延迟让内容先就绪 + 中段起步，避免窗口在一帧内就冲到快满屏）。 */
+    fun revealEnter(): FiniteAnimationSpec<Float> =
+        tween(RevealEnterMs, delayMillis = RevealArmDelayMs, easing = Standard)
+
+    /** 收起 spec（对称缓出，全程持续收缩、看得见收回动线）。 */
+    fun revealExit(): FiniteAnimationSpec<Float> =
+        tween(RevealExitMs, easing = RevealExitEasing)
+
+    /**
+     * 羽化宽度随进度 t：t=0 最宽、t=1 归零。**t=1 必须为 0**，
+     * 否则满屏静止态内容四周会持续发虚。
+     */
+    fun revealFeatherPx(t: Float): Float = RevealFeatherMaxPx * (1f - t.coerceIn(0f, 1f))
+
+    /**
+     * 失焦半径随进度 t：**t=0 最强**（小窗口贴着对象出现时是软的一团，盖住"缩放后
+     * 内容与对象像素不同"的突兀）、随展开一路合焦，t=1 精确归零（正常页面）。
+     */
+    fun revealBlurPx(t: Float): Float {
+        fun smooth(x: Float) = x * x * (3f - 2f * x)
+        return RevealBlurMaxPx * (1f - smooth(t.coerceIn(0f, 1f)))
     }
 }

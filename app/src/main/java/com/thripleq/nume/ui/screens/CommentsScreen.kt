@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,7 +50,10 @@ import coil.request.ImageRequest
 import com.thripleq.nume.core.repo.Comment
 import com.thripleq.nume.ui.comments.CommentsViewModel
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
+import com.thripleq.nume.ui.components.SkeletonBox
+import com.thripleq.nume.ui.components.SkeletonLine
 import com.thripleq.nume.ui.theme.NumeShape
+import com.valentinilk.shimmer.shimmer
 
 /**
  * 歌曲评论页：热门评论 + 最新评论（触底翻页）。
@@ -72,7 +76,7 @@ fun CommentsScreen(
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         TopBar(onBack = onBack, count = state.total)
         when {
-            state.loading -> Center { CircularProgressIndicator() }
+            state.loading -> CommentsSkeleton()
             state.error -> Center {
                 Text(
                     text = "评论加载失败",
@@ -274,6 +278,36 @@ private fun TopBar(onBack: () -> Unit, count: Long) {
 @Composable
 private fun Center(content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
+}
+
+/** 评论加载骨架：顶栏下方重复评论行（头像 + 昵称/内容行）。 */
+@Composable
+private fun CommentsSkeleton() {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .shimmer()
+            .padding(top = 8.dp),
+    ) {
+        repeat(7) { CommentSkeletonRow() }
+    }
+}
+
+@Composable
+private fun CommentSkeletonRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        SkeletonBox(Modifier.size(36.dp), CircleShape)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SkeletonLine(widthFraction = 0.3f, height = 12.dp)
+            SkeletonLine(widthFraction = 0.92f, height = 14.dp)
+            SkeletonLine(widthFraction = 0.66f, height = 14.dp)
+        }
+    }
 }
 
 private fun relativeTime(timeMs: Long): String {

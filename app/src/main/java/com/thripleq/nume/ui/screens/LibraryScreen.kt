@@ -24,10 +24,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -44,7 +50,7 @@ import com.valentinilk.shimmer.shimmer
 /** 免登录首页：列出排行榜，点进榜单到统一列表页。 */
 @Composable
 fun LibraryScreen(
-    onOpenChart: (String, String) -> Unit,
+    onOpenChart: (String, String, Rect) -> Unit,
 ) {
     val vm: LibraryViewModel = hiltViewModel()
     val state by vm.uiState.collectAsStateWithLifecycle()
@@ -60,13 +66,13 @@ fun LibraryScreen(
         }
         is LibraryUiState.Charts -> ChartList(
             charts = s.charts,
-            onChart = { c -> onOpenChart(c.id, c.name) },
+            onChart = { c, origin -> onOpenChart(c.id, c.name, origin) },
         )
     }
 }
 
 @Composable
-private fun ChartList(charts: List<Chart>, onChart: (Chart) -> Unit) {
+private fun ChartList(charts: List<Chart>, onChart: (Chart, Rect) -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
@@ -79,18 +85,21 @@ private fun ChartList(charts: List<Chart>, onChart: (Chart) -> Unit) {
     ) {
         item { Text("排行榜", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) }
         items(charts, key = { it.id }) { c ->
+            var rect by remember { mutableStateOf(Rect.Zero) }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(NumeShape.CardSmall)
-                    .clickable { onChart(c) }
+                    .onGloballyPositioned { rect = it.boundsInWindow() }
+                    .clickable { onChart(c, rect) }
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
                     Modifier
                         .size(52.dp)
-                        .clip(NumeShape.Chip),
+                        .clip(NumeShape.Chip)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
                     c.coverUrl?.let { url ->
                         val painter = rememberAsyncImagePainter(Uri.parse(url))

@@ -1,5 +1,7 @@
 package com.thripleq.nume
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterExitState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,16 +10,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -32,6 +39,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.thripleq.nume.core.playback.PlayerHolder
 import com.thripleq.nume.core.repo.TrackCollection
+import com.thripleq.nume.ui.components.RevealLayer
 import com.thripleq.nume.ui.playerbar.BottomTab
 import com.thripleq.nume.ui.playerbar.PlayerDock
 import com.thripleq.nume.ui.playerbar.rememberPlayerDockState
@@ -47,6 +55,7 @@ import com.thripleq.nume.ui.screens.ProfileScreen
 import com.thripleq.nume.ui.screens.SearchScreen
 import com.thripleq.nume.ui.screens.TrackListScreen
 import com.thripleq.nume.ui.screens.WebLoginScreen
+import com.thripleq.nume.ui.theme.Motion
 import kotlinx.serialization.Serializable
 
 /** Type-safe navigation destinations. Navigation lives only in [NumeApp]. */
@@ -84,6 +93,46 @@ data class ArtistDestination(val id: String)
 /** 播客/电台详情（资料 + 节目列表）。 */
 @Serializable
 data class RadioDestination(val id: String)
+
+/** origin-reveal 浮现的目标：这些详情页从被点对象的矩形浮现进入。开关见 [Motion.RevealEnabled]。 */
+private fun androidx.navigation.NavBackStackEntry.isRevealTarget(): Boolean =
+    Motion.RevealEnabled && (
+        destination.hasRoute<ChartDestination>() ||
+            destination.hasRoute<TrackListDestination>() ||
+            destination.hasRoute<ArtistDestination>() ||
+            destination.hasRoute<RadioDestination>()
+        )
+
+/**
+ * 详情页浮现进度：0=起点，1=全屏。方向感知——只有「正在被打开的子页」才从起点浮现，
+ * 父页在被覆盖时保持满屏留底；返回时**被弹出的子页**收回，父页直接露底。
+ *
+ * 返回 `(进度, arm)`：前进进入时，进度在 [arm]（内容首次布局完成）前**恒为 0**——
+ * 重详情页首次组合会吃掉一两帧，若不等布局就开跑，第一个画出来的帧已经长大、
+ * 不贴着被点对象。[RevealLayer.onFirstLayout] 负责调用 [arm]。
+ */
+@Composable
+private fun AnimatedVisibilityScope.rememberRevealProgress(
+    forward: Boolean,
+): Pair<State<Float>, () -> Unit> {
+    // 关闭时：进度恒 1（满屏、无浮现）；RevealLayer 也不叠层，直接透传。
+    if (!Motion.RevealEnabled) {
+        return remember { mutableStateOf(1f) } to {}
+    }
+    var armed by remember { mutableStateOf(false) }
+    val entering = transition.targetState == EnterExitState.Visible
+    val target = when {
+        entering && forward -> if (armed) 1f else 0f // 前进进入：从起点长出（等布局起手）
+        !entering && !forward -> 0f                  // 返回时被弹出的子页：收回
+        else -> 1f                                   // 父页留底 / 返回露底的父页：满屏
+    }
+    val progress = animateFloatAsState(
+        targetValue = target,
+        animationSpec = if (entering) Motion.revealEnter() else Motion.revealExit(),
+        label = "revealProgress",
+    )
+    return progress to { armed = true }
+}
 
 /**
  * Root of the Compose UI: navigation graph + docked island + full-screen player.
@@ -134,9 +183,41 @@ fun NumeApp() {
     // 展开壳（探索大封面 / Profile 面板）是否打开：打开时收起底部导航，只留迷你播放条。
     var shellOpen by remember { mutableStateOf(false) }
 
+    // 详情页浮现起点：进入被点对象前记录其窗口矩形，供 RevealLayer 用；返回/无值则居中浮现。
+    var navOriginRect by remember { mutableStateOf<Rect?>(null) }
+    // 导航方向：决定「谁在浮现」。前进时**子页**从被点对象长出、父页原地留底；返回时
+    // **子页**沿原路收回、父页直接露底。若不分方向，父页会在子页进入时同时缩回去（两处
+    // 浮现打架）。openWithOrigin=前进，goBack=返回。
+    var navForward by remember { mutableStateOf(true) }
+    fun openWithOrigin(rect: Rect?, navigate: () -> Unit) {
+        navOriginRect = rect?.takeIf { it.width > 0f && it.height > 0f }
+        navForward = true
+        navigate()
+    }
+    fun goBack() {
+        navForward = false
+        navController.popBackStack()
+    }
+
     // 评论浮层：点播放页「评论」按钮打开，**盖在播放页之上、播放页保持打开**（不再收起）。
-    // 关闭后回到播放页；系统返回键由浮层内的 BackHandler 拦截。
+    // 以「从评论按钮处浮现」的 origin-reveal 进入/退出；关闭后回到播放页。
+    // 系统返回键由浮层内的 BackHandler 拦截。
     var commentsSongId by remember { mutableStateOf<String?>(null) }
+    // 收起期间仍要渲染内容：id/起点保留到浮现退场跑完（由下面的 derivedStateOf 控制卸载）。
+    var commentsShownId by remember { mutableStateOf("") }
+    var commentsOrigin by remember { mutableStateOf<Rect?>(null) }
+    // 内容首次布局后才起手（否则重列表组合吃掉一两帧，第一个画出来的帧已长大）。
+    var commentsArmed by remember { mutableStateOf(false) }
+    LaunchedEffect(commentsSongId) { if (commentsSongId == null) commentsArmed = false }
+    val commentsProgress = animateFloatAsState(
+        targetValue = if (commentsSongId != null && commentsArmed) 1f else 0f,
+        animationSpec = if (commentsSongId != null && commentsArmed) Motion.revealEnter() else Motion.revealExit(),
+        label = "commentsReveal",
+    )
+    // 只在「可见或退场未结束」时组合浮层；derivedStateOf 保证逐帧进度变化不触发重组。
+    val commentsLayerVisible by remember {
+        derivedStateOf { commentsSongId != null || commentsProgress.value > 0.01f }
+    }
 
     // 播放页状态：常驻 dock 与全屏播放页合体（同一组件/同一份 progress）。
     // 点击迷你条/列表项 → state.open() 整页弹出；迷你条上滑 1:1 跟手由组件内手势驱动。
@@ -147,26 +228,57 @@ fun NumeApp() {
     }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        // 浮现目标的中性转场时长：**必须 ≥ RevealLayer 自己的动画**，否则 AnimatedContent
+        // 会先结束、把下层来源页撤掉，而浮现窗口还没铺满 → 露背景。多给一点余量。
+        val revealInMs = Motion.RevealEnterMs + Motion.RevealArmDelayMs + 120
+        val revealOutMs = Motion.RevealExitMs + 120
         // 导航转场：克制的 fade + 4% 屏高轻位移（不与展开壳的“卡片生长”抢戏）。
         // 旧实现无自定义转场，走库默认的长 fade，且 tab 间切换无位移反馈。
         // 进入 220ms；退出 90ms 快速让位；pop 逆向稍慢收回。
         // 注意 tween 泛型随上下文推断：fadeIn 是 Float，slide*Vertically 是 Int。
+        //
+        // ⚠️ 浮现目标的**退出**转场必须用「非零」alpha 变化（这里取 0.999f）撑住时长。
+        // 曾写成 `targetAlpha = 1f`（起点==终点），Compose 的 Transition 会判定该动画**瞬时
+        // 完成**，于是退出页在 pop 的同一帧就被移除——羽化层根本没机会逐帧收回，观感就是
+        // 「关闭没有动画」。0.999f 肉眼不可见，却是一个真实变化，能把退出页保活到窗口收回。
         NavHost(
             navController = navController,
             startDestination = Home,
             modifier = Modifier.fillMaxSize(),
             enterTransition = {
-                fadeIn(tween(220, easing = FastOutSlowInEasing)) +
-                    slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it / 24 }
+                if (targetState.isRevealTarget()) {
+                    // 详情页进入：视觉全交给 RevealLayer。这里让**进入页**全程不透明即可。
+                    fadeIn(tween(revealInMs), initialAlpha = 1f)
+                } else {
+                    fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+                        slideInVertically(tween(220, easing = FastOutSlowInEasing)) { it / 24 }
+                }
             },
-            exitTransition = { fadeOut(tween(90, easing = LinearEasing)) },
+            exitTransition = {
+                if (targetState.isRevealTarget()) {
+                    // 来源页要在浮现窗口长满屏前一直铺底：0.999f 撑住 revealInMs。
+                    fadeOut(tween(revealInMs), targetAlpha = 0.999f)
+                } else {
+                    fadeOut(tween(90, easing = LinearEasing))
+                }
+            },
             popEnterTransition = {
-                fadeIn(tween(220, easing = FastOutSlowInEasing)) +
-                    slideInVertically(tween(220, easing = FastOutSlowInEasing)) { -it / 24 }
+                if (initialState.isRevealTarget()) {
+                    // 从详情返回：下层页需在浮现退场期间一直铺底。
+                    fadeIn(tween(revealOutMs), initialAlpha = 0.999f)
+                } else {
+                    fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+                        slideInVertically(tween(220, easing = FastOutSlowInEasing)) { -it / 24 }
+                }
             },
             popExitTransition = {
-                fadeOut(tween(160, easing = FastOutSlowInEasing)) +
-                    slideOutVertically(tween(160, easing = FastOutSlowInEasing)) { it / 24 }
+                if (initialState.isRevealTarget()) {
+                    // 关键：退出子页必须保留 revealOutMs，羽化收回才看得到（见上注）。
+                    fadeOut(tween(revealOutMs), targetAlpha = 0.999f)
+                } else {
+                    fadeOut(tween(160, easing = FastOutSlowInEasing)) +
+                        slideOutVertically(tween(160, easing = FastOutSlowInEasing)) { it / 24 }
+                }
             },
         ) {
             composable<Home> {
@@ -179,13 +291,22 @@ fun NumeApp() {
             }
             composable<Library> {
                 LibraryScreen(
-                    onOpenChart = { id, name ->
-                        navController.navigate(ChartDestination(chartId = id, name = name))
+                    onOpenChart = { id, name, origin ->
+                        openWithOrigin(origin) {
+                            navController.navigate(ChartDestination(chartId = id, name = name))
+                        }
                     },
                 )
             }
             composable<ChartDestination> { entry ->
                 val args = entry.toRoute<ChartDestination>()
+                val origin = remember { navOriginRect }
+                val (revealProgress, armReveal) = rememberRevealProgress(navForward)
+                RevealLayer(
+                    fromRect = origin,
+                    progress = revealProgress,
+                    onFirstLayout = armReveal,
+                ) {
                 val listVm: TrackListViewModel = hiltViewModel()
                 val listState by listVm.uiState.collectAsStateWithLifecycle()
                 val listCol = (listState as? TrackListUiState.Ready)?.collection
@@ -204,26 +325,36 @@ fun NumeApp() {
                     source = "chart",
                     id = args.chartId,
                     title = args.name,
-                    onBack = { navController.popBackStack() },
+                    onBack = { goBack() },
                     onOpenPlayer = ::openPlayer,
                     onActionsOffscreen = { listActionsOffscreen = it },
                 )
+                }
             }
             composable<Search> {
                 SearchScreen(
                     onOpenPlayer = ::openPlayer,
-                    onOpenTracks = { source, id, title ->
-                        navController.navigate(TrackListDestination(source, id, title))
+                    onOpenTracks = { source, id, title, origin ->
+                        openWithOrigin(origin) {
+                            navController.navigate(TrackListDestination(source, id, title))
+                        }
                     },
-                    onOpenArtist = { id, _ -> navController.navigate(ArtistDestination(id)) },
-                    onOpenRadio = { id, _ -> navController.navigate(RadioDestination(id)) },
+                    onOpenArtist = { id, _, origin ->
+                        openWithOrigin(origin) { navController.navigate(ArtistDestination(id)) }
+                    },
+                    onOpenRadio = { id, _, origin ->
+                        openWithOrigin(origin) { navController.navigate(RadioDestination(id)) }
+                    },
                     islandHeight = islandHeightDp,
                 )
             }
             composable<Profile> {
                 ProfileScreen(
                     onOpenTracks = { source, id, title ->
-                        navController.navigate(TrackListDestination(source, id, title))
+                        // Profile 卡片自有展开壳；其余（喜欢/已购/歌单网格）无起点 → 居中浮现。
+                        openWithOrigin(null) {
+                            navController.navigate(TrackListDestination(source, id, title))
+                        }
                     },
                     onWebLogin = { navController.navigate(WebLogin) },
                     onOpenPlayer = ::openPlayer,
@@ -237,12 +368,19 @@ fun NumeApp() {
                 // 登录成功 loadProfile 直接更新该实例，返回 Profile 页即已刷新。
                 WebLoginScreen(
                     onDone = { navController.popBackStack() },
-                    onBack = { navController.popBackStack() },
+                    onBack = { goBack() },
                     vm = profileVm,
                 )
             }
             composable<TrackListDestination> { entry ->
                 val args = entry.toRoute<TrackListDestination>()
+                val origin = remember { navOriginRect }
+                val (revealProgress, armReveal) = rememberRevealProgress(navForward)
+                RevealLayer(
+                    fromRect = origin,
+                    progress = revealProgress,
+                    onFirstLayout = armReveal,
+                ) {
                 val listVm: TrackListViewModel = hiltViewModel()
                 val listState by listVm.uiState.collectAsStateWithLifecycle()
                 val listCol = (listState as? TrackListUiState.Ready)?.collection
@@ -261,31 +399,50 @@ fun NumeApp() {
                     source = args.source,
                     id = args.id,
                     title = args.title,
-                    onBack = { navController.popBackStack() },
+                    onBack = { goBack() },
                     onOpenPlayer = ::openPlayer,
                     onActionsOffscreen = { listActionsOffscreen = it },
                 )
+                }
             }
             composable<ArtistDestination> { entry ->
                 val args = entry.toRoute<ArtistDestination>()
+                val origin = remember { navOriginRect }
+                val (revealProgress, armReveal) = rememberRevealProgress(navForward)
+                RevealLayer(
+                    fromRect = origin,
+                    progress = revealProgress,
+                    onFirstLayout = armReveal,
+                ) {
                 ArtistScreen(
                     id = args.id,
-                    onBack = { navController.popBackStack() },
+                    onBack = { goBack() },
                     onOpenPlayer = ::openPlayer,
-                    onOpenAlbum = { albumId, title ->
-                        navController.navigate(TrackListDestination("album", albumId, title))
+                    onOpenAlbum = { albumId, title, rect ->
+                        openWithOrigin(rect) {
+                            navController.navigate(TrackListDestination("album", albumId, title))
+                        }
                     },
                     islandHeight = islandHeightDp,
                 )
+                }
             }
             composable<RadioDestination> { entry ->
                 val args = entry.toRoute<RadioDestination>()
+                val origin = remember { navOriginRect }
+                val (revealProgress, armReveal) = rememberRevealProgress(navForward)
+                RevealLayer(
+                    fromRect = origin,
+                    progress = revealProgress,
+                    onFirstLayout = armReveal,
+                ) {
                 PodcastScreen(
                     id = args.id,
-                    onBack = { navController.popBackStack() },
+                    onBack = { goBack() },
                     onOpenPlayer = ::openPlayer,
                     islandHeight = islandHeightDp,
                 )
+                }
             }
         }
 
@@ -311,10 +468,14 @@ fun NumeApp() {
                 onPlaceholderAction = {
                     android.widget.Toast.makeText(context, "开发中", android.widget.Toast.LENGTH_SHORT).show()
                 },
-                onComments = {
+                onComments = { rect ->
                     // 播放页盖在导航图之上：评论以浮层形式再盖在播放页之上，
-                    // 播放页保持打开（不再收起），关闭评论即回到播放页。
-                    player.currentMediaItem?.mediaId?.let { commentsSongId = it }
+                    // 播放页保持打开；以评论按钮矩形为起点浮现。
+                    player.currentMediaItem?.mediaId?.let { id ->
+                        commentsShownId = id
+                        commentsOrigin = rect.takeIf { it.width > 0f && it.height > 0f }
+                        commentsSongId = id
+                    }
                 },
                 onIslandHeightChange = { islandHeightDp = it },
             )
@@ -323,12 +484,18 @@ fun NumeApp() {
         // ---- 评论浮层（最上层）----
         // 置于 PlayerDock 之后：绘制顺序在播放页之上；播放页仍在组合中、保持打开。
         // BackHandler 在 CommentsScreen 内，晚于 PlayerPage 注册，返回键优先关评论。
-        commentsSongId?.let { songId ->
-            CommentsScreen(
-                songId = songId,
-                onBack = { commentsSongId = null },
-                islandHeight = 0f,
-            )
+        if (commentsLayerVisible && commentsShownId.isNotEmpty()) {
+            RevealLayer(
+                fromRect = commentsOrigin,
+                progress = commentsProgress,
+                onFirstLayout = { commentsArmed = true },
+            ) {
+                CommentsScreen(
+                    songId = commentsShownId,
+                    onBack = { commentsSongId = null },
+                    islandHeight = 0f,
+                )
+            }
         }
     }
 }

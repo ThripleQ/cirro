@@ -548,6 +548,9 @@ private fun ProfilePanel(
                     onBack = onDismiss,
                     onOpenPlayer = onOpenPlayer,
                     showTopBar = false,
+                    // 壳内容：返回键交回 ExpandableShell 处理（本屏不再注册 BackHandler），
+                    // 否则本屏后注册的 BackHandler 会抢在壳之前触发 onBack、跳过壳的收起动画。
+                    backHandlerEnabled = false,
                     // 面板走「内容固定终态排版 + 壳裁剪露出」，封面内缩用常量，
                     // 使列表 measure 在展开动画期间被跳过（封面形变交给 hero）。
                     coverInsetFollowsShell = false,
