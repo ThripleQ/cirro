@@ -31,8 +31,11 @@ class PlaybackLauncher @Inject constructor() {
         if (tracks.isEmpty()) return
         val player = PlayerHolder.get(context)
 
+        // 先登记队列：状态持久化（PlaybackStateStore）据此落盘整单，切歌/退出后能原样恢复。
+        PlayerHolder.rememberQueue(tracks)
+
         val idx = index.coerceIn(0, tracks.lastIndex)
-        player.setMediaItems(tracks.map(::mediaItem), idx, 0L)
+        player.setMediaItems(tracks.map(::trackMediaItem), idx, 0L)
         player.prepare()
         player.play()
 
@@ -46,17 +49,21 @@ class PlaybackLauncher @Inject constructor() {
         )
     }
 
-    private fun mediaItem(track: Track): MediaItem =
-        MediaItem.Builder()
-            .setMediaId(track.id)
-            .setUri(PlaybackUrls.uriFor(track.id))
-            .setMediaMetadata(mediaMetadata(track))
-            .build()
-
-    private fun mediaMetadata(track: Track): MediaMetadata =
-        MediaMetadata.Builder()
-            .setTitle(track.name)
-            .setArtist(track.artist)
-            .setArtworkUri(track.artworkUrl?.let { Uri.parse(it) })
-            .build()
 }
+
+/**
+ * [Track] → 队列 [MediaItem]：稳定合成 URI + 元数据。URL 惰性解析，故这里只放
+ * `nume://song/<id>`。同时供 [PlayerHolder] 恢复上次队列时复用。
+ */
+internal fun trackMediaItem(track: Track): MediaItem =
+    MediaItem.Builder()
+        .setMediaId(track.id)
+        .setUri(PlaybackUrls.uriFor(track.id))
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(track.name)
+                .setArtist(track.artist)
+                .setArtworkUri(track.artworkUrl?.let { Uri.parse(it) })
+                .build(),
+        )
+        .build()

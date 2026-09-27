@@ -1,9 +1,12 @@
 package com.thripleq.nume.core.playback
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import androidx.core.content.ContextCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
@@ -11,6 +14,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import com.thripleq.nume.core.repo.Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,9 +52,28 @@ object PlayerHolder {
     @Volatile
     private var retriedItemId: String? = null
 
+    // 当前队列（Track 原始对象）：MediaItem 只带 id+元数据，落盘/恢复需要完整 Track
+    // （时长、专辑名等），故由 PlaybackLauncher 在入队时登记。
+    @Volatile
+    private var currentQueue: List<Track> = emptyList()
+
+    // 是否已尝试过恢复上次播放状态（进程内只恢复一次）。
+    @Volatile
+    private var restored = false
+
+    // 前台播放服务是否已拉起。通知/后台保活都依赖它，任何播放路径都要覆盖
+    // （含恢复后的"点播放"，那条路径不经过 PlaybackLauncher）。
+    @Volatile
+    private var foregroundServiceStarted = false
+
     /** Installs the lazy URL source used by the [ResolvingDataSource]. Call once at startup. */
     fun installUrlSource(source: PlaybackUrlSource) {
         urlSource = source
+    }
+
+    /** 登记当前队列（供状态持久化落盘）。 */
+    fun rememberQueue(tracks: List<Track>) {
+        currentQueue = tracks
     }
 
     // 错误恢复用的协程作用域。object 单例的普通属性在类初始化时就求值；
@@ -61,10 +84,17 @@ object PlayerHolder {
     }
     private var recoveryJob: Job? = null
 
+    // 状态持久化用的作用域（与 recoveryScope 同理，lazy 推迟 Main dispatcher 初始化）。
+    private val persistScope by lazy {
+        CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    }
+
     fun get(context: Context): ExoPlayer = player ?: synchronized(this) {
         player ?: build(context).also {
             it.addErrorRecovery()
+            it.attachStatePersistence(context.applicationContext)
             player = it
+            restore(it, context.applicationContext)
         }
     }
 
@@ -142,19 +172,112 @@ object PlayerHolder {
         play()
     }
 
-    /** 统一播放/暂停：error 状态下 play() 需先 prepare 才会重新加载，否则无声。 */
+    /**
+     * 播放状态持久化：切歌/播放暂停/随机/循环/进入 READY 时落盘，另每
+     * [POSITION_SAVE_INTERVAL_MS] 落一次进度（只靠事件的话，进程被杀时进度会停在
+     * 最后一次事件那一刻，比如刚切歌的 0:00）。
+     */
+    private fun ExoPlayer.attachStatePersistence(context: Context) {
+        val p = this
+        addListener(object : Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                // play() 一旦被调用就拉起前台服务（含恢复后点播放这条不经 Launcher 的路径），
+                // 否则无通知、且退到后台可能被系统杀进程。
+                if (playWhenReady) ensureForegroundService(context)
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                persist(context, p)
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                persist(context, p)
+                if (isPlaying) ensureForegroundService(context)
+            }
+
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                persist(context, p)
+            }
+
+            override fun onShuffleModeEnabledChanged(enabled: Boolean) {
+                persist(context, p)
+            }
+
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_READY || state == Player.STATE_ENDED) {
+                    persist(context, p)
+                }
+            }
+        })
+        persistScope.launch {
+            while (true) {
+                delay(POSITION_SAVE_INTERVAL_MS)
+                if (p.isPlaying) persist(context, p)
+            }
+        }
+    }
+
+    private fun persist(context: Context, p: ExoPlayer) {
+        val queue = currentQueue
+        if (queue.isEmpty() || p.mediaItemCount == 0) return
+        PlaybackStateStore.save(
+            context,
+            PlaybackStateStore.Snapshot(
+                queue = queue,
+                index = p.currentMediaItemIndex.coerceIn(0, queue.lastIndex),
+                positionMs = p.currentPosition.coerceAtLeast(0L),
+                shuffle = p.shuffleModeEnabled,
+                repeatMode = p.repeatMode,
+            ),
+        )
+    }
+
+    /** 幂等拉起前台播放服务；后台启动被系统拒绝时复位标记，下次再试。 */
+    private fun ensureForegroundService(context: Context) {
+        if (foregroundServiceStarted) return
+        foregroundServiceStarted = true
+        try {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, PlaybackService::class.java),
+            )
+        } catch (_: Exception) {
+            foregroundServiceStarted = false
+        }
+    }
+
+    /** 启动时恢复上次的队列/进度/随机/循环；**恢复为暂停态**，等用户点播放。 */
+    private fun restore(p: ExoPlayer, context: Context) {
+        if (restored) return
+        restored = true
+        val snap = PlaybackStateStore.load(context) ?: return
+        currentQueue = snap.queue
+        val idx = snap.index.coerceIn(0, snap.queue.lastIndex)
+        p.setMediaItems(snap.queue.map(::trackMediaItem), idx, snap.positionMs.coerceAtLeast(0L))
+        p.shuffleModeEnabled = snap.shuffle
+        p.repeatMode = snap.repeatMode
+        // 不 prepare()/play()：避免未点播放就发起网络请求；点播放时 togglePlay 会
+        // 检测到 STATE_IDLE 自动 prepare。
+    }
+
+    /** error 或已恢复但尚未加载（STATE_IDLE）时都需 prepare，play() 才会真正出声。 */
+    private fun Player.ensurePrepared() {
+        if (playerError != null || playbackState == Player.STATE_IDLE) prepare()
+    }
+
+    /** 统一播放/暂停：error（或恢复后的 idle）状态下 play() 需先 prepare 才会加载。 */
     fun togglePlay(player: Player) {
         if (player.isPlaying) {
             player.pause()
         } else {
-            if (player.playerError != null) player.prepare()
+            player.ensurePrepared()
             player.play()
         }
     }
 
-    /** 统一下一首：error 状态下 seekToNext 后必须 prepare+play 才会加载新曲目。 */
+    /** 统一下一首：error/idle 状态下 seekToNext 后必须 prepare+play 才会加载新曲目。 */
     fun skipNext(player: Player) {
-        if (player.playerError != null) {
+        if (player.playerError != null || player.playbackState == Player.STATE_IDLE) {
             player.seekToNextMediaItem()
             player.prepare()
             player.play()
@@ -163,9 +286,9 @@ object PlayerHolder {
         }
     }
 
-    /** 统一上一首：同上，error 后需要显式 prepare 才能恢复加载。 */
+    /** 统一上一首：同上，error/idle 后需要显式 prepare 才能恢复加载。 */
     fun skipPrevious(player: Player) {
-        if (player.playerError != null) {
+        if (player.playerError != null || player.playbackState == Player.STATE_IDLE) {
             player.seekToPreviousMediaItem()
             player.prepare()
             player.play()
@@ -174,9 +297,9 @@ object PlayerHolder {
         }
     }
 
-    /** 统一 seek：error 状态下拖动进度条同样需要先 prepare 恢复。 */
+    /** 统一 seek：error/idle 状态下拖动进度条同样需要先 prepare 恢复。 */
     fun seekTo(player: Player, positionMs: Long) {
-        if (player.playerError != null) player.prepare()
+        player.ensurePrepared()
         player.seekTo(positionMs)
     }
 
@@ -248,4 +371,7 @@ object PlayerHolder {
     // 等一小段让它补上；超时则放弃这首，避免播放长时间卡死在错误态。
     private const val RECOVERY_POLL_MS = 250L
     private const val RECOVERY_WAIT_ATTEMPTS = 12
+
+    // 播放中进度落盘间隔：只靠事件落盘的话，进程被杀时进度最多回退到上次事件那一刻。
+    private const val POSITION_SAVE_INTERVAL_MS = 5_000L
 }

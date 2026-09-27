@@ -1,10 +1,15 @@
 package com.thripleq.nume
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -17,6 +22,11 @@ class MainActivity : ComponentActivity() {
 
     private var jankStats: JankStats? = null
 
+    // Android 13+ 通知需要运行时授权；不请求的话前台播放服务的媒体通知不会显示
+    // （权限默认 denied，通知被系统静默丢弃）。
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* 拒绝也不阻塞播放 */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Must run before super.onCreate(): keeps the system splash up until the
         // first Compose frame, then hands off to Theme.Nume (postSplashScreenTheme).
@@ -24,6 +34,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         installJankStats()
+        requestNotificationPermissionIfNeeded()
         setContent {
             // 禁用 Material You 动态取色: 在某些设备/壁纸下 dynamicDarkColorScheme
             // 派生的 onBackground/onSurface 偏深, 导致未指定 color 的 Text 在深色主题
@@ -32,6 +43,16 @@ class MainActivity : ComponentActivity() {
                 NumeApp()
             }
         }
+    }
+
+    /** Android 13+ 首次进入时请求通知权限（用于前台播放的媒体通知）。 */
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val granted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     /**
