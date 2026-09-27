@@ -51,7 +51,7 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
-    private val _openPlayer = MutableSharedFlow<Unit>(replay = 0)
+    private val _openPlayer = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
     val openPlayer: SharedFlow<Unit> = _openPlayer.asSharedFlow()
 
     init {

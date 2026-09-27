@@ -55,7 +55,7 @@ class TrackListViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<TrackListUiState>(TrackListUiState.Loading)
     val uiState: StateFlow<TrackListUiState> = _uiState.asStateFlow()
 
-    private val _openPlayer = MutableSharedFlow<Unit>(replay = 0)
+    private val _openPlayer = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
     val openPlayer: SharedFlow<Unit> = _openPlayer.asSharedFlow()
 
     private var loadedKey: String? = null

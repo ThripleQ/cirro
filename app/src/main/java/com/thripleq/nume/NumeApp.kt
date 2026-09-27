@@ -194,7 +194,18 @@ fun NumeApp() {
                     onActionsOffscreen = { listActionsOffscreen = it },
                 )
             }
-            composable<Search> { SearchScreen() }
+            composable<Search> {
+                SearchScreen(
+                    onOpenPlayer = ::openPlayer,
+                    onOpenTracks = { source, id, title ->
+                        navController.navigate(TrackListDestination(source, id, title))
+                    },
+                    onPlaceholder = {
+                        android.widget.Toast.makeText(context, "开发中", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    islandHeight = islandHeightDp,
+                )
+            }
             composable<Profile> {
                 ProfileScreen(
                     onOpenTracks = { source, id, title ->

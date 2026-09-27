@@ -1,0 +1,225 @@
+package com.thripleq.nume.ui.search
+
+import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.thripleq.nume.core.playback.PlaybackLauncher
+import com.thripleq.nume.core.repo.SearchAlbum
+import com.thripleq.nume.core.repo.SearchArtist
+import com.thripleq.nume.core.repo.SearchPlaylist
+import com.thripleq.nume.core.repo.SearchRadio
+import com.thripleq.nume.core.repo.SearchRepository
+import com.thripleq.nume.core.repo.Track
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+/** 搜索结果的分类页签（顺序与 kanade 对齐）。 */
+enum class SearchTab { SONGS, PLAYLISTS, RADIOS, ALBUMS, ARTISTS }
+
+/** 搜索结果页状态。`active == null` 表示还没搜过（展示分类标签的落地页）。 */
+data class SearchUiState(
+    val query: String = "",
+    val active: String? = null,
+    val tab: SearchTab = SearchTab.SONGS,
+    val loading: Boolean = false,
+    val loadingMore: Boolean = false,
+    val songs: List<Track> = emptyList(),
+    val playlists: List<SearchPlaylist> = emptyList(),
+    val radios: List<SearchRadio> = emptyList(),
+    val albums: List<SearchAlbum> = emptyList(),
+    val artists: List<SearchArtist> = emptyList(),
+    val error: Boolean = false,
+)
+
+/**
+ * 搜索页 ViewModel：一个服务多分类（单曲/歌单/播客/专辑/歌手），按需懒加载、
+ * 触底翻页。切换页签只拉取尚未开始的分类；重搜时整体重置。
+ */
+@HiltViewModel
+class SearchViewModel @Inject constructor(
+    private val repo: SearchRepository,
+    private val playback: PlaybackLauncher,
+    @ApplicationContext private val context: Context,
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(SearchUiState())
+    val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+
+    private val _openPlayer = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
+    val openPlayer: SharedFlow<Unit> = _openPlayer.asSharedFlow()
+
+    // 每个分类的翻页游标与「已到底」标记，只对当前 active 关键词有效。
+    private val offsets = mutableMapOf<SearchTab, Int>()
+    private val started = mutableSetOf<SearchTab>()
+    private val done = mutableSetOf<SearchTab>()
+    private var job: Job? = null
+
+    fun onQueryChange(text: String) {
+        _uiState.update { it.copy(query = text) }
+    }
+
+    /** 提交搜索（软键盘搜索键 / 点标签）。 */
+    fun onSubmit() {
+        val kw = _uiState.value.query.trim()
+        if (kw.isEmpty()) return
+        resetTo(kw)
+        load(SearchTab.SONGS, reset = true)
+    }
+
+    /** 点分类标签：直接以标签文字为关键词搜索。 */
+    fun onTagSearch(tag: String) {
+        _uiState.update { it.copy(query = tag) }
+        resetTo(tag)
+        load(SearchTab.SONGS, reset = true)
+    }
+
+    fun onTabSelect(tab: SearchTab) {
+        if (_uiState.value.active == null) return
+        _uiState.update { it.copy(tab = tab) }
+        if (tab !in started && tab !in done) load(tab, reset = true)
+    }
+
+    fun onLoadMore() {
+        val s = _uiState.value
+        val tab = s.tab
+        if (s.active == null || s.loading || s.loadingMore) return
+        if (tab in done) return
+        load(tab, reset = false)
+    }
+
+    fun onClear() {
+        job?.cancel()
+        offsets.clear(); started.clear(); done.clear()
+        _uiState.value = SearchUiState()
+    }
+
+    fun onBack() {
+        if (_uiState.value.active != null) onClear()
+    }
+
+    /** 单曲行点击：整张「单曲」结果作为队列，从该首开始播并弹出播放页。 */
+    fun onPlayTrack(index: Int) {
+        val tracks = _uiState.value.songs
+        if (tracks.isEmpty()) return
+        viewModelScope.launch {
+            playback.play(context, tracks, index)
+            _openPlayer.tryEmit(Unit)
+        }
+    }
+
+    /** 歌手行点击：没有独立歌手页，退回按该歌手名再搜一遍单曲。 */
+    fun onArtistClick(name: String) {
+        if (name.isBlank()) return
+        onTagSearch(name)
+    }
+
+    private fun resetTo(keyword: String) {
+        job?.cancel()
+        offsets.clear(); started.clear(); done.clear()
+        _uiState.update {
+            it.copy(
+                query = keyword,
+                active = keyword,
+                tab = SearchTab.SONGS,
+                loading = true,
+                loadingMore = false,
+                songs = emptyList(),
+                playlists = emptyList(),
+                radios = emptyList(),
+                albums = emptyList(),
+                artists = emptyList(),
+                error = false,
+            )
+        }
+    }
+
+    private fun load(tab: SearchTab, reset: Boolean) {
+        val kw = _uiState.value.active ?: return
+        val offset = if (reset) 0 else offsets[tab] ?: 0
+        if (reset) {
+            started.add(tab); done.remove(tab)
+            clearTab(tab)
+            _uiState.update { it.copy(loading = true, error = false, loadingMore = false) }
+        } else {
+            _uiState.update { it.copy(loadingMore = true) }
+        }
+        job?.cancel()
+        job = viewModelScope.launch {
+            try {
+                val page = fetch(tab, kw, offset)
+                offsets[tab] = offset + page.size
+                if (page.size < PAGE_SIZE) done.add(tab)
+                _uiState.update { st ->
+                    st.copy(
+                        loading = if (st.tab == tab) false else st.loading,
+                        loadingMore = false,
+                        error = false,
+                    ).let { withItems(it, tab, page, reset) }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 失败不落 done，并把该分类移出 started，切回该页签时会自动重试。
+                started.remove(tab); done.remove(tab)
+                _uiState.update { st ->
+                    st.copy(
+                        loading = if (st.tab == tab) false else st.loading,
+                        loadingMore = false,
+                        error = offset == 0,
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun fetch(tab: SearchTab, kw: String, offset: Int): List<Any> = when (tab) {
+        SearchTab.SONGS -> repo.songs(kw, PAGE_SIZE, offset)
+        SearchTab.PLAYLISTS -> repo.playlists(kw, PAGE_SIZE, offset)
+        SearchTab.RADIOS -> repo.radios(kw, PAGE_SIZE, offset)
+        SearchTab.ALBUMS -> repo.albums(kw, PAGE_SIZE, offset)
+        SearchTab.ARTISTS -> repo.artists(kw, PAGE_SIZE, offset)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun withItems(
+        st: SearchUiState,
+        tab: SearchTab,
+        page: List<Any>,
+        reset: Boolean,
+    ): SearchUiState = when (tab) {
+        SearchTab.SONGS -> st.copy(songs = merge(st.songs, page as List<Track>, reset))
+        SearchTab.PLAYLISTS -> st.copy(playlists = merge(st.playlists, page as List<SearchPlaylist>, reset))
+        SearchTab.RADIOS -> st.copy(radios = merge(st.radios, page as List<SearchRadio>, reset))
+        SearchTab.ALBUMS -> st.copy(albums = merge(st.albums, page as List<SearchAlbum>, reset))
+        SearchTab.ARTISTS -> st.copy(artists = merge(st.artists, page as List<SearchArtist>, reset))
+    }
+
+    private fun <T> merge(current: List<T>, page: List<T>, reset: Boolean): List<T> =
+        if (reset) page else current + page
+
+    private fun clearTab(tab: SearchTab) {
+        _uiState.update {
+            when (tab) {
+                SearchTab.SONGS -> it.copy(songs = emptyList())
+                SearchTab.PLAYLISTS -> it.copy(playlists = emptyList())
+                SearchTab.RADIOS -> it.copy(radios = emptyList())
+                SearchTab.ALBUMS -> it.copy(albums = emptyList())
+                SearchTab.ARTISTS -> it.copy(artists = emptyList())
+            }
+        }
+    }
+
+    private companion object {
+        const val PAGE_SIZE = 30
+    }
+}
