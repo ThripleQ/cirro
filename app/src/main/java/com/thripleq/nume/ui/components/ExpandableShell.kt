@@ -1,6 +1,7 @@
 package com.thripleq.nume.ui.components
 
 import android.os.Build
+import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -49,6 +50,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -229,6 +231,9 @@ fun ExpandableShell(
     content: @Composable () -> Unit,
 ) {
     val density = LocalDensity.current
+    // 触觉编排：展开就位/收起落地各一次 CONTEXT_CLICK 级轻震（与 PlayerDock.doClose 的
+    // 触觉习惯同族），把动画的"开始/结束"落到指尖——视觉焦点 + 触觉确认同时到位。
+    val hapticView = LocalView.current
     var viewWidth by remember { mutableStateOf(0) }
     var viewHeight by remember { mutableStateOf(0) }
     // 非 contentFromStart：header 的实际高度，用于给内容区算固定的终态高度。
@@ -288,6 +293,8 @@ fun ExpandableShell(
         LaunchedEffect(Unit) {
             progressAnim.animateTo(1f, Motion.shellOpen())
             settled.value = true
+            // 展开就位：轻震确认（不到 LongPress 的重震级别）
+            hapticView.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
         }
     }
 
@@ -323,6 +330,8 @@ fun ExpandableShell(
             // 等两帧让「完全复位」的画面真正画出来再移除覆盖层。
             withFrameNanos { }
             withFrameNanos { }
+            // 落地触觉：卡片归位的确认（在移除覆盖层前一刻，与尾帧同拍）
+            hapticView.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
             onDismiss()
         }
     }
@@ -367,13 +376,15 @@ fun ExpandableShell(
     ) {
         // 背景 scrim：随展开进度渐深（draw 阶段读值，不重组）——胶囊壳「升起」的层次来源，
         // 底下页面退暗、壳浮在前，展开即建立 modal 焦点。
+        // 暗度走 Motion.scrimT（EmphasizedDecelerate 前快后慢）：前 20% 进度即建立大半
+        // 暗度，焦点在动画一启动就成立；线性 t 前段太"迟疑"，焦点来得晚半拍。
         // 必须是**独立一层**：若把 alpha 加在整个占位层上，壳与内容会被一起淡化（展开后的
         // 面板变半透明），还会给整屏内容套一层 offscreen、滚动时每帧重录。它只盖住「壳以外」
         // 的区域——壳不透明且展开后铺满全屏，稳态下被壳完全遮住。
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = NumeFade.SHELL_SCRIM * progressAnim.value }
+                .graphicsLayer { alpha = NumeFade.SHELL_SCRIM * Motion.scrimT(progressAnim.value) }
                 .background(Color.Black),
         )
         // 触摸拦截层（在壳之下、底下页面之上）：吃掉所有落在壳外的指针事件。
@@ -419,7 +430,9 @@ fun ExpandableShell(
                         Modifier.graphicsLayer {
                             shape = RoundedCornerShape(cornerAt(progressAnim.value).toDp())
                             clip = true
-                            shadowElevation = 1.dp.toPx()
+                            // 投影随展开渐升（0→2dp）：小卡片几乎贴着页面，全屏面板浮起——
+                            // 「升起」不只是暗度，还有影子长高。
+                            shadowElevation = 2.dp.toPx() * progressAnim.value
                         }
                     } else {
                         Modifier
@@ -478,12 +491,29 @@ fun ExpandableShell(
                                 )
                             }
                         }
-                        // 收起：整块内容随壳收缩进度淡出（不做位移），避免被收缩的裁剪窗口
-                        // 「推/擦」出去、看着像列表在滑动。只在**收起期间**挂这一层，展开期不挂，
-                        // 免得给内容再套一层 offscreen。
+                        // 内容编排层（choreography）：与壳的裁剪/圆角层同款「动画期才挂」模式
+                        // （settled 后摘掉，稳态零 offscreen、滚动不重录）。draw 阶段读 t，不重组。
+                        // - 展开期（!settled）：t∈[ContentRiseFrom, ContentRiseTo] 内容做 12dp 上浮
+                        //   ——位移**滞后于壳**（壳先长、内容再流入），这是编排感与机械同步的分界。
+                        // - 收起期（closing）：随收缩进度淡出 + 6dp 下拖，内容像被「吸回」卡片
+                        //   （原实现只淡出不位移，收束感偏"干"）。
                         .then(
-                            if (closing && !contentFromStart) {
-                                Modifier.graphicsLayer { alpha = progressAnim.value }
+                            if (!contentFromStart && (!settled.value || closing)) {
+                                Modifier.graphicsLayer {
+                                    val t = progressAnim.value
+                                    if (closing) {
+                                        alpha = t
+                                        translationY = (1f - t) * Motion.ContentDragDp.dp.toPx()
+                                    } else {
+                                        val ct = (
+                                            (t - Motion.ContentRiseFrom) /
+                                                (Motion.ContentRiseTo - Motion.ContentRiseFrom)
+                                            ).coerceIn(0f, 1f)
+                                        // smoothstep：起步不猛、收尾不顿
+                                        val s = ct * ct * (3f - 2f * ct)
+                                        translationY = (1f - s) * Motion.ContentRiseDp.dp.toPx()
+                                    }
+                                }
                             } else {
                                 Modifier
                             },

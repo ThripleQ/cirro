@@ -174,6 +174,26 @@ object Motion {
     fun sharedBoundsSpec(): FiniteAnimationSpec<Rect> =
         tween(350, easing = Emphasized)
 
+    // ── 内容编排（choreography）────────────────────────────────────
+    /**
+     * 展开期内容编排窗口：壳长到 [ContentRiseFrom] 前内容保持静止（被裁剪窗口藏着），
+     * 之后从 [ContentRiseFrom]→[ContentRiseTo] 区间做 12dp 上浮——**滞后于壳**的位移
+     * 制造"壳先就位、内容流入"的层次，这是编排感（choreography）与机械同步的分界。
+     */
+    const val ContentRiseFrom = 0.62f
+    const val ContentRiseTo = 0.92f
+
+    /** 内容流入位移量（dp）。大到能读出"流入"、小到不与裁剪露出的内容打架。 */
+    const val ContentRiseDp = 12
+
+    /** 收起时内容的下拖量（dp）：与淡出同轴，内容像被"吸回"卡片。 */
+    const val ContentDragDp = 6
+
+    /** scrim 暗度曲线：EmphasizedDecelerate 前快后慢——前 20% 进度即建立大半暗度，
+     *  modal 焦点在动画一启动就成立（线性 t 在前段太"迟疑"）。 */
+    fun scrimT(t: Float): Float = EmphasizedDecelerate.transform(t.coerceIn(0f, 1f))
+
+
 
     /** 点击直达全屏：低阻尼带一点弹性，让"生长"过程看得见。 */
     val SheetExpand: AnimationSpec<Float> = spring(
