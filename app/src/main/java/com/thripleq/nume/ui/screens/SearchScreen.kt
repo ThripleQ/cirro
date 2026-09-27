@@ -82,7 +82,8 @@ import java.util.Locale
 fun SearchScreen(
     onOpenPlayer: () -> Unit,
     onOpenTracks: (source: String, id: String, title: String) -> Unit,
-    onPlaceholder: () -> Unit,
+    onOpenArtist: (id: String, name: String) -> Unit,
+    onOpenRadio: (id: String, name: String) -> Unit,
     islandHeight: Float = 0f,
     vm: SearchViewModel = hiltViewModel(),
 ) {
@@ -112,8 +113,8 @@ fun SearchScreen(
                 onLoadMore = vm::onLoadMore,
                 onPlayTrack = vm::onPlayTrack,
                 onOpenTracks = onOpenTracks,
-                onArtist = vm::onArtistClick,
-                onPlaceholder = onPlaceholder,
+                onOpenArtist = onOpenArtist,
+                onOpenRadio = onOpenRadio,
             )
         }
     }
@@ -313,8 +314,8 @@ private fun ResultsContent(
     onLoadMore: () -> Unit,
     onPlayTrack: (Int) -> Unit,
     onOpenTracks: (String, String, String) -> Unit,
-    onArtist: (String) -> Unit,
-    onPlaceholder: () -> Unit,
+    onOpenArtist: (String, String) -> Unit,
+    onOpenRadio: (String, String) -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
         TabStrip(state.tab, onTab)
@@ -338,8 +339,8 @@ private fun ResultsContent(
                     bottomPadding = bottomPadding,
                     onPlayTrack = onPlayTrack,
                     onOpenTracks = onOpenTracks,
-                    onArtist = onArtist,
-                    onPlaceholder = onPlaceholder,
+                    onOpenArtist = onOpenArtist,
+                    onOpenRadio = onOpenRadio,
                 )
             }
         }
@@ -388,8 +389,8 @@ private fun ResultList(
     bottomPadding: androidx.compose.ui.unit.Dp,
     onPlayTrack: (Int) -> Unit,
     onOpenTracks: (String, String, String) -> Unit,
-    onArtist: (String) -> Unit,
-    onPlaceholder: () -> Unit,
+    onOpenArtist: (String, String) -> Unit,
+    onOpenRadio: (String, String) -> Unit,
 ) {
     LazyColumn(
         state = listState,
@@ -432,7 +433,7 @@ private fun ResultList(
                     title = r.name,
                     subtitle = mediaSubtitle("${r.programCount}个声音", r.djName, r.playCount),
                     circle = false,
-                ) { onPlaceholder() }
+                ) { onOpenRadio(r.id, r.name) }
             }
 
             SearchTab.ALBUMS -> itemsIndexed(
@@ -458,7 +459,7 @@ private fun ResultList(
                     title = a.name,
                     subtitle = null,
                     circle = true,
-                ) { onArtist(a.name) }
+                ) { onOpenArtist(a.id, a.name) }
             }
         }
 

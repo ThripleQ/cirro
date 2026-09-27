@@ -485,6 +485,8 @@ fun PlayerDock(
     navVisible: Boolean = true,
     onPlayAll: () -> Unit = {},
     onPlaceholderAction: () -> Unit = {},
+    /** 评论按钮：打开当前曲目的评论页（由上层按 mediaId 路由）。 */
+    onComments: () -> Unit = {},
     /** dock 总高（dp）实时上报，供上层内容避让/Profile 展开壳让位。 */
     onIslandHeightChange: (Float) -> Unit = {},
 ) {
@@ -636,6 +638,7 @@ fun PlayerDock(
                     ActionNavRow(
                         onPlayAll = onPlayAll,
                         onPlaceholderAction = onPlaceholderAction,
+                        onComments = onComments,
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
@@ -690,6 +693,7 @@ fun PlayerDock(
                 dockHeightPx = geometryDockHeightPx,
                 dockShiftPx = dockShiftPx,
                 onPlaceholderAction = onPlaceholderAction,
+                onComments = onComments,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -969,6 +973,7 @@ private fun NavRow(
 private fun ActionNavRow(
     onPlayAll: () -> Unit,
     onPlaceholderAction: () -> Unit,
+    onComments: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pill = RoundedCornerShape(50)
@@ -1018,7 +1023,7 @@ private fun ActionNavRow(
                 .fillMaxHeight()
                 .clip(pill)
                 .background(Color.Transparent)
-                .clickable { onPlaceholderAction() },
+                .clickable { onComments() },
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -1043,6 +1048,7 @@ private fun PlayerPage(
     /** 导航收起时整块壳要下移的量（px）；导航可见时为 0。 */
     dockShiftPx: Float,
     onPlaceholderAction: () -> Unit,
+    onComments: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -1225,6 +1231,7 @@ private fun PlayerPage(
                 shellHeightPx = rect.height,
                 shellWidthPx = rect.width,
                 onPlaceholderAction = onPlaceholderAction,
+                onComments = onComments,
                 modifier = Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha },
             )
             Box(
@@ -1279,6 +1286,7 @@ private fun PlayerPageContent(
     shellHeightPx: Float,
     shellWidthPx: Float,
     onPlaceholderAction: () -> Unit,
+    onComments: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var seekPending by remember { mutableStateOf(false) }
@@ -1420,7 +1428,7 @@ private fun PlayerPageContent(
                 IconButton(onClick = onPlaceholderAction, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.Filled.Favorite, "收藏", tint = MaterialTheme.colorScheme.primary)
                 }
-                IconButton(onClick = onPlaceholderAction, modifier = Modifier.size(40.dp)) {
+                IconButton(onClick = onComments, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.Filled.Chat, "评论", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

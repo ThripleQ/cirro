@@ -38,8 +38,11 @@ import com.thripleq.nume.ui.playerbar.rememberPlayerDockState
 import com.thripleq.nume.ui.profile.ProfileViewModel
 import com.thripleq.nume.ui.profile.TrackListUiState
 import com.thripleq.nume.ui.profile.TrackListViewModel
+import com.thripleq.nume.ui.screens.ArtistScreen
+import com.thripleq.nume.ui.screens.CommentsScreen
 import com.thripleq.nume.ui.screens.HomeScreen
 import com.thripleq.nume.ui.screens.LibraryScreen
+import com.thripleq.nume.ui.screens.PodcastScreen
 import com.thripleq.nume.ui.screens.ProfileScreen
 import com.thripleq.nume.ui.screens.SearchScreen
 import com.thripleq.nume.ui.screens.TrackListScreen
@@ -73,6 +76,14 @@ data class TrackListDestination(val source: String, val id: String, val title: S
 /** Full-screen WebView login (official NetEase login page, Kanade-style). */
 @Serializable
 object WebLogin
+
+/** 歌手主页（资料 + 热门单曲 + 专辑）。 */
+@Serializable
+data class ArtistDestination(val id: String)
+
+/** 播客/电台详情（资料 + 节目列表）。 */
+@Serializable
+data class RadioDestination(val id: String)
 
 /**
  * Root of the Compose UI: navigation graph + docked island + full-screen player.
@@ -122,6 +133,10 @@ fun NumeApp() {
 
     // 展开壳（探索大封面 / Profile 面板）是否打开：打开时收起底部导航，只留迷你播放条。
     var shellOpen by remember { mutableStateOf(false) }
+
+    // 评论浮层：点播放页「评论」按钮打开，**盖在播放页之上、播放页保持打开**（不再收起）。
+    // 关闭后回到播放页；系统返回键由浮层内的 BackHandler 拦截。
+    var commentsSongId by remember { mutableStateOf<String?>(null) }
 
     // 播放页状态：常驻 dock 与全屏播放页合体（同一组件/同一份 progress）。
     // 点击迷你条/列表项 → state.open() 整页弹出；迷你条上滑 1:1 跟手由组件内手势驱动。
@@ -200,9 +215,8 @@ fun NumeApp() {
                     onOpenTracks = { source, id, title ->
                         navController.navigate(TrackListDestination(source, id, title))
                     },
-                    onPlaceholder = {
-                        android.widget.Toast.makeText(context, "开发中", android.widget.Toast.LENGTH_SHORT).show()
-                    },
+                    onOpenArtist = { id, _ -> navController.navigate(ArtistDestination(id)) },
+                    onOpenRadio = { id, _ -> navController.navigate(RadioDestination(id)) },
                     islandHeight = islandHeightDp,
                 )
             }
@@ -252,6 +266,27 @@ fun NumeApp() {
                     onActionsOffscreen = { listActionsOffscreen = it },
                 )
             }
+            composable<ArtistDestination> { entry ->
+                val args = entry.toRoute<ArtistDestination>()
+                ArtistScreen(
+                    id = args.id,
+                    onBack = { navController.popBackStack() },
+                    onOpenPlayer = ::openPlayer,
+                    onOpenAlbum = { albumId, title ->
+                        navController.navigate(TrackListDestination("album", albumId, title))
+                    },
+                    islandHeight = islandHeightDp,
+                )
+            }
+            composable<RadioDestination> { entry ->
+                val args = entry.toRoute<RadioDestination>()
+                PodcastScreen(
+                    id = args.id,
+                    onBack = { navController.popBackStack() },
+                    onOpenPlayer = ::openPlayer,
+                    islandHeight = islandHeightDp,
+                )
+            }
         }
 
         // 常驻 dock + 全屏播放页（合体，单点挂载）：覆盖在内容层之上。
@@ -276,7 +311,23 @@ fun NumeApp() {
                 onPlaceholderAction = {
                     android.widget.Toast.makeText(context, "开发中", android.widget.Toast.LENGTH_SHORT).show()
                 },
+                onComments = {
+                    // 播放页盖在导航图之上：评论以浮层形式再盖在播放页之上，
+                    // 播放页保持打开（不再收起），关闭评论即回到播放页。
+                    player.currentMediaItem?.mediaId?.let { commentsSongId = it }
+                },
                 onIslandHeightChange = { islandHeightDp = it },
+            )
+        }
+
+        // ---- 评论浮层（最上层）----
+        // 置于 PlayerDock 之后：绘制顺序在播放页之上；播放页仍在组合中、保持打开。
+        // BackHandler 在 CommentsScreen 内，晚于 PlayerPage 注册，返回键优先关评论。
+        commentsSongId?.let { songId ->
+            CommentsScreen(
+                songId = songId,
+                onBack = { commentsSongId = null },
+                islandHeight = 0f,
             )
         }
     }

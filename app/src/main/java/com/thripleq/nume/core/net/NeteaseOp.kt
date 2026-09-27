@@ -33,4 +33,12 @@ object NeteaseOp {
     const val LOGIN_REFRESH = 29
     const val SEND_CAPTCHA = 30
     const val LOGIN_CELLPHONE_CAPTCHA = 31
+    const val ARTIST_DETAIL = 32
+    const val ARTIST_SONGS = 33
+    const val ARTIST_ALBUMS = 34
+    const val ARTIST_DESC = 35
+    const val RADIO_DETAIL = 36
+    const val RADIO_PROGRAMS = 37
+    const val COMMENTS = 38
+    const val COMMENTS_HOT = 39
 }

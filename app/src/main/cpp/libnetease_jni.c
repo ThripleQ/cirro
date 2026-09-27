@@ -212,6 +212,14 @@ static ne_resp *dispatch(int op, int narg, const char *const a[]) {
         case 29: return ne_login_refresh();
         case 30: return ne_send_captcha(A(0), A(1));
         case 31: return ne_login_cellphone_captcha(A(0), A(1), A(2));
+        case 32: return ne_artist_detail(A(0));
+        case 33: return ne_artist_songs(A(0), A(1), A(2), A(3));
+        case 34: return ne_artist_albums(A(0), A(1), A(2));
+        case 35: return ne_artist_desc(A(0));
+        case 36: return ne_radio_detail(A(0));
+        case 37: return ne_radio_programs(A(0), A(1), A(2), A(3));
+        case 38: return ne_comments(A(0), A(1), A(2), A(3));
+        case 39: return ne_comments_hot(A(0), A(1), A(2), A(3));
         default: return NULL;
     }
 #undef A
