@@ -279,6 +279,11 @@ fun rememberPlayerState(
  * 高频进度订阅：250ms 轮询写入 positionMs。只有读取返回 [State] 的组合
  * （迷你条进度条、播放页 Slider/时间）才随轮询重组；不读它的组合零开销。
  * [positionFrozen] 用于拖动进度时冻结位置，避免轮询跟手指打架。
+ *
+ * **seek 立即对齐**：拖动时 [positionMs] 冻结在「拖动前」的旧值，若只靠 250ms
+ * 轮询，松手瞬间 Slider 会先回跳到这个旧值、下一个 tick 才跳到目标 —— 看起来就是
+ * 指针抖一下/闪一下。监听 [Player.Listener.onPositionDiscontinuity]（seek/跳转时
+ * 同步触发）即时写入新位置，松手前就把旧值换成目标，回跳消失。切歌/跳转同理。
  */
 @Composable
 fun rememberPlayerPosition(
@@ -287,13 +292,23 @@ fun rememberPlayerPosition(
 ): State<Long> {
     val positionMs = remember { mutableLongStateOf(player.currentPosition) }
     LaunchedEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                positionMs.longValue = newPosition.positionMs.coerceAtLeast(0L)
+            }
+        }
+        player.addListener(listener)
         try {
             while (true) {
                 if (!positionFrozen()) positionMs.longValue = player.currentPosition
                 delay(250)
             }
         } finally {
-            // 协程取消（LaunchedEffect 离开组合）时自然退出，不吞 CancellationException。
+            player.removeListener(listener)
         }
     }
     return positionMs
