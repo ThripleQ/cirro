@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.items
@@ -62,6 +63,20 @@ import com.thripleq.nume.ui.components.shellSharedCover
 import com.thripleq.nume.ui.home.HomeUiState
 import com.thripleq.nume.ui.theme.NumeShape
 
+/**
+ * 探索页四个横滑列表的滚动状态（播放歌单 / 榜单 / 每日推荐 / 最近播放）。
+ *
+ * 必须 hoist 到 [HomeScreen]：开合面板走 [androidx.compose.animation.AnimatedContent]，
+ * 关闭面板时网格会重新组合，写在 [HomeContent] 内的 `rememberLazyListState()` 会随组合树
+ * 销毁而回到 0——与纵向 [listState] 同样的坑。
+ */
+internal data class HomeRowStates(
+    val playlists: LazyListState,
+    val charts: LazyListState,
+    val daily: LazyGridState,
+    val recent: LazyGridState,
+)
+
 @Composable
 internal fun HomeContent(
     data: HomeUiState.Ready,
@@ -71,6 +86,7 @@ internal fun HomeContent(
     onWebLogin: () -> Unit,
     onRefresh: () -> Unit,
     listState: LazyListState,
+    rowStates: HomeRowStates,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
 ) {
@@ -89,7 +105,9 @@ internal fun HomeContent(
         if (daily != null) {
             item(key = "h_daily") { NumeSectionHeader("每日推荐歌曲") }
             if (daily.isNotEmpty()) {
-                item(key = "daily_pager") { SongRowGrid(tracks = daily, onPlay = onPlay) }
+                item(key = "daily_pager") {
+                    SongRowGrid(tracks = daily, onPlay = onPlay, state = rowStates.daily)
+                }
             } else {
                 item(key = "login_daily") { LoginPrompt(onWebLogin) }
             }
@@ -106,6 +124,7 @@ internal fun HomeContent(
                     keyOf = { it.id },
                     coverOf = { it.coverUrl },
                     nameOf = { it.name },
+                    state = rowStates.playlists,
                     shared = shared,
                     avScope = avScope,
                 ) { p, rect ->
@@ -125,6 +144,7 @@ internal fun HomeContent(
                     keyOf = { it.id },
                     coverOf = { it.coverUrl },
                     nameOf = { it.name },
+                    state = rowStates.charts,
                     shared = shared,
                     avScope = avScope,
                 ) { c, rect ->
@@ -138,7 +158,9 @@ internal fun HomeContent(
         if (recent != null) {
             item(key = "h_recent") { NumeSectionHeader("最近播放") }
             if (recent.isNotEmpty()) {
-                item(key = "recent_pager") { SongRowGrid(tracks = recent, onPlay = onPlay) }
+                item(key = "recent_pager") {
+                    SongRowGrid(tracks = recent, onPlay = onPlay, state = rowStates.recent)
+                }
             } else {
                 item(key = "login_recent") { LoginPrompt(onWebLogin) }
             }
@@ -179,11 +201,13 @@ private fun <T> CarouselRow(
     keyOf: (T) -> Any,
     coverOf: (T) -> String?,
     nameOf: (T) -> String,
+    state: LazyListState,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
     onClick: (T, Rect) -> Unit,
 ) {
     LazyRow(
+        state = state,
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -245,11 +269,13 @@ private val TrackRowHeight = 68.dp
 private fun SongRowGrid(
     tracks: List<Track>,
     onPlay: (List<Track>, Int) -> Unit,
+    state: LazyGridState,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val itemWidth = maxWidth * 0.475f
         val rows = minOf(4, tracks.size).coerceAtLeast(1)
         LazyHorizontalGrid(
+            state = state,
             rows = GridCells.Fixed(rows),
             modifier = Modifier
                 .fillMaxWidth()

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -64,6 +65,8 @@ fun HomeScreen(
     // 滚动位置 hoist：容器变换用 AnimatedContent 在「网格 ↔ 面板」间切换，关闭面板时
     // 网格会重新组合——不 hoist 就会跳回顶部。
     val listState = rememberLazyListState()
+    // 横滑列表状态同样 hoist（见 [HomeRowStates]）：面板开合会重组网格，留在内层会归零。
+    val rowStates = rememberRowStates()
     val bottomPad = islandClearance + 16.dp
 
     // 展开壳打开时通知上层收起底部导航（保留迷你播放条）；离开页面时复位。
@@ -111,6 +114,7 @@ fun HomeScreen(
                         onExpand = onExpand,
                         onWebLogin = onWebLogin,
                         onRefresh = onRefresh,
+                        rowStates = rowStates,
                         shared = shared,
                         avScope = scope,
                     )
@@ -138,6 +142,7 @@ fun HomeScreen(
                 onExpand = onExpand,
                 onWebLogin = onWebLogin,
                 onRefresh = onRefresh,
+                rowStates = rowStates,
                 shared = null,
                 avScope = null,
             )
@@ -169,6 +174,7 @@ internal data class ExpandTarget(
 private fun HomeBodyUi(
     state: HomeUiState,
     listState: LazyListState,
+    rowStates: HomeRowStates,
     bottomPadding: Dp,
     onPlay: (List<Track>, Int) -> Unit,
     onExpand: (ExpandTarget) -> Unit,
@@ -188,11 +194,21 @@ private fun HomeBodyUi(
             onWebLogin = onWebLogin,
             onRefresh = onRefresh,
             listState = listState,
+            rowStates = rowStates,
             shared = shared,
             avScope = avScope,
         )
     }
 }
+
+/** 探索页四个横滑列表的滚动状态，hoist 到 [HomeScreen]（见 [HomeRowStates] 注释）。 */
+@Composable
+private fun rememberRowStates(): HomeRowStates = HomeRowStates(
+    playlists = rememberLazyListState(),
+    charts = rememberLazyListState(),
+    daily = rememberLazyGridState(),
+    recent = rememberLazyGridState(),
+)
 
 /** 官方容器变换版的面板内容：直接渲染曲目列表（面板外壳/关闭键/scrim 由 [ShellPanel] 负责）。
  *  封面的 morph 由 [TrackListScreen] 的 banner 封面挂 [shellSharedCover] 完成（同歌手头像）。 */
