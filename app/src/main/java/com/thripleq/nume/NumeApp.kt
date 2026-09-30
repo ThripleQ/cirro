@@ -370,6 +370,7 @@ fun NumeApp() {
                         onOpenPlayer = ::openPlayer,
                         islandHeight = islandHeightDp,
                         onShellOpenChange = { shellOpen = it },
+                        shared = this@SharedTransitionLayout,
                         vm = profileVm,
                     )
                 }
