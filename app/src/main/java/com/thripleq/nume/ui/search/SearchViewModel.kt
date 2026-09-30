@@ -39,6 +39,8 @@ data class SearchUiState(
     val albums: List<SearchAlbum> = emptyList(),
     val artists: List<SearchArtist> = emptyList(),
     val error: Boolean = false,
+    /** 触底翻页失败：列表尾部显示「点此重试」而非静默消失。 */
+    val loadMoreFailed: Boolean = false,
 )
 
 /**
@@ -100,6 +102,14 @@ class SearchViewModel @Inject constructor(
         load(tab, reset = false)
     }
 
+    /** 首屏失败（error 空态）点此重试：当前分类同关键词重拉。 */
+    fun onRetry() {
+        val s = _uiState.value
+        if (s.active == null || !s.error) return
+        // 失败时 started 已被移除，直接 reset 拉取即可。
+        load(s.tab, reset = true)
+    }
+
     fun onClear() {
         jobs.values.forEach { it.cancel() }
         jobs.clear()
@@ -154,9 +164,9 @@ class SearchViewModel @Inject constructor(
         if (reset) {
             started.add(tab); done.remove(tab)
             clearTab(tab)
-            _uiState.update { it.copy(loading = true, error = false, loadingMore = false) }
+            _uiState.update { it.copy(loading = true, error = false, loadingMore = false, loadMoreFailed = false) }
         } else {
-            _uiState.update { it.copy(loadingMore = true) }
+            _uiState.update { it.copy(loadingMore = true, loadMoreFailed = false) }
         }
         jobs[tab]?.cancel()
         jobs[tab] = viewModelScope.launch {
@@ -174,13 +184,17 @@ class SearchViewModel @Inject constructor(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: Exception) {
-                // 失败不落 done，并把该分类移出 started，切回该页签时会自动重试。
-                started.remove(tab); done.remove(tab)
+                // 首屏失败（offset==0）：移出 started，切回该页签会自动整拉重试。
+                // 翻页失败（offset>0）：**保留 started 与已翻数据**——若移除，用户切走再切回
+                // 会走 reset 整拉，翻了几页的结果与滚动位置全部丢失；正确做法是留在原地，
+                // 尾部给「点此重试」（loadMoreFailed），offsets 未动故重试从同一页继续。
+                if (offset == 0) started.remove(tab)
                 _uiState.update { st ->
                     st.copy(
                         loading = if (st.tab == tab) false else st.loading,
                         loadingMore = false,
                         error = offset == 0,
+                        loadMoreFailed = offset > 0,
                     )
                 }
             }

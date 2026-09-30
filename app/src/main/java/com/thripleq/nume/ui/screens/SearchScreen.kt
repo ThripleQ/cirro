@@ -91,6 +91,7 @@ fun SearchScreen(
                 bottomPadding = bottomPadding,
                 onTab = vm::onTabSelect,
                 onLoadMore = vm::onLoadMore,
+                onRetry = vm::onRetry,
                 onPlayTrack = vm::onPlayTrack,
                 onOpenTracks = onOpenTracks,
                 onOpenArtist = onOpenArtist,

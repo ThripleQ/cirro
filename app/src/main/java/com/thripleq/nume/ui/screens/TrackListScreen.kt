@@ -275,7 +275,12 @@ fun TrackListScreen(
                     }
                 }
                 TrackListUiState.Empty -> CenteredHint("暂无曲目", MaterialTheme.colorScheme.onSurfaceVariant)
-                TrackListUiState.Error -> CenteredHint("曲目加载失败", MaterialTheme.colorScheme.error)
+                // 错误必须给出路：文案本身可点重试（与播客/评论/歌手页同交互语言）。
+                TrackListUiState.Error -> CenteredHint(
+                    "曲目加载失败，点此重试",
+                    MaterialTheme.colorScheme.error,
+                    onClick = { vm.retry() },
+                )
             }
             // 用派生布尔（!skeletonGone）而非直接读 skeletonAlpha.value：后者每帧变化都会让
             // 整个 TrackListScreen 重组（含 banner/网格），前者只在跨阈值时翻一次。
@@ -297,8 +302,13 @@ fun TrackListScreen(
 }
 
 @Composable
-private fun CenteredHint(text: String, color: Color) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+private fun CenteredHint(text: String, color: Color, onClick: (() -> Unit)? = null) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .let { m -> onClick?.let { m.clickable(onClick = it) } ?: m },
+        contentAlignment = Alignment.Center,
+    ) {
         Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
     }
 }

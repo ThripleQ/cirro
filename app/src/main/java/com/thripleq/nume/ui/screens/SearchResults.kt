@@ -59,6 +59,7 @@ internal fun ResultsContent(
     bottomPadding: Dp,
     onTab: (SearchTab) -> Unit,
     onLoadMore: () -> Unit,
+    onRetry: () -> Unit,
     onPlayTrack: (Int) -> Unit,
     onOpenTracks: (String, String, String, Rect) -> Unit,
     onOpenArtist: (String, String, String, Rect) -> Unit,
@@ -87,9 +88,17 @@ internal fun ResultsContent(
         val empty = !state.loading && isTabEmpty(state)
         when {
             state.loading -> SearchSkeleton()
-            empty -> SearchCenteredBox {
+            empty -> SearchCenteredBox(
+                // 错误必须给出路：空态文案可点重试（与播客/评论/歌手/曲目页同一交互语言）。
+                // 「请稍后重试」没给任何重试入口——用户只能重搜或切页签，不合理。
+                if (state.error) {
+                    Modifier.clickable { onRetry() }
+                } else {
+                    Modifier
+                },
+            ) {
                 Text(
-                    text = if (state.error) "搜索失败，请稍后重试" else "没有找到相关内容",
+                    text = if (state.error) "搜索失败，点此重试" else "没有找到相关内容",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -99,6 +108,7 @@ internal fun ResultsContent(
                     state = state,
                     listState = listState,
                     bottomPadding = bottomPadding,
+                    onLoadMore = onLoadMore,
                     onPlayTrack = onPlayTrack,
                     onOpenTracks = onOpenTracks,
                     onOpenArtist = onOpenArtist,
@@ -151,6 +161,7 @@ private fun ResultList(
     state: SearchUiState,
     listState: LazyListState,
     bottomPadding: Dp,
+    onLoadMore: () -> Unit,
     onPlayTrack: (Int) -> Unit,
     onOpenTracks: (String, String, String, Rect) -> Unit,
     onOpenArtist: (String, String, String, Rect) -> Unit,
@@ -253,6 +264,26 @@ private fun ResultList(
                         .padding(16.dp),
                     contentAlignment = Alignment.Center,
                 ) { CircularProgressIndicator(Modifier.size(22.dp)) }
+            }
+        } else if (state.loadMoreFailed) {
+            // 翻页失败不能静默：尾部 spinner 消失后列表看起来"到底了"，用户无从得知
+            // 还有下一页。给重试入口；LoadMoreWatcher 的 shouldLoad 没翻转不会自动重触发，
+            // 故不会与点击重试打架。
+            item(key = "load_more_failed") {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(NumeShape.Chip)
+                        .clickable { onLoadMore() }
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "加载失败，点此重试",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         }
     }

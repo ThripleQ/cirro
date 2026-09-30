@@ -60,10 +60,14 @@ class TrackListViewModel @Inject constructor(
 
     private var loadedKey: String? = null
 
+    // 上次加载参数：错误态"点此重试"要用同参重拉，不依赖 UI 再次传参。
+    private var lastArgs: Triple<TrackListSource, String, String>? = null
+
     fun load(source: TrackListSource, id: String, title: String) {
         val key = "${source.wire}:$id"
         if (loadedKey == key) return
         loadedKey = key
+        lastArgs = Triple(source, id, title)
         viewModelScope.launch {
             _uiState.value = TrackListUiState.Loading
             val collection = when (source) {
@@ -84,6 +88,13 @@ class TrackListViewModel @Inject constructor(
                 else -> TrackListUiState.Ready(collection)
             }
         }
+    }
+
+    /** 错误态重试：同参重拉（load() 有同 key 幂等门，先清 key）。 */
+    fun retry() {
+        val (source, id, title) = lastArgs ?: return
+        loadedKey = null
+        load(source, id, title)
     }
 
     fun onTrackClick(collection: TrackCollection, index: Int) {

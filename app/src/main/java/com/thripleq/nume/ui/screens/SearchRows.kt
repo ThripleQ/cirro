@@ -185,8 +185,11 @@ internal fun SearchCover(
 }
 
 @Composable
-internal fun SearchCenteredBox(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
+internal fun SearchCenteredBox(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
 }
 
 /** 搜索结果骨架：分类页签下方重复结果行（封面 + 标题/副标题）。四类页签行高一致，通用。 */
