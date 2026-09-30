@@ -83,6 +83,12 @@ fun RevealLayer(
     val density = LocalDensity.current
     val screenW = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
     val screenH = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    // 零尺寸窗口（窗口建立/折叠/多窗口收起的一帧）会让 screenW/H == 0，
+    // 内层 scaleX = start.width / screenW 变成 0/0 = NaN，整层画不出来。直接透传内容兜底。
+    if (screenW <= 0f || screenH <= 0f) {
+        content()
+        return
+    }
     val cornerPx = with(density) { cornerDp.dp.toPx() }
 
     // 内容首次布局完成才回调：调用方据此才启动进入动画，保证**第一个画出来的帧**
@@ -112,8 +118,10 @@ fun RevealLayer(
             // 屏幕空间：整层淡入淡出 + 失焦（半径是屏幕 px，不随窗口缩放变小）。
             .graphicsLayer {
                 val t = progress.value.coerceIn(0f, 1f)
-                // 强制离屏层：feather 的 DstIn 必须只作用于本层，否则会擦到父页面背景。
-                compositingStrategy = CompositingStrategy.Offscreen
+                // 只在转场期间用离屏层：feather 的 DstIn 必须只作用于本层，否则会擦到父页面背景。
+                // 落定后（t=1，feather 已归零、裁剪为全屏）恢复 Auto，不再整页每帧走离屏合成。
+                compositingStrategy =
+                    if (t < 1f) CompositingStrategy.Offscreen else CompositingStrategy.Auto
                 // 起点就**可见**（0.85 不透明 + 失焦 + 羽化）：窗口从被点对象处以软团出现，
                 // 而非透明到看不见、等长大了才冒出来——那正是"不挨边"的来源。
                 alpha = lerp(0.85f, 1f, t)

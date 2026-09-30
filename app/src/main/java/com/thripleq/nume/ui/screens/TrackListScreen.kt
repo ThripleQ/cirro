@@ -277,7 +277,9 @@ fun TrackListScreen(
                 TrackListUiState.Empty -> CenteredHint("暂无曲目", MaterialTheme.colorScheme.onSurfaceVariant)
                 TrackListUiState.Error -> CenteredHint("曲目加载失败", MaterialTheme.colorScheme.error)
             }
-            if (skeletonAlpha.value > 0.001f) {
+            // 用派生布尔（!skeletonGone）而非直接读 skeletonAlpha.value：后者每帧变化都会让
+            // 整个 TrackListScreen 重组（含 banner/网格），前者只在跨阈值时翻一次。
+            if (!skeletonGone) {
                 TrackListSkeleton(
                     showTopBar = showTopBar,
                     coverInsetFollowsShell = coverInsetFollowsShell,

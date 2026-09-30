@@ -86,6 +86,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
@@ -160,6 +161,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
@@ -383,6 +386,19 @@ class PlayerDockState internal constructor(
     /** 手势行程（px）：从迷你条胶囊到「全屏」的展开总距（卡片是它的一半）。 */
     var travelPx by mutableFloatStateOf(1f)
 
+    /**
+     * 定时关闭到点时刻（epoch ms）；0 = 未开启。
+     *
+     * 放在常驻的 [PlayerDockState] 里、由 [PlayerDock] 里的 effect 驱动倒数——而不是放在只在
+     * 播放页组合时才存在的芯片里。否则把播放页收起成迷你条会一并取消那个 effect，计时停摆、
+     * 到点也不会暂停（旧实现的状态就挂在 [PlayerPageContent] 的 `SleepTimerChip` 里）。
+     */
+    var sleepEndAt by mutableLongStateOf(0L)
+
+    /** 三档锚点是否已注册（[PlayerDock] 布局后置 true）。[open] 前等它，避免 animateTo 未注册锚点。 */
+    var anchorsReady by mutableStateOf(false)
+        internal set
+
     /** 胶囊展开进度 0..2（[0,1]=胶囊→卡片，[1,2]=卡片→全屏），由 [AnchoredDraggableState.offset] 归一化。
      *  只应在 draw 阶段（graphicsLayer）读，勿在组合读。 */
     val progress: Float
@@ -411,22 +427,17 @@ class PlayerDockState internal constructor(
     fun open(toFull: Boolean = false) {
         animJob?.cancel()
         animJob = scope.launch {
+            val target = if (toFull) PlayerSheet.Full else PlayerSheet.Half
             if (!open) {
                 open = true
                 // 等一帧，等壳（PlayerPage）组合就位，从当前 offset 续跑展开，
                 // 而不是先 snap 到 0 再展开——第一帧就是迷你条本身。
                 withFrameNanos { }
-                sheetState.animateTo(
-                    if (toFull) PlayerSheet.Full else PlayerSheet.Half,
-                    if (toFull) SPRING_FULL else SPRING_CLOSE,
-                )
-            } else {
-                // 已打开：直接动画到目标档。
-                sheetState.animateTo(
-                    if (toFull) PlayerSheet.Full else PlayerSheet.Half,
-                    if (toFull) SPRING_FULL else SPRING_CLOSE,
-                )
             }
+            // 锚点由 [PlayerDock] 布局后经 updateAnchors 注册，首个 LaunchedEffect 未必已跑过；
+            // animateTo 到尚未注册的锚点会抛异常（崩溃）。等锚点就绪再跑。
+            snapshotFlow { anchorsReady }.first { it }
+            sheetState.animateTo(target, if (toFull) SPRING_FULL else SPRING_CLOSE)
         }
     }
 
@@ -513,9 +524,31 @@ fun PlayerDock(
     }
 
     // 总高上报：实际测量 dock 高度（含底部手势条 inset）。
+    // 导航/操作行是 AnimatedVisibility：其 200ms 收放会让 dockHeightPx **每帧变化**，若每帧
+    // 上报，父级 islandHeight→各屏底部 padding 会跟着每帧重组/重排（展开壳时尤其明显）。
+    // collectLatest 把「最后一帧之后的稳定值」延迟一小段再上报——动画期间只发一次稳态值。
     var dockHeightPx by remember { mutableIntStateOf(0) }
-    LaunchedEffect(dockHeightPx) {
-        if (dockHeightPx > 0) onIslandHeightChange(with(density) { dockHeightPx.toDp() }.value)
+    LaunchedEffect(Unit) {
+        snapshotFlow { dockHeightPx }.collectLatest { h ->
+            if (h > 0) {
+                delay(120)
+                onIslandHeightChange(with(density) { h.toDp() }.value)
+            }
+        }
+    }
+
+    // 定时关闭倒数：放在**始终常驻的 PlayerDock**（不是只在播放页组合的芯片）里，播放页收起成
+    // 迷你条后计时仍继续。墙钟判定，进程挂起/休眠不漂移。
+    LaunchedEffect(state.sleepEndAt) {
+        if (state.sleepEndAt == 0L) return@LaunchedEffect
+        while (true) {
+            if (System.currentTimeMillis() >= state.sleepEndAt) {
+                player.pause()
+                state.sleepEndAt = 0L
+                return@LaunchedEffect
+            }
+            delay(1000)
+        }
     }
 
     // 导航行被收起时 dock 变矮（只留迷你条）。播放页几何按「导航可见」的名义 dock 高度算，
@@ -544,6 +577,7 @@ fun PlayerDock(
             },
             newTarget = state.sheetState.currentValue,
         )
+        state.anchorsReady = true
     }
 
     // 组合与否由锚点状态驱动：迷你条一拖动（offset>0）就组合播放面；
@@ -1185,6 +1219,11 @@ private fun PlayerPage(
             }
         }
     }
+    // 卸载时务必恢复系统栏：播放面可能被**直接移除**而非经收起动画（如进网页登录时
+    // PlayerDock 整体卸载），那样上面的 snapshotFlow 不会再跑到 show 分支，导航栏会一直隐藏。
+    DisposableEffect(controller) {
+        onDispose { controller?.show(WindowInsetsCompat.Type.navigationBars()) }
+    }
     // 返回键收起（仅全屏面在场时生效）。
     BackHandler { state.close() }
 
@@ -1234,6 +1273,8 @@ private fun PlayerPage(
                 contentProgress = p,
                 shellHeightPx = rect.height,
                 shellWidthPx = rect.width,
+                sleepEndAt = state.sleepEndAt,
+                onSleepEndAtChange = { state.sleepEndAt = it },
                 onPlaceholderAction = onPlaceholderAction,
                 onComments = onComments,
                 modifier = Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha },
@@ -1289,6 +1330,8 @@ private fun PlayerPageContent(
     contentProgress: Float,
     shellHeightPx: Float,
     shellWidthPx: Float,
+    sleepEndAt: Long,
+    onSleepEndAtChange: (Long) -> Unit,
     onPlaceholderAction: () -> Unit,
     onComments: (Rect) -> Unit,
     modifier: Modifier = Modifier,
@@ -1309,6 +1352,11 @@ private fun PlayerPageContent(
     // 进度是高频状态：单独订阅（拖动时冻结，避免轮询跟手指打架）。
     val positionMs by rememberPlayerPosition(player) { seekPending }
     val rangeMax = state.durationMs.toFloat().coerceAtLeast(1f)
+    // 拖动中途若曲目结束/切歌使 durationMs 归零，Slider 会被移除、onValueChangeFinished 不再触发，
+    // seekPending 会永久卡住（进度轮询被冻结在拖动值）。这里兜底复位。
+    LaunchedEffect(seekPending, state.durationMs) {
+        if (seekPending && state.durationMs <= 0L) seekPending = false
+    }
 
     val density = LocalDensity.current
     val sc = ((contentProgress - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
@@ -1582,7 +1630,7 @@ private fun PlayerPageContent(
                 active = state.repeatMode != Player.REPEAT_MODE_OFF,
                 onClick = { PlayerHolder.cycleRepeat(player) },
             )
-            SleepTimerChip(player = player)
+            SleepTimerChip(endAt = sleepEndAt, onEndAtChange = onSleepEndAtChange)
             FullChip(
                 icon = Icons.Filled.MoreVert,
                 contentDescription = "更多",
@@ -1645,21 +1693,8 @@ private fun FullChip(
  * 而不是 delay 累加 —— 进程被挂起/系统休眠时 delay 会漂移，墙钟不会。
  */
 @Composable
-private fun SleepTimerChip(player: Player) {
-    var endAt by remember { mutableLongStateOf(0L) }
+private fun SleepTimerChip(endAt: Long, onEndAtChange: (Long) -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
-
-    LaunchedEffect(endAt) {
-        if (endAt == 0L) return@LaunchedEffect
-        while (true) {
-            if (System.currentTimeMillis() >= endAt) {
-                player.pause()
-                endAt = 0L
-                return@LaunchedEffect
-            }
-            delay(1000)
-        }
-    }
 
     Box {
         FullChip(
@@ -1674,8 +1709,10 @@ private fun SleepTimerChip(player: Player) {
                     DropdownMenuItem(
                         text = { Text(label) },
                         onClick = {
-                            endAt = if (min == 0) 0L
-                            else System.currentTimeMillis() + min * 60_000L
+                            onEndAtChange(
+                                if (min == 0) 0L
+                                else System.currentTimeMillis() + min * 60_000L,
+                            )
                             menuOpen = false
                         },
                     )
@@ -1689,6 +1726,7 @@ private fun SleepTimerChip(player: Player) {
 @Composable
 private fun PlayerQueueSheet(player: Player, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
     var count by remember { mutableIntStateOf(player.mediaItemCount) }
     var current by remember { mutableIntStateOf(player.currentMediaItemIndex) }
     LaunchedEffect(player) {
@@ -1714,7 +1752,14 @@ private fun PlayerQueueSheet(player: Player, onDismiss: () -> Unit) {
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    // onDismissRequest 先跑完 sheet 自己的 hide 动画再移除组合，否则面板会被当场拆掉、
+    // 看不出收起动画（直接用 onDismiss 的常见坑）。
+    ModalBottomSheet(
+        onDismissRequest = {
+            scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+        },
+        sheetState = sheetState,
+    ) {
         Text(
             text = "播放队列 · ${if (count == 0) 0 else current + 1}/$count",
             style = MaterialTheme.typography.titleMedium,
@@ -1723,6 +1768,8 @@ private fun PlayerQueueSheet(player: Player, onDismiss: () -> Unit) {
         )
         LazyColumn(modifier = Modifier.fillMaxWidth()) {
             items(count) { i ->
+                // count 来自 500ms 轮询，可能比真实时间线短暂偏大；越界取值会抛。
+                if (i >= player.mediaItemCount) return@items
                 val meta = player.getMediaItemAt(i).mediaMetadata
                 val isCurrent = i == current
                 Row(
@@ -1775,6 +1822,7 @@ private fun PlayerQueueSheet(player: Player, onDismiss: () -> Unit) {
 private fun PlayerSettingsSheet(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
     var quality by remember { mutableStateOf(PlaybackPreferences.quality(context)) }
     val labels = mapOf(
         "standard" to "标准",
@@ -1783,7 +1831,12 @@ private fun PlayerSettingsSheet(onDismiss: () -> Unit) {
         "lossless" to "无损",
     )
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    ModalBottomSheet(
+        onDismissRequest = {
+            scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+        },
+        sheetState = sheetState,
+    ) {
         Text(
             text = "播放音质",
             style = MaterialTheme.typography.titleMedium,

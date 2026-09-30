@@ -634,7 +634,9 @@ fun CoverExpandShell(
         with(density) { 32.dp.toPx() }
     val coverLeftPx = with(density) { 16.dp.toPx() }
     val coverTopPx = statusBarTopPx + with(density) { 4.dp.toPx() }
-    val coverRect = remember {
+    // 按影响几何的输入做 key：配置/insets 变化（多窗口缩放、折叠展开、显示切换）时重算，
+    // 否则 hero 终点停在旧矩形、与真实 banner 错位。
+    val coverRect = remember(coverLeftPx, coverTopPx, coverSidePx) {
         mutableStateOf<Rect?>(
             Rect(coverLeftPx, coverTopPx, coverLeftPx + coverSidePx, coverTopPx + coverSidePx),
         )
