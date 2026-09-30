@@ -48,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -86,7 +87,9 @@ import kotlinx.coroutines.flow.collect
 
 /** 全屏播放面：壳（surfaceContainerHighest + 顶 18dp 圆角 + 1dp 阴影）从迷你条胶囊
  *  原位伸展成悬浮卡、再盖满全屏；壳顶停在状态栏下沿（与 ExpandableShell 面板一致）。
- *  几何读 progress 在组合里（与 ExpandableShell 同构，壳随 progress 每帧布局）。 */
+ *
+ *  性能约定：**内容不随每帧 progress 重组**——内容按到达的档位（卡片 / 全屏）布局、跨档才重组一次，
+ *  显隐在 graphicsLayer 里读 progress；只有壳几何随 progress 每帧布局（一个 Box，开销小）。 */
 @Composable
 internal fun PlayerPage(
     state: PlayerDockState,
@@ -206,10 +209,29 @@ internal fun PlayerPage(
         MaterialTheme.colorScheme.surfaceContainerHighest,
         t1,
     )
-    // 内容淡入：扩展段气泡长起来时内容浮现，分裂完成（p=1）已基本可见。
-    val contentAlpha = (p / SPLIT).coerceIn(0f, 1f)
-    // 顶部拉手/收起：分裂成卡后才浮现。
-    val headerAlpha = splitT
+    // 「重组滞后」：内容不再随每帧 progress 重组。
+    // - 显隐（内容 alpha / 顶栏 alpha）在 graphicsLayer 里读 progress（draw 阶段），不参与组合；
+    // - 内容按**已到达的档位**（卡片 / 全屏）布局，跨档才重组一次；胶囊→卡片全程用卡片档尺寸、
+    //   由壳裁剪揭示（与 CoverExpandShell 的「固定终态排版 + 壳裁剪」同一套），
+    //   不再让封面随壳高度逐帧重算。
+    val contentLayer = remember {
+        Modifier.fillMaxSize().graphicsLayer {
+            alpha = (state.progress / SPLIT).coerceIn(0f, 1f)
+        }
+    }
+    val headerLayer = remember {
+        Modifier.fillMaxWidth().graphicsLayer {
+            val t0 = state.progress.coerceIn(0f, 1f)
+            alpha = ((t0 - SPLIT) / (1f - SPLIT)).coerceIn(0f, 1f)
+        }
+    }
+    // 跨过卡片锚点才切「全屏档」，否则「卡片档」——保证两次跨档各只重组一次。
+    val isFullLayout by remember { derivedStateOf { state.progress > HALF_ANCHOR_P } }
+    val cardRect = remember(fullWidthPx, fullHeightPx, dockHeightPx) { shellRect(HALF_ANCHOR_P) }
+    val fullRect = remember(fullWidthPx, fullHeightPx) { shellRect(2f) }
+    val contentRect = if (isFullLayout) fullRect else cardRect
+    val contentProgress = if (isFullLayout) 2f else HALF_ANCHOR_P
+    val onSleepChange = remember { { t: Long -> state.sleepEndAt = t } }
 
     // 沉浸：只在接近全屏时隐藏系统导航栏（半高时保持显示，dock 的 navigationBarsPadding
     // 布局稳定）；收起/回落到半高时恢复。用 snapshotFlow 轮询 progress，不引重组。
@@ -273,27 +295,23 @@ internal fun PlayerPage(
                 ),
         ) {
         // 壳内两层叠放（同 Box）：
-        //   1. 播放页内容（alpha = contentAlpha）：扩展段气泡长起来时浮现。
-        //   2. 顶部拉手/收起（alpha = contentAlpha）：分裂成卡/全屏时才有。
+        //   1. 播放页内容（alpha 由 contentLayer 在 draw 阶段按 progress 决定）：扩展段气泡长起来时浮现。
+        //   2. 顶部拉手/收起（alpha 由 headerLayer 同法决定）：分裂成卡/全屏时才有。
         // 迷你条副本已删：壳只画「迷你条上方」的屏幕区，dock 里的真实迷你条
         // 全程原位可见，不需要副本衔接（分裂缝由卡片底留 10dp 表达）。
         Box(Modifier.fillMaxSize()) {
             PlayerPageContent(
                 player = player,
-                contentProgress = p,
-                shellHeightPx = rect.height,
-                shellWidthPx = rect.width,
+                contentProgress = contentProgress,
+                shellHeightPx = contentRect.height,
+                shellWidthPx = contentRect.width,
                 sleepEndAt = state.sleepEndAt,
-                onSleepEndAtChange = { state.sleepEndAt = it },
+                onSleepEndAtChange = onSleepChange,
                 onPlaceholderAction = onPlaceholderAction,
                 onComments = onComments,
-                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha },
+                modifier = contentLayer,
             )
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer { alpha = headerAlpha },
-            ) {
+            Box(headerLayer) {
                 // 顶部：拉手 + 收起箭头。
                 Box(
                     Modifier

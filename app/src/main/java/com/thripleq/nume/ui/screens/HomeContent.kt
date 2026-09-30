@@ -2,14 +2,12 @@ package com.thripleq.nume.ui.screens
 
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,10 +21,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
@@ -35,7 +33,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,8 +42,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -92,7 +87,7 @@ internal fun HomeContent(
         if (daily != null) {
             item(key = "h_daily") { SectionHeader("每日推荐歌曲") }
             if (daily.isNotEmpty()) {
-                item(key = "daily_pager") { PagedTrackSection(tracks = daily, onPlay = onPlay) }
+                item(key = "daily_pager") { SongRowGrid(tracks = daily, onPlay = onPlay) }
             } else {
                 item(key = "login_daily") { LoginPrompt(onWebLogin) }
             }
@@ -141,7 +136,7 @@ internal fun HomeContent(
         if (recent != null) {
             item(key = "h_recent") { SectionHeader("最近播放") }
             if (recent.isNotEmpty()) {
-                item(key = "recent_pager") { PagedTrackSection(tracks = recent, onPlay = onPlay) }
+                item(key = "recent_pager") { SongRowGrid(tracks = recent, onPlay = onPlay) }
             } else {
                 item(key = "login_recent") { LoginPrompt(onWebLogin) }
             }
@@ -248,13 +243,13 @@ private fun BigCoverCard(
 
 /** 小封面单曲行：点了直接播（无展开动效）。 */
 @Composable
-private fun SmallTrackRow(track: Track, onClick: () -> Unit) {
+private fun SmallTrackRow(track: Track, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val context = LocalContext.current
     val model = remember(track.artworkUrl) {
         track.artworkUrl?.let { ImageRequest.Builder(context).data(it).size(96).build() }
     }
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .numeEntrySurface()
             .clickable(onClick = onClick)
@@ -312,66 +307,39 @@ private fun SmallTrackRow(track: Track, onClick: () -> Unit) {
     }
 }
 
-/** 每页固定 [TRACKS_PER_PAGE] 首的整页翻页列表：页面吸附，左右滑动切页；多页时显示页码点。
- *  首屏即满页，Pager 高度由第一页确定，后续不满的尾页顶对齐，翻页时高度不跳动。 */
-private const val TRACKS_PER_PAGE = 4
+/** 单曲区块行高（封面 52dp + 上下 8dp）。 */
+private val TrackRowHeight = 68.dp
 
+/**
+ * 单曲区块：横向滚动的多行网格（最多 4 行），每列占屏 ~47.5%——YT Music / InnerTune 的
+ * 「Quick picks」式布局：一屏内把整组歌摊开、横向滑查看更多，比整页翻页更易扫读。
+ * 布局参照 InnerTune（z-huang/InnerTune，Material 3 YT Music 客户端）的 HomeScreen Quick Picks。
+ */
 @Composable
-private fun PagedTrackSection(
+private fun SongRowGrid(
     tracks: List<Track>,
     onPlay: (List<Track>, Int) -> Unit,
 ) {
-    val pageCount = (tracks.size + TRACKS_PER_PAGE - 1) / TRACKS_PER_PAGE
-    val pagerState = rememberPagerState(pageCount = { pageCount })
-    Column(Modifier.fillMaxWidth()) {
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxWidth(),
-        ) { page ->
-            val start = page * TRACKS_PER_PAGE
-            val end = (start + TRACKS_PER_PAGE).coerceAtMost(tracks.size)
-            Column(Modifier.fillMaxWidth()) {
-                for (i in start until end) {
-                    val track = tracks[i]
-                    SmallTrackRow(track) { onPlay(tracks, i) }
-                }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val itemWidth = maxWidth * 0.475f
+        val rows = minOf(4, tracks.size).coerceAtLeast(1)
+        LazyHorizontalGrid(
+            rows = GridCells.Fixed(rows),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(TrackRowHeight * rows),
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            gridItemsIndexed(
+                items = tracks,
+                key = { _, track -> track.id },
+            ) { index, track ->
+                SmallTrackRow(
+                    track = track,
+                    modifier = Modifier.width(itemWidth),
+                ) { onPlay(tracks, index) }
             }
-        }
-        if (pageCount > 1) PagerDots(pageCount = pageCount, current = pagerState.currentPage)
-    }
-}
-
-/** 页码点：选中主色放大，其余淡色。尺寸/颜色带 150ms 过渡 —— 翻页硬切会显得廉价。 */
-@Composable
-private fun PagerDots(pageCount: Int, current: Int) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        repeat(pageCount) { i ->
-            val selected = i == current
-            // 尺寸走 graphicsLayer 缩放（选中 1.16x），不逐帧重组布局尺寸。
-            // 动画值 0=未选中 1=选中，用 tween 而非 spring：页码点是状态指示，不是交互反馈。
-            val sel = remember { Animatable(if (selected) 1f else 0f) }
-            LaunchedEffect(selected) {
-                sel.animateTo(if (selected) 1f else 0f, tween(150, easing = FastOutSlowInEasing))
-            }
-            val dotColor = MaterialTheme.colorScheme.run { lerp(outlineVariant, primary, sel.value) }
-            Box(
-                Modifier
-                    .padding(horizontal = 3.dp)
-                    .size(6.dp)
-                    .graphicsLayer {
-                        val s = 1f + 0.16f * sel.value
-                        scaleX = s
-                        scaleY = s
-                    }
-                    .clip(CircleShape)
-                    .background(dotColor),
-            )
         }
     }
 }
