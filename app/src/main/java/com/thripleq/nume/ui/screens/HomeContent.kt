@@ -5,6 +5,7 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -47,6 +49,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -90,12 +93,23 @@ internal fun HomeContent(
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
 ) {
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomPadding),
+    // 顶层铺 `surfaceContainer` 当「标题条」底色，内容是一张 `surface` 圆角纸：纸的顶角
+    // 圆角把底下的容器色露出来 —— 就是状态栏那条容器色 + 下方圆角内容的关系（用户参照）。
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        item(key = "topbar") { HomeTopBar(onRefresh) }
+        HomeTopBar(onRefresh)
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(RoundedCornerShape(topStart = HomeSheetRadius, topEnd = HomeSheetRadius))
+                .background(MaterialTheme.colorScheme.surface),
+            contentPadding = PaddingValues(bottom = bottomPadding),
+        ) {
 
         // 逐块渲染：null = 这块还没就绪，整个区块（含标题）不显示，避免未就绪
         // 时先闪出空标题/登录引导；就绪后再按是否有内容决定渲染。
@@ -166,24 +180,40 @@ internal fun HomeContent(
             }
         }
     }
+    }
 }
 
+/** 内容圆角纸的顶角半径（状态栏容器色会从两角露出）。 */
+internal val HomeSheetRadius = 28.dp
+
+/**
+ * 钉在顶部的「探索」大标题条：本身透明，铺在 [HomeContent] 顶层的 `surfaceContainer`
+ * 之上；下方 [LazyColumn] 那张 `surface` 圆角纸的顶角会把容器色露出来。标题固定，内容
+ * 在圆角纸里滚。
+ */
 @Composable
 private fun HomeTopBar(onRefresh: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 4.dp, top = 20.dp, bottom = 4.dp),
+            .statusBarsPadding()
+            .padding(start = 24.dp, end = 8.dp, top = 0.dp, bottom = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "探索",
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.headlineSmall.copy(
+                // 去掉行高上下多余的 leading，让字的上沿贴到状态栏（否则字上方还留着一条空隙）。
+                lineHeightStyle = LineHeightStyle(
+                    alignment = LineHeightStyle.Alignment.Center,
+                    trim = LineHeightStyle.Trim.Both,
+                ),
+            ),
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
         )
-        IconButton(onClick = onRefresh) {
+        IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
             Icon(
                 Icons.Filled.Refresh,
                 contentDescription = "刷新",

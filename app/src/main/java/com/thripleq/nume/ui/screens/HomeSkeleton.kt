@@ -1,18 +1,24 @@
 package com.thripleq.nume.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.thripleq.nume.ui.components.NumeMediaRowSkeleton
@@ -24,19 +30,22 @@ import com.valentinilk.shimmer.shimmer
 
 /* ── 加载骨架 ─────────────────────────────────────────── */
 
-/** 探索页骨架：与 [HomeContent] 同构——顶栏 + 区块标题 + 横滑大封面卡 + 单曲行。 */
+/** 探索页骨架：与 [HomeContent] 同构——容器色标题条 + `surface` 圆角纸（区块标题 +
+ *  横滑大封面卡 + 单曲行）。 */
 @Composable
 internal fun HomeSkeleton(bottomPadding: Dp) {
     Column(
         Modifier
             .fillMaxSize()
-            .shimmer()
-            .padding(bottom = bottomPadding),
+            .background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
+        // 标题条骨架与 [HomeTopBar] 同构：透明铺在容器色上、statusBarsPadding。
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
+                .statusBarsPadding()
+                .height(28.dp)
+                .padding(start = 24.dp, end = 8.dp, top = 0.dp, bottom = 0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SkeletonLine(widthFraction = 0.24f, height = 28.dp, shape = NumeShape.Chip)
@@ -44,17 +53,28 @@ internal fun HomeSkeleton(bottomPadding: Dp) {
             SkeletonBox(Modifier.size(28.dp), CircleShape)
         }
 
-        NumeSectionHeaderSkeleton()
-        repeat(4) { NumeMediaRowSkeleton() }
+        // 内容圆角纸，与真内容的 LazyColumn 同形。
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(RoundedCornerShape(topStart = HomeSheetRadius, topEnd = HomeSheetRadius))
+                .background(MaterialTheme.colorScheme.surface)
+                .shimmer()
+                .padding(bottom = bottomPadding),
+        ) {
+            NumeSectionHeaderSkeleton()
+            repeat(4) { NumeMediaRowSkeleton() }
 
-        NumeSectionHeaderSkeleton()
-        SkeletonCarousel()
+            NumeSectionHeaderSkeleton()
+            SkeletonCarousel()
 
-        NumeSectionHeaderSkeleton()
-        SkeletonCarousel()
+            NumeSectionHeaderSkeleton()
+            SkeletonCarousel()
 
-        NumeSectionHeaderSkeleton()
-        repeat(4) { NumeMediaRowSkeleton() }
+            NumeSectionHeaderSkeleton()
+            repeat(4) { NumeMediaRowSkeleton() }
+        }
     }
 }
 
