@@ -4,6 +4,7 @@ import com.thripleq.nume.ui.theme.Motion
 import com.thripleq.nume.ui.theme.NumeShape
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -60,6 +61,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -314,9 +316,7 @@ fun PlayerDock(
                     NavRow(
                         selected = selected,
                         onSelect = onSelectTab,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(64.dp),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -560,67 +560,102 @@ internal fun SpectrumPlaceholder() {
     }
 }
 
-/** The tab row: evenly split tabs, selected one on a theme-color pill.
- * M3 Expressive 导航栏：选中 = secondaryContainer pill + onSecondaryContainer 图标,
- * 未选 = onSurfaceVariant 灰图标, 图标+标签竖排。 */
+/**
+ * M3 **Expressive** 导航项：选中 = 一颗品牌色实底胶囊，**图标 + 文字一起装进胶囊**
+ * （不是官方经典导航栏那种"图标套小胶囊、文字在下方"）；未选 = 只留描边图标。
+ * 参考作品：Rhythm（Material You 播放器）的浮动底栏。胶囊里带标签，才读得出"这是当前项、
+ * 且是一颗按钮"。宽高用填充色 transition，切换时胶囊在格内淡入/展开。
+ * [label] 为 null 时用于操作行（纯图标）。
+ */
 @Composable
-internal fun NavRow(
-    selected: BottomTab,
-    onSelect: (BottomTab) -> Unit,
+private fun DockNavPill(
+    selected: Boolean,
+    icon: ImageVector,
+    contentDescription: String,
+    label: String?,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pill = NumeShape.Pill
-    val haptics = LocalHapticFeedback.current
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
+        label = "navContainerColor",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
+        label = "navContentColor",
+    )
     Row(
-        modifier = modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+        modifier = modifier
+            .height(40.dp)
+            .clip(pill)
+            .background(containerColor, pill)
+            .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BottomTab.entries.forEach { tab ->
-            val isSelected = tab == selected
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(pill)
-                    .background(if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
-                    .clickable {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onSelect(tab)
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Icon(
-                        imageVector = tab.icon,
-                        contentDescription = tab.label,
-                        tint = if (isSelected) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = tab.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isSelected) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = contentColor,
+                modifier = Modifier.size(24.dp),
+            )
+            if (label != null) {
+                AnimatedVisibility(visible = selected) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = contentColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Clip,
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-/** 列表操作行：与 [NavRow] 同构——均分岛宽、胶囊圆角弧与岛平行、图标居中。
- *  播放 = secondaryContainer 胶囊（对应导航"选中"pill）；收藏 / 评论 = 透明（对应"未选中"）。 */
+/** The tab row: three equal slots, each a [DockNavPill]（仅选中项展开出文字）。 */
+@Composable
+internal fun NavRow(
+    selected: BottomTab,
+    onSelect: (BottomTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        modifier = modifier.padding(horizontal = 10.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BottomTab.entries.forEach { tab ->
+            val isSelected = tab == selected
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                DockNavPill(
+                    selected = isSelected,
+                    icon = if (isSelected) tab.iconSelected else tab.icon,
+                    contentDescription = tab.label,
+                    label = tab.label,
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onSelect(tab)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** 列表操作行：与 [NavRow] 同构的 Expressive 胶囊（纯图标、无标签）。
+ *  播放 = 选中实底胶囊；收藏 / 评论 = 透明描边图标。 */
 @Composable
 internal fun ActionNavRow(
     onPlayAll: () -> Unit,
@@ -628,63 +663,41 @@ internal fun ActionNavRow(
     onComments: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val pill = NumeShape.Pill
     val haptics = LocalHapticFeedback.current
     var commentRect by remember { mutableStateOf(Rect.Zero) }
     Row(
-        modifier = modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+        modifier = modifier.padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .clip(pill)
-                .background(Color.Transparent)
-                .clickable { onPlaceholderAction() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Filled.Add,
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            DockNavPill(
+                selected = false,
+                icon = Icons.Filled.Add,
                 contentDescription = "收藏",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
+                label = null,
+                onClick = onPlaceholderAction,
             )
         }
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .clip(pill)
-                .background(MaterialTheme.colorScheme.secondaryContainer)
-                .clickable {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            DockNavPill(
+                selected = true,
+                icon = Icons.Filled.PlayArrow,
+                contentDescription = "播放",
+                label = null,
+                onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     onPlayAll()
                 },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Filled.PlayArrow,
-                contentDescription = "播放",
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(24.dp),
             )
         }
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .clip(pill)
-                .background(Color.Transparent)
-                .onGloballyPositioned { commentRect = it.boundsInWindow() }
-                .clickable { onComments(commentRect) },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Filled.Chat,
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            DockNavPill(
+                selected = false,
+                icon = Icons.Filled.Chat,
                 contentDescription = "评论",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
+                label = null,
+                onClick = { onComments(commentRect) },
+                modifier = Modifier.onGloballyPositioned { commentRect = it.boundsInWindow() },
             )
         }
     }

@@ -4,6 +4,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,11 +26,21 @@ import com.thripleq.nume.Profile
 import com.thripleq.nume.Search
 import kotlinx.coroutines.delay
 
-/** The top-level tabs shown in the docked capsule. */
-enum class BottomTab(val route: Any, val label: String, val icon: ImageVector) {
-    ExploreTab(route = Home, label = "探索", icon = Icons.Filled.Explore),
-    SearchTab(route = Search, label = "搜索", icon = Icons.Filled.Search),
-    ProfileTab(route = Profile, label = "我的", icon = Icons.Filled.Person),
+/**
+ * The top-level tabs shown in the docked capsule.
+ *
+ * [icon] 为未选中态（描边）、[iconSelected] 为选中态（实心）：M3 导航栏惯例——
+ * 选中换实心图标，配合指示胶囊把"当前项"立起来。
+ */
+enum class BottomTab(
+    val route: Any,
+    val label: String,
+    val icon: ImageVector,
+    val iconSelected: ImageVector,
+) {
+    ExploreTab(route = Home, label = "探索", icon = Icons.Outlined.Explore, iconSelected = Icons.Filled.Explore),
+    SearchTab(route = Search, label = "搜索", icon = Icons.Outlined.Search, iconSelected = Icons.Filled.Search),
+    ProfileTab(route = Profile, label = "我的", icon = Icons.Outlined.Person, iconSelected = Icons.Filled.Person),
 }
 
 /** Live snapshot of the shared [Player] for the mini player bar. */
