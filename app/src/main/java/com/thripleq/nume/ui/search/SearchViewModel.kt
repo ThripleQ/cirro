@@ -41,6 +41,8 @@ data class SearchUiState(
     val error: Boolean = false,
     /** 触底翻页失败：列表尾部显示「点此重试」而非静默消失。 */
     val loadMoreFailed: Boolean = false,
+    /** 最近搜索关键词（最新的在前），落地页展示；SharedPreferences 持久化。 */
+    val history: List<String> = emptyList(),
 )
 
 /**
@@ -60,6 +62,41 @@ class SearchViewModel @Inject constructor(
     private val _openPlayer = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
     val openPlayer: SharedFlow<Unit> = _openPlayer.asSharedFlow()
 
+    // 最近搜索：换行分隔的字符串（保留顺序，Set 会乱序）。
+    private val historyPrefs =
+        context.getSharedPreferences("search_history", Context.MODE_PRIVATE)
+
+    init {
+        _uiState.update { it.copy(history = readHistory()) }
+    }
+
+    private fun readHistory(): List<String> =
+        historyPrefs.getString(KEY_HISTORY, "").orEmpty()
+            .split('\n')
+            .filter { it.isNotBlank() }
+
+    private fun pushHistory(keyword: String) {
+        val kw = keyword.trim()
+        if (kw.isEmpty()) return
+        val next = (listOf(kw) + readHistory().filter { it != kw }).take(MAX_HISTORY)
+        historyPrefs.edit().putString(KEY_HISTORY, next.joinToString("\n")).apply()
+        _uiState.update { it.copy(history = next) }
+    }
+
+    /** 点历史词：直接以该词搜索（并把它提到最前）。 */
+    fun onHistoryClick(keyword: String) {
+        if (keyword.isBlank()) return
+        _uiState.update { it.copy(query = keyword) }
+        pushHistory(keyword)
+        resetTo(keyword)
+        load(SearchTab.SONGS, reset = true)
+    }
+
+    fun onClearHistory() {
+        historyPrefs.edit().remove(KEY_HISTORY).apply()
+        _uiState.update { it.copy(history = emptyList()) }
+    }
+
     // 每个分类的翻页游标与「已到底」标记，只对当前 active 关键词有效。
     private val offsets = mutableMapOf<SearchTab, Int>()
     private val started = mutableSetOf<SearchTab>()
@@ -77,6 +114,7 @@ class SearchViewModel @Inject constructor(
     fun onSubmit() {
         val kw = _uiState.value.query.trim()
         if (kw.isEmpty()) return
+        pushHistory(kw)
         resetTo(kw)
         load(SearchTab.SONGS, reset = true)
     }
@@ -84,6 +122,7 @@ class SearchViewModel @Inject constructor(
     /** 点分类标签：直接以标签文字为关键词搜索。 */
     fun onTagSearch(tag: String) {
         _uiState.update { it.copy(query = tag) }
+        pushHistory(tag)
         resetTo(tag)
         load(SearchTab.SONGS, reset = true)
     }
@@ -114,7 +153,8 @@ class SearchViewModel @Inject constructor(
         jobs.values.forEach { it.cancel() }
         jobs.clear()
         offsets.clear(); started.clear(); done.clear()
-        _uiState.value = SearchUiState()
+        // 只重置当前搜索，保留最近搜索历史。
+        _uiState.value = SearchUiState(history = _uiState.value.history)
     }
 
     fun onBack() {
@@ -240,5 +280,7 @@ class SearchViewModel @Inject constructor(
 
     private companion object {
         const val PAGE_SIZE = 30
+        const val KEY_HISTORY = "recent"
+        const val MAX_HISTORY = 12
     }
 }

@@ -2,7 +2,9 @@ package com.thripleq.nume.ui.screens
 
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.foundation.border
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
@@ -123,35 +126,42 @@ internal fun ResultsContent(
     }
 }
 
+/** 分类页签：M3 胶囊选中款（与 dock 导航同一语言）——选中块铺 `secondaryContainer`。 */
 @Composable
 private fun TabStrip(selected: SearchTab, onSelect: (SearchTab) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(0.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         TAB_LABELS.forEach { (tab, label) ->
             val active = tab == selected
+            val bg by animateColorAsState(
+                targetValue = if (active) scheme.secondaryContainer else Color.Transparent,
+                animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
+                label = "tabBg",
+            )
+            val fg by animateColorAsState(
+                targetValue = if (active) scheme.onSecondaryContainer else scheme.onSurfaceVariant,
+                animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
+                label = "tabFg",
+            )
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 4.dp)
-                    .height(38.dp)
-                    .clip(NumeShape.Chip)
-                    .then(
-                        if (active) Modifier.border(1.5.dp, scheme.primary, NumeShape.Chip)
-                        else Modifier,
-                    )
+                    .height(36.dp)
+                    .clip(NumeShape.Capsule)
+                    .background(bg)
                     .clickable { onSelect(tab) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                    color = if (active) scheme.primary else scheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                    color = fg,
                 )
             }
         }
