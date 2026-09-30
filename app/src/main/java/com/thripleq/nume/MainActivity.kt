@@ -2,10 +2,12 @@ package com.thripleq.nume
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -32,7 +34,16 @@ class MainActivity : ComponentActivity() {
         // first Compose frame, then hands off to Theme.Nume (postSplashScreenTheme).
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // 系统栏完全透明，底色交给应用自己画（dock 的 surfaceContainer / 页面 surface 会
+        // 一直铺到导航栏后面）。默认的 edge-to-edge 会给导航栏蒙一层半透明 scrim —— 三键
+        // 导航下就是那条和界面不同色的"灰条"；Play 商店那类做法是让应用背景直接透上来。
+        enableEdgeToEdge(
+            navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
+        )
+        // 关掉系统给导航栏加的对比度蒙层（部分 OEM 仍会在透明底色上再压一层）。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         installJankStats()
         requestNotificationPermissionIfNeeded()
         setContent {

@@ -1,5 +1,6 @@
 package com.thripleq.nume.ui.playerbar
 
+import android.provider.Settings
 import com.thripleq.nume.ui.theme.NumeFade
 import com.thripleq.nume.ui.theme.NumeShape
 import androidx.activity.compose.BackHandler
@@ -19,7 +20,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -66,6 +67,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
@@ -84,6 +86,29 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import com.thripleq.nume.core.playback.PlayerHolder
 import kotlinx.coroutines.flow.collect
+
+/**
+ * 设备是否用「三键/两键」经典系统导航（而非手势）。预读 `navigation_mode`
+ * （0=三键、1=两键、2=手势）；读不到就退回用导航栏 inset 高度判断（三键约 48dp，
+ * 手势条明显更矮）。三键导航下系统栏**无法被真正隐藏**，且 hide/show 会让 inset 突变、
+ * 连带 dock 高度与播放页几何抖动——所以要走一套"常显 + 底部让位"的分支。
+ */
+@Composable
+private fun rememberIsThreeButtonNav(): Boolean {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val navBottomDp = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+    return remember(navBottomDp) {
+        val mode = runCatching {
+            Settings.Secure.getInt(context.contentResolver, "navigation_mode")
+        }.getOrNull()
+        when (mode) {
+            0, 1 -> true
+            2 -> false
+            else -> navBottomDp > 40.dp
+        }
+    }
+}
 
 /** 全屏播放面：壳（surfaceContainerHighest + 顶 18dp 圆角 + 1dp 阴影）从迷你条胶囊
  *  原位伸展成悬浮卡、再盖满全屏；壳顶停在状态栏下沿（与 ExpandableShell 面板一致）。
@@ -220,19 +245,27 @@ internal fun PlayerPage(
 
     // 沉浸：只在接近全屏时隐藏系统导航栏（半高时保持显示，dock 的 navigationBarsPadding
     // 布局稳定）；收起/回落到半高时恢复。用 snapshotFlow 轮询 progress，不引重组。
+    //
+    // 三键导航例外：系统栏隐藏不了（hide 只会让它变成半透明条），而 hide/show 触发的
+    // inset 突变会让 dock 高度变化 → 播放页几何在临近全屏时"跳一下"。所以三键下**全程不隐藏**，
+    // 底部让位改由 [PlayerPageContent] 的 padding 承担。
     val view = LocalView.current
     val activity = LocalActivity.current
+    val threeButtonNav = rememberIsThreeButtonNav()
     val controller = activity?.let { WindowCompat.getInsetsController(it.window, view) }
-    LaunchedEffect(controller) {
-        if (controller != null) {
-            controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            snapshotFlow { state.progress }.collect { p ->
-                if (p >= 1.9f) {
-                    controller.hide(WindowInsetsCompat.Type.navigationBars())
-                } else {
-                    controller.show(WindowInsetsCompat.Type.navigationBars())
-                }
+    LaunchedEffect(controller, threeButtonNav) {
+        if (controller == null) return@LaunchedEffect
+        if (threeButtonNav) {
+            controller.show(WindowInsetsCompat.Type.navigationBars())
+            return@LaunchedEffect
+        }
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        snapshotFlow { state.progress }.collect { p ->
+            if (p >= 1.9f) {
+                controller.hide(WindowInsetsCompat.Type.navigationBars())
+            } else {
+                controller.show(WindowInsetsCompat.Type.navigationBars())
             }
         }
     }
@@ -288,6 +321,7 @@ internal fun PlayerPage(
             PlayerPageContent(
                 player = player,
                 contentProgress = contentProgress,
+                threeButtonNav = threeButtonNav,
                 shellHeightPx = contentRect.height,
                 shellWidthPx = contentRect.width,
                 sleepEndAt = state.sleepEndAt,
@@ -345,6 +379,8 @@ internal fun PlayerPage(
 internal fun PlayerPageContent(
     player: Player,
     contentProgress: Float,
+    /** 三键导航：系统栏常显，全屏时内容底部要让出导航栏，避免被三键压住。 */
+    threeButtonNav: Boolean,
     shellHeightPx: Float,
     shellWidthPx: Float,
     sleepEndAt: Long,
@@ -378,6 +414,13 @@ internal fun PlayerPageContent(
     val density = LocalDensity.current
     val sc = ((contentProgress - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
     val statusBarDp = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+    // 三键导航常显，全屏时底部的功能胶囊行要抬到三键之上；随 sc 渐入，卡片档不动，
+    // 避免半档处布局跳变（三键 inset 恒定，不存在"隐藏后归零"的抖动）。
+    val navBottomDp = if (threeButtonNav) {
+        with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+    } else {
+        0.dp
+    }
     val widthDp = with(density) { shellWidthPx.toDp() }
     val heightDp = with(density) { shellHeightPx.toDp() }
 
@@ -411,7 +454,8 @@ internal fun PlayerPageContent(
             .fillMaxSize()
             .padding(horizontal = androidx.compose.ui.unit.lerp(24.dp, 16.dp, sc))
             // 封面到卡片上边的距离取左右边距的 5:4（30dp vs 24dp），略长一点更透气。
-            .padding(top = 30.dp, bottom = 20.dp),
+            // 底部额外让出导航栏（仅三键导航、且随全屏进度渐入）。
+            .padding(top = 30.dp, bottom = 20.dp + navBottomDp * sc),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // 全屏时顶部让出状态栏（卡片档壳顶已在状态栏下，无需让位）。
