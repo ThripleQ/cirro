@@ -1,6 +1,7 @@
 package com.thripleq.nume.ui.screens
 
 import com.thripleq.nume.ui.theme.NumeShape
+import com.thripleq.nume.ui.components.numeEntrySurface
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -76,23 +77,23 @@ private fun ChartList(charts: List<Chart>, onChart: (Chart, Rect) -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            start = 16.dp,
-            top = 16.dp,
-            end = 16.dp,
+            start = 0.dp,
+            top = 12.dp,
+            end = 0.dp,
             bottom = 16.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item { Text("排行榜", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) }
+        item { Text("排行榜", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(start = 16.dp)) }
         items(charts, key = { it.id }) { c ->
             var rect by remember { mutableStateOf(Rect.Zero) }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(NumeShape.CardSmall)
+                    .numeEntrySurface()
                     .onGloballyPositioned { rect = it.boundsInWindow() }
                     .clickable { onChart(c, rect) }
-                    .padding(8.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(

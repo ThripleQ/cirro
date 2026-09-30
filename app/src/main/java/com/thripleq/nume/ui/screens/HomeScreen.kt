@@ -66,6 +66,7 @@ import com.thripleq.nume.ui.components.CoverExpandShell
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
+import com.thripleq.nume.ui.components.numeEntrySurface
 import com.valentinilk.shimmer.shimmer
 import com.thripleq.nume.ui.home.HomeUiState
 import com.thripleq.nume.ui.home.HomeViewModel
@@ -297,8 +298,9 @@ private fun SmallTrackRow(track: Track, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .numeEntrySurface()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(

@@ -76,6 +76,7 @@ import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SharedKeys
 import com.thripleq.nume.ui.components.SkeletonBox
+import com.thripleq.nume.ui.components.numeEntrySurface
 import com.thripleq.nume.ui.components.SkeletonLine
 import com.thripleq.nume.ui.search.SearchTab
 import com.thripleq.nume.ui.search.SearchUiState
@@ -533,8 +534,9 @@ private fun SongRow(track: Track, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .numeEntrySurface()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 7.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Cover(track.artworkUrl, track.name, 52.dp, circle = false)
@@ -584,9 +586,10 @@ private fun MediaRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .numeEntrySurface()
             .onGloballyPositioned { rect = it.boundsInWindow() }
             .clickable { onClick(rect) }
-            .padding(horizontal = 16.dp, vertical = 7.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Cover(coverUrl, title, 52.dp, circle, modifier = coverModifier)

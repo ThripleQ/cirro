@@ -75,6 +75,7 @@ import com.thripleq.nume.ui.components.LocalShellSettled
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
+import com.thripleq.nume.ui.components.numeEntrySurface
 import com.thripleq.nume.ui.components.shellInset
 import com.thripleq.nume.ui.playerbar.CollectionActions
 import com.valentinilk.shimmer.shimmer
@@ -254,7 +255,7 @@ fun TrackListScreen(
                         ) { index, track ->
                             // 行随内容浮现 / 收起退场淡入淡出（draw 阶段读，不重组）。
                             Box(Modifier.graphicsLayer { alpha = rowsAlpha.value }) {
-                                TrackRow(index, track, hPadding = 16.dp) {
+                                TrackRow(index, track, hPadding = 8.dp) {
                                     vm.onTrackClick(target, index)
                                 }
                             }
@@ -492,7 +493,6 @@ private fun trimZero(s: String) = if (s.endsWith(".0")) s.dropLast(2) else s
 /** 行级不可变基础 modifier（fillMaxWidth + 圆角裁剪），避免每次重组重建 modifier 链。 */
 private val trackRowBaseModifier = Modifier
     .fillMaxWidth()
-    .clip(NumeShape.CardSmall)
 
 @Composable
 private fun TrackRow(index: Int, track: Track, hPadding: Dp = 8.dp, onClick: () -> Unit) {
@@ -506,6 +506,7 @@ private fun TrackRow(index: Int, track: Track, hPadding: Dp = 8.dp, onClick: () 
     }
     Row(
         modifier = trackRowBaseModifier
+            .numeEntrySurface()
             .clickable(onClick = onClick)
             .padding(horizontal = hPadding, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

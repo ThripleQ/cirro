@@ -52,6 +52,7 @@ import com.thripleq.nume.core.repo.RadioDetail
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
+import com.thripleq.nume.ui.components.numeEntrySurface
 import com.thripleq.nume.ui.podcast.PodcastUiState
 import com.thripleq.nume.ui.podcast.PodcastViewModel
 import com.thripleq.nume.ui.theme.NumeShape
@@ -189,8 +190,9 @@ private fun ProgramRow(program: Program, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .numeEntrySurface()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 7.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Cover(program.coverUrl, program.name, 52.dp, circle = false)

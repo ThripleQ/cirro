@@ -62,6 +62,7 @@ import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SharedKeys
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
+import com.thripleq.nume.ui.components.numeEntrySurface
 import com.thripleq.nume.ui.theme.NumeShape
 import com.valentinilk.shimmer.shimmer
 import java.text.SimpleDateFormat
@@ -236,9 +237,11 @@ private fun AlbumCard(album: ArtistAlbum, onClick: (Rect) -> Unit) {
     var rect by remember { mutableStateOf(Rect.Zero) }
     Column(
         modifier = Modifier
-            .width(118.dp)
+            .width(134.dp)
+            .numeEntrySurface(inset = 0.dp, vertical = 0.dp)
             .onGloballyPositioned { rect = it.boundsInWindow() }
-            .clickable { onClick(rect) },
+            .clickable { onClick(rect) }
+            .padding(8.dp),
     ) {
         Cover(album.coverUrl, album.name, 118.dp, circle = false)
         Spacer(Modifier.height(6.dp))
@@ -269,8 +272,9 @@ private fun SongRow(track: Track, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .numeEntrySurface()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 7.dp),
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Cover(track.artworkUrl, track.name, 48.dp, circle = false)

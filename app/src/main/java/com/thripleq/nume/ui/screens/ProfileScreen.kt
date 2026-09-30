@@ -73,6 +73,7 @@ import com.thripleq.nume.ui.components.LocalShellHeroAlpha
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
+import com.thripleq.nume.ui.components.numeEntrySurface
 import com.thripleq.nume.ui.profile.ProfileUiState
 import com.thripleq.nume.ui.profile.ProfileViewModel
 import com.valentinilk.shimmer.shimmer
@@ -652,7 +653,12 @@ private fun PlaylistCell(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.clickable(onClick = onClick)) {
+    Column(
+        modifier
+            .numeEntrySurface(inset = 0.dp, vertical = 0.dp)
+            .clickable(onClick = onClick)
+            .padding(8.dp),
+    ) {
         Box(
             Modifier
                 .fillMaxWidth()
