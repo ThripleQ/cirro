@@ -76,6 +76,7 @@ import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.zIndex
 import androidx.media3.common.Player
 import coil.compose.rememberAsyncImagePainter
+import coil.imageLoader
 import coil.request.ImageRequest
 import com.thripleq.nume.Profile
 import com.thripleq.nume.core.playback.PlayerHolder
@@ -423,6 +424,16 @@ internal fun PlayerBarContent(
     player: Player,
 ) {
     val context = LocalContext.current
+    // 迷你条一拿到封面就按播放页的固定解码尺寸预取，展开播放页时命中内存缓存，
+    // 避免冷加载时封面先闪 shimmer 占位再出现（需与 [CoverArt] 同一 data+size 才命中）。
+    val prefetchPx = playerCoverDecodePx()
+    LaunchedEffect(playerState.coverUrl) {
+        playerState.coverUrl?.let {
+            context.imageLoader.enqueue(
+                ImageRequest.Builder(context).data(it).size(prefetchPx).build(),
+            )
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
