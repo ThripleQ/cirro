@@ -4,6 +4,8 @@ import com.thripleq.nume.ui.theme.Motion
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,6 +32,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -102,7 +105,24 @@ internal fun LyricsView(
 
             LazyColumn(
                 state = listState,
-                modifier = modifier,
+                modifier = modifier
+                    // 抢滚动检测：自动滚动进行中（programmatic）用户按下，原实现只在
+                    // isScrollInProgress 翻转时记录、且排除 programmatic——按下未滚的瞬间
+                    // 不记抑制，等动画几百 ms 跑完、 currentIndex 再变时歌词会立刻把用户
+                    // 刚按住的位置抢回去，观感就是「列表自己跳」。按下即记，抢滚动从
+                    // 手指落下那一刻起就让位 4s；普通点击（非自动滚动中）不记——点行
+                    // seek 后歌词仍立即滚到目标行，不被抑制误伤。
+                    .pointerInput(listState) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitFirstDown(requireUnconsumed = false)
+                                if (programmatic) {
+                                    lastUserScrollAt = System.currentTimeMillis()
+                                }
+                                waitForUpOrCancellation()
+                            }
+                        }
+                    },
                 contentPadding = PaddingValues(vertical = 32.dp, horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
