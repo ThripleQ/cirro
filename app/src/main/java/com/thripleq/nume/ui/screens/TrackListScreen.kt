@@ -127,6 +127,11 @@ fun TrackListScreen(
     /** banner 缺封面时的内容属性水印图标（与入口卡片/hero 同源）。 */
     watermarkIcon: ImageVector? = null,
     bottomPadding: Dp = 16.dp,
+    /**
+     * 官方共享元素：附加到 banner 封面（骨架/终态都挂）的 modifier，用于和入口卡片封面
+     * 做 `sharedElement` morph（对齐歌手头像那套）。默认空即无共享元素。
+     */
+    coverSharedModifier: Modifier = Modifier,
 ) {
     // 系统返回键走 onBack（而非 NavHost 直接 pop）：返回是「浮现收回」，需先把导航方向
     // 标成逆向，子页才会沿原路缩回、父页直接露底。壳内容里禁用（见 [backHandlerEnabled]）。
@@ -213,6 +218,11 @@ fun TrackListScreen(
             animationSpec = tween(260),
             label = "trackListSkeletonAlpha",
         )
+        // 骨架与真列表 crossfade 期间**两者同时组合**：共享元素 key 只能有一个宿主，否则
+        // 框架拿到两个同 key 元素、封面在交接点跳一下。骨架在前（盖在真列表之上），故共享
+        // 元素先挂骨架；骨架彻底退场后再交给真 banner——两者几何相同（同内缩/方形），
+        // 接管时位置不变，无感。用派生布尔只在翻转时重组，不逐帧重排 banner。
+        val skeletonGone by remember { derivedStateOf { skeletonAlpha.value <= 0.001f } }
         // 内容「浮现度」：与骨架淡出严格互补（不重组，供 draw 阶段读）。
         // 骨架下的 meta/按钮直接满不透明出现会像"闪现"，用它做出场淡入。
         val contentReveal = remember(skeletonAlpha) { derivedStateOf { 1f - skeletonAlpha.value } }
@@ -246,6 +256,8 @@ fun TrackListScreen(
                                 onCoverDrawn,
                                 watermarkIcon,
                                 textAlpha = rowsAlpha,
+                                // 骨架还在时共享元素挂骨架（见 skeletonGone），避免同 key 双宿主。
+                                coverSharedModifier = if (skeletonGone) coverSharedModifier else Modifier,
                             ) { actionsTop = it }
                         }
                         itemsIndexed(
@@ -273,6 +285,7 @@ fun TrackListScreen(
                     title = title,
                     onCoverRect = onCoverRect,
                     onCoverReady = onCoverDrawn,
+                    coverSharedModifier = coverSharedModifier,
                     // 叠在目标态之上淡出（draw 阶段读，不重组）。
                     modifier = Modifier.graphicsLayer { alpha = skeletonAlpha.value },
                 )
@@ -303,6 +316,7 @@ private fun TrackListSkeleton(
     title: String = "",
     onCoverRect: ((Rect) -> Unit)? = null,
     onCoverReady: (() -> Unit)? = null,
+    coverSharedModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
     val progress = LocalShellProgress.current
@@ -321,6 +335,8 @@ private fun TrackListSkeleton(
                 else Modifier.padding(horizontal = 16.dp),
             )
             .aspectRatio(1f)
+            // 官方共享元素：与入口卡片封面同 key（骨架阶段先挂，面板一出现即可 morph）。
+            .then(coverSharedModifier)
             // hero 顶着时透明；hero 一开始淡出即变为不透明底板、hero 在其上渐隐（draw 阶段读，不重组）。
             .graphicsLayer { alpha = if (heroAlpha.value >= 1f) 0f else 1f }
         if (coverUrl != null) {
@@ -401,6 +417,7 @@ private fun TrackListBannerHeader(
     onCoverReady: (() -> Unit)? = null,
     watermarkIcon: ImageVector? = null,
     textAlpha: State<Float>? = null,
+    coverSharedModifier: Modifier = Modifier,
     onActionsTop: (Float) -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
@@ -432,6 +449,8 @@ private fun TrackListBannerHeader(
                         Modifier
                     },
                 )
+                // 官方共享元素：与入口卡片封面同 key，框架 morph 位置/尺寸（不重排内容）。
+                .then(coverSharedModifier)
                 .clip(NumeShape.Card)
                 // hero 顶着时透明；hero 一开始淡出即变为不透明底板、hero 在其上渐隐（draw 阶段读，不重组）。
                 .graphicsLayer { alpha = if (heroAlpha.value >= 1f) 0f else 1f },

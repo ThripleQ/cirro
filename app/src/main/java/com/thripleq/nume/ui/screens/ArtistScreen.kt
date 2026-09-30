@@ -27,7 +27,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.activity.compose.BackHandler
@@ -58,6 +57,7 @@ import com.thripleq.nume.core.repo.ArtistProfile
 import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.ui.artist.ArtistUiState
 import com.thripleq.nume.ui.artist.ArtistViewModel
+import com.thripleq.nume.ui.components.ArtistAvatarSize
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SharedKeys
 import com.thripleq.nume.ui.components.SkeletonBox
@@ -72,6 +72,13 @@ import java.util.Locale
 /**
  * 歌手主页：头像/别名/简介 + 专辑横滑 + 热门歌曲列表。
  * 点歌整单起播并弹出播放页；点专辑进入既有专辑详情（TrackListScreen）。
+ *
+ * ## 为什么头部头像只在一处渲染（共享元素宿主稳定）
+ * 共享元素要求目标端元素**在整段转场期间持续存在**。此前 Loading / Ready 各自渲染一份
+ * 头部头像——数据恰好在转场途中到达（缓存命中时很常见）时，宿主要从 Loading 的换成 Ready 的，
+ * 旧宿主被移除、新宿主刚挂上，框架要么抓不到、要么同时看到两份 → 头像「跳一下 / 叠一下」。
+ * 现在头像只在 LazyColumn 的 `header` item 里渲染**一次**，Loading/Ready 只是替换它下面的
+ * 内容；头像宿主从转场首帧到结束始终存在，跨状态不换宿主。
  */
 @Composable
 fun ArtistScreen(
@@ -108,115 +115,130 @@ fun ArtistScreen(
         Modifier
     }
 
+    val ready = state as? ArtistUiState.Ready
+
     Column(Modifier.fillMaxSize()) {
-        TopBar(onBack = onBack, title = (state as? ArtistUiState.Ready)?.profile?.name ?: "歌手")
-        when (val s = state) {
-            is ArtistUiState.Loading -> LoadingContent(
-                name = name,
-                avatarUrl = avatarUrl,
-                avatarModifier = avatarModifier,
-            )
-            is ArtistUiState.Error -> Center {
-                Text(
-                    text = "歌手加载失败",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.clickable { vm.retry() },
+        TopBar(onBack = onBack, title = ready?.profile?.name ?: "歌手")
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = bottomPadding),
+        ) {
+            // 头部：头像宿主。Loading 时用来源页带来的 name/avatar 先画出来（共享元素目标立即存在）。
+            item(key = "header") {
+                ArtistHeader(
+                    profile = ready?.profile,
+                    fallbackName = name,
+                    fallbackAvatar = avatarUrl,
+                    avatarModifier = avatarModifier,
                 )
             }
-            is ArtistUiState.Ready -> ReadyContent(
-                profile = s.profile,
-                hotSongs = s.hotSongs,
-                albums = s.albums,
-                bottomPadding = bottomPadding,
-                onPlayTrack = vm::onPlayTrack,
-                onOpenAlbum = onOpenAlbum,
-                avatarModifier = avatarModifier,
+            when {
+                state is ArtistUiState.Error -> item(key = "error") {
+                    Box(
+                        Modifier.fillMaxWidth().padding(24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "歌手加载失败，点此重试",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.clickable { vm.retry() },
+                        )
+                    }
+                }
+                ready == null -> {
+                    item(key = "albums_skel_header") { SkeletonHeading() }
+                    item(key = "albums_skel") { AlbumSkeletonRow() }
+                    item(key = "songs_skel_header") { SkeletonHeading() }
+                    items(6, key = { "song_skel_$it" }) { ArtistSkeletonSongRow() }
+                }
+                else -> {
+                    if (ready.albums.isNotEmpty()) {
+                        item(key = "albums_header") { SectionHeader("专辑") }
+                        item(key = "albums") { AlbumsRow(ready.albums, onOpenAlbum) }
+                    }
+                    if (ready.hotSongs.isNotEmpty()) {
+                        item(key = "songs_header") { SectionHeader("热门歌曲") }
+                        itemsIndexed(
+                            ready.hotSongs,
+                            key = { _, t -> "s_${t.id}" },
+                            contentType = { _, _ -> "song" },
+                        ) { index, track ->
+                            SongRow(track) { vm.onPlayTrack(index) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 头部：头像 + 名字（+ 就绪后的别名/数据/简介）。头像只在本次调用里渲染，跨 Loading/Ready 稳定。 */
+@Composable
+private fun ArtistHeader(
+    profile: ArtistProfile?,
+    fallbackName: String,
+    fallbackAvatar: String,
+    avatarModifier: Modifier,
+) {
+    val name = profile?.name ?: fallbackName
+    val avatar = profile?.avatarUrl?.takeIf { it.isNotBlank() } ?: fallbackAvatar
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Avatar(avatar, name, avatarModifier)
+        Spacer(Modifier.height(14.dp))
+        if (name.isNotBlank()) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
             )
+        } else {
+            SkeletonLine(modifier = Modifier.shimmer(), widthFraction = 0.45f, height = 20.dp)
+        }
+        if (profile != null) {
+            if (profile.aliases.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = profile.aliases.joinToString(" / "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "${profile.albumSize} 张专辑 · ${profile.musicSize} 首单曲",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (profile.briefDesc.isNotBlank()) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = profile.briefDesc,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun ReadyContent(
-    profile: ArtistProfile,
-    hotSongs: List<Track>,
-    albums: List<ArtistAlbum>,
-    bottomPadding: androidx.compose.ui.unit.Dp,
-    onPlayTrack: (Int) -> Unit,
-    onOpenAlbum: (String, String, Rect) -> Unit,
-    avatarModifier: Modifier = Modifier,
-) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomPadding),
+private fun AlbumsRow(albums: List<ArtistAlbum>, onOpenAlbum: (String, String, Rect) -> Unit) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item(key = "header") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Avatar(profile.avatarUrl, profile.name, avatarModifier)
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    text = profile.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center,
-                )
-                if (profile.aliases.isNotEmpty()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = profile.aliases.joinToString(" / "),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "${profile.albumSize} 张专辑 · ${profile.musicSize} 首单曲",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (profile.briefDesc.isNotBlank()) {
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = profile.briefDesc,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 4,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
-
-        if (albums.isNotEmpty()) {
-            item(key = "albums_header") { SectionHeader("专辑") }
-            item(key = "albums") {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(albums.size, key = { "al_${albums[it].id}" }) { i ->
-                        AlbumCard(albums[i]) { rect -> onOpenAlbum(albums[i].id, albums[i].name, rect) }
-                    }
-                }
-            }
-        }
-
-        if (hotSongs.isNotEmpty()) {
-            item(key = "songs_header") { SectionHeader("热门歌曲") }
-            itemsIndexed(
-                hotSongs,
-                key = { _, t -> "s_${t.id}" },
-                contentType = { _, _ -> "song" },
-            ) { index, track ->
-                SongRow(track) { onPlayTrack(index) }
-            }
+        items(albums.size, key = { "al_${albums[it].id}" }) { i ->
+            AlbumCard(albums[i]) { rect -> onOpenAlbum(albums[i].id, albums[i].name, rect) }
         }
     }
 }
@@ -316,8 +338,11 @@ private fun Cover(
 ) {
     val shape = if (circle) CircleShape else NumeShape.CardSmall
     val context = LocalContext.current
-    val model = url?.takeIf { it.isNotBlank() }?.let {
-        ImageRequest.Builder(context).data(it).size(360).build()
+    // remember(url)：否则每次重组都新建 ImageRequest，AsyncImagePainter 视其为新 model 重走请求。
+    val model = remember(url) {
+        url?.takeIf { it.isNotBlank() }?.let {
+            ImageRequest.Builder(context).data(it).size(ArtistAvatarSize).build()
+        }
     }
     Box(
         modifier
@@ -360,7 +385,7 @@ private fun TopBar(onBack: () -> Unit, title: String) {
             .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack) {
+        androidx.compose.material3.IconButton(onClick = onBack) {
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "返回",
@@ -377,70 +402,22 @@ private fun TopBar(onBack: () -> Unit, title: String) {
     }
 }
 
-@Composable
-private fun Center(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
-}
+/* ── 加载骨架（头部以下） ─────────────────────────── */
 
-/**
- * 加载态：头部头像**立即用来源页带来的 url/name 渲染**（不放进骨架），
- * 让共享元素目标在转场期间就存在；其余（专辑/歌曲）仍是骨架。
- */
 @Composable
-private fun LoadingContent(
-    name: String,
-    avatarUrl: String,
-    avatarModifier: Modifier,
-) {
-    Column(Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Avatar(avatarUrl, name, avatarModifier)
-            if (name.isNotBlank()) {
-                Text(
-                    text = name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center,
-                )
-            } else {
-                SkeletonLine(modifier = Modifier.shimmer(), widthFraction = 0.45f, height = 20.dp)
-            }
-        }
-        ArtistSkeletonBody()
-    }
-}
-
-/** 歌手页骨架（头部以下）：专辑横滑 + 热门歌曲行。 */
-@Composable
-private fun ArtistSkeletonBody() {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .shimmer(),
+private fun AlbumSkeletonRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        SkeletonHeading()
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            repeat(3) {
-                Column(Modifier.width(118.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    SkeletonBox(Modifier.size(118.dp), NumeShape.CardSmall)
-                    SkeletonLine(widthFraction = 0.9f, height = 12.dp)
-                }
+        repeat(3) {
+            Column(Modifier.width(118.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SkeletonBox(Modifier.size(118.dp), NumeShape.CardSmall)
+                SkeletonLine(widthFraction = 0.9f, height = 12.dp)
             }
         }
-        SkeletonHeading()
-        repeat(6) { ArtistSkeletonSongRow() }
     }
 }
 

@@ -44,6 +44,15 @@ import com.thripleq.nume.ui.theme.NumeInk
 const val CardCoverSize = 480
 
 /**
+ * 歌手头像在「来源行（搜索结果）↔ 歌手页头部」两端**共用**的解码尺寸（px）。
+ *
+ * 共享元素两端必须请求同一尺寸才会命中 Coil 内存缓存：否则目标端（歌手页头像）会另起一次
+ * 解码，morph 期间先闪 shimmer 占位再出现，观感就是「跳一下 / 抖一下」。360 足够 96dp 头像
+ * 在 @3x 下清晰，又小到可忽略内存。
+ */
+const val ArtistAvatarSize = 360
+
+/**
  * 封面 + 底部渐变遮罩 + 左下角名字（可选元信息）。
  *
  * 横滑大封面卡（起点）与「大封面折进列表」的 banner 头（终点）**共用同一份**——

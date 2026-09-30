@@ -41,6 +41,37 @@ object Motion {
      */
     val RevealExitEasing = CubicBezierEasing(0.33f, 0f, 0.33f, 1f)
 
+    // ── 壳展开动画实现（试验开关）──────────────────────────────────
+    /**
+     * 胶囊壳展开动画用哪套实现：
+     * - `false` = 自研 [ExpandableShell]/[CoverExpandShell]（壳矩形由单一 progress 逐帧插值 +
+     *   hero 封面交接）。旧实现，代码整体保留，不删。
+     * - `true`  = 官方 `SharedTransitionLayout` + `Modifier.sharedBounds` 容器变换
+     *   （`ui/components/SharedShell.kt`）：源卡片表面由框架 morph 成全屏面板。
+     *
+     * 编译期常量，分支不随重组变化。随时可切回 `false` 对比/回退。
+     */
+    const val SharedShellEnabled = true
+
+    /**
+     * 共享元素版面板的淡入/淡出（<自研壳的 [ShellOpenMs]/[ShellCloseMs]）。
+     *
+     * 自研壳是「表面自己在长」，配 420ms。共享元素版里**封面 morph 才是主角**（350ms），
+     * 面板只负责铺底——它若也跑 420ms，中段就成了「封面在飞 + 面板慢慢显」的交叉淡化，
+     * 读着散。缩短面板淡入、让封面位移主导，才聚。
+     */
+    const val ShellPanelInMs = 260
+    const val ShellPanelOutMs = 200
+
+    /**
+     * 共享封面的内容交叉时长：源封面淡出 / 目标封面淡入。
+     *
+     * 封面两端的**内容不同**（卡片只有图，banner 还带名字/元信息），故必须走
+     * `sharedBounds` 的 enter/exit 交叉——不能用 `sharedElement`（它假设两端内容完全一致，
+     * 且在 overlay 里每帧把内容重排到插值尺寸，banner 的文字会逐帧换行抖动、掉帧）。
+     */
+    const val ShellCoverFadeMs = 200
+
     // ── 时长族（ms） ────────────────────────────────────────────────
     /** 壳展开总时长。 */
     const val ShellOpenMs = 420

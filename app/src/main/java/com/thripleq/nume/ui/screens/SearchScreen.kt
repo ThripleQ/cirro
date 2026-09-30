@@ -45,6 +45,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +74,7 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.thripleq.nume.core.repo.SearchAlbum
 import com.thripleq.nume.core.repo.Track
+import com.thripleq.nume.ui.components.ArtistAvatarSize
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SharedKeys
 import com.thripleq.nume.ui.components.SkeletonBox
@@ -341,7 +343,20 @@ private fun ResultsContent(
     Column(Modifier.fillMaxSize()) {
         TabStrip(state.tab, onTab)
         val listState = rememberLazyListState()
-        LaunchedEffect(state.tab, state.active) { listState.scrollToItem(0) }
+        // 只在「新查询 / 切页签」时回到顶部。
+        //
+        // 不能写成 `LaunchedEffect(state.tab, state.active) { scrollToItem(0) }`：从歌手页返回时
+        // Search 目的地的组合被重建，LaunchedEffect 会**重新启动**（即便 key 没变），于是列表被
+        // 滚回顶部——就是「点开歌手主页返回后列表回到开头」。用可保存的 key 记住上次已经复位过的
+        // 状态：返回时恢复的 key 相同 → 不再复位；新查询/切页签 key 变了 → 才复位。
+        var lastResetKey by rememberSaveable { mutableStateOf<String?>(null) }
+        LaunchedEffect(state.tab, state.active) {
+            val key = "${state.active}\u0000${state.tab}"
+            if (key != lastResetKey) {
+                lastResetKey = key
+                listState.scrollToItem(0)
+            }
+        }
 
         val empty = !state.loading && isTabEmpty(state)
         when {
@@ -498,6 +513,8 @@ private fun ResultList(
                     subtitle = null,
                     circle = true,
                     coverModifier = coverModifier,
+                    // 与歌手页头像同尺寸请求 → 共享 morph 命中同一张缓存图，不中途重解码。
+                    coverRequestSize = ArtistAvatarSize,
                 ) { rect -> onOpenArtist(a.id, a.name, a.avatarUrl.orEmpty(), rect) }
             }
         }
@@ -580,6 +597,7 @@ private fun MediaRow(
     subtitle: String?,
     circle: Boolean,
     coverModifier: Modifier = Modifier,
+    coverRequestSize: Int = 120,
     onClick: (Rect) -> Unit,
 ) {
     var rect by remember { mutableStateOf(Rect.Zero) }
@@ -592,7 +610,7 @@ private fun MediaRow(
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Cover(coverUrl, title, 52.dp, circle, modifier = coverModifier)
+        Cover(coverUrl, title, 52.dp, circle, modifier = coverModifier, requestSize = coverRequestSize)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -623,11 +641,12 @@ private fun Cover(
     size: androidx.compose.ui.unit.Dp,
     circle: Boolean,
     modifier: Modifier = Modifier,
+    requestSize: Int = 120,
 ) {
     val shape = if (circle) CircleShape else NumeShape.Chip
     val context = LocalContext.current
-    val model = remember(url) {
-        url?.let { ImageRequest.Builder(context).data(it).size(120).build() }
+    val model = remember(url, requestSize) {
+        url?.let { ImageRequest.Builder(context).data(it).size(requestSize).build() }
     }
     Box(
         modifier

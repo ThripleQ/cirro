@@ -292,6 +292,7 @@ fun NumeApp() {
                         onWebLogin = { navController.navigate(WebLogin) },
                         islandHeight = islandHeightDp,
                         onShellOpenChange = { shellOpen = it },
+                        shared = this@SharedTransitionLayout,
                     )
                 }
                 composable<Library> {
