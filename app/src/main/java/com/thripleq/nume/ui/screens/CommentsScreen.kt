@@ -49,6 +49,13 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.thripleq.nume.core.repo.Comment
 import com.thripleq.nume.ui.comments.CommentsViewModel
+import com.thripleq.nume.ui.components.NumeArt
+import com.thripleq.nume.ui.components.NumeArtwork
+import com.thripleq.nume.ui.components.NumeEmptyState
+import com.thripleq.nume.ui.components.NumeErrorState
+import com.thripleq.nume.ui.components.NumeLoadMoreIndicator
+import com.thripleq.nume.ui.components.NumeScreenTopBar
+import com.thripleq.nume.ui.components.NumeSectionHeader
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
@@ -74,19 +81,14 @@ fun CommentsScreen(
     val listState = rememberLazyListState()
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        TopBar(onBack = onBack, count = state.total)
+        NumeScreenTopBar(
+            title = if (state.total > 0) "评论 ${state.total}" else "评论",
+            onBack = onBack,
+        )
         when {
             state.loading -> CommentsSkeleton()
-            state.error -> Center {
-                Text(
-                    text = "评论加载失败",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.clickable { vm.retry() },
-                )
-            }
-            state.hot.isEmpty() && state.latest.isEmpty() -> Center {
-                Text("还没有评论", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            state.error -> NumeErrorState(text = "评论加载失败，点此重试", onRetry = vm::retry)
+            state.hot.isEmpty() && state.latest.isEmpty() -> NumeEmptyState("还没有评论")
             else -> {
                 LoadMoreWatcher(listState, vm::loadMore)
                 LazyColumn(
@@ -95,18 +97,13 @@ fun CommentsScreen(
                     contentPadding = PaddingValues(bottom = bottomPadding),
                 ) {
                     if (state.hot.isNotEmpty()) {
-                        item(key = "hot_header") { SectionHeader("热门评论") }
+                        item(key = "hot_header") { NumeSectionHeader("热门评论") }
                         items(state.hot, key = { "h_${it.id}" }) { CommentRow(it) }
                     }
-                    item(key = "latest_header") { SectionHeader("最新评论") }
+                    item(key = "latest_header") { NumeSectionHeader("最新评论") }
                     items(state.latest, key = { "l_${it.id}" }) { CommentRow(it) }
                     if (state.loadingMore) {
-                        item(key = "loading_more") {
-                            Box(
-                                Modifier.fillMaxWidth().padding(16.dp),
-                                contentAlignment = Alignment.Center,
-                            ) { CircularProgressIndicator(Modifier.size(22.dp)) }
-                        }
+                        item(key = "loading_more") { NumeLoadMoreIndicator() }
                     } else if (!state.hasMore && state.latest.isNotEmpty()) {
                         item(key = "end") {
                             Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
@@ -121,24 +118,19 @@ fun CommentsScreen(
 }
 
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 6.dp),
-    )
-}
-
-@Composable
 private fun CommentRow(comment: Comment) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        Avatar(comment.avatarUrl, comment.nickname)
+        NumeArtwork(
+            url = comment.avatarUrl,
+            contentDescription = comment.nickname,
+            size = NumeArt.AvatarSm,
+            shape = CircleShape,
+            requestSize = 120,
+        )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -215,31 +207,6 @@ private fun CommentRow(comment: Comment) {
 }
 
 @Composable
-private fun Avatar(url: String?, contentDescription: String?) {
-    val context = LocalContext.current
-    val model = url?.takeIf { it.isNotBlank() }?.let {
-        ImageRequest.Builder(context).data(it).size(120).build()
-    }
-    Box(
-        Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant),
-    ) {
-        if (model != null) {
-            val painter = rememberAsyncImagePainter(model)
-            ShimmerImagePlaceholder(painter, Modifier.matchParentSize())
-            Image(
-                painter = painter,
-                contentDescription = contentDescription,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-    }
-}
-
-@Composable
 private fun LoadMoreWatcher(listState: LazyListState, onLoadMore: () -> Unit) {
     val shouldLoad by remember(listState) {
         derivedStateOf {
@@ -249,35 +216,6 @@ private fun LoadMoreWatcher(listState: LazyListState, onLoadMore: () -> Unit) {
         }
     }
     LaunchedEffect(shouldLoad) { if (shouldLoad) onLoadMore() }
-}
-
-@Composable
-private fun TopBar(onBack: () -> Unit, count: Long) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "返回",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-        Text(
-            text = if (count > 0) "评论 $count" else "评论",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
-
-@Composable
-private fun Center(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
 }
 
 /** 评论加载骨架：顶栏下方重复评论行（头像 + 昵称/内容行）。 */

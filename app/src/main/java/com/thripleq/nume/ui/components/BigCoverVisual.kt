@@ -153,7 +153,7 @@ fun BigCoverVisual(
                 .background(
                     Brush.verticalGradient(
                         scrimTop to Color.Transparent,
-                        1f to Color.Black.copy(alpha = scrimAlpha),
+                        1f to NumeInk.Scrim.copy(alpha = scrimAlpha),
                     ),
                 ),
         )

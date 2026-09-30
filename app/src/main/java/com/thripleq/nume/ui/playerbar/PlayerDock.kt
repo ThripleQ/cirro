@@ -558,7 +558,7 @@ internal fun NavRow(
     onSelect: (BottomTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val pill = RoundedCornerShape(50)
+    val pill = NumeShape.Pill
     val haptics = LocalHapticFeedback.current
     Row(
         modifier = modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -617,7 +617,7 @@ internal fun ActionNavRow(
     onComments: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val pill = RoundedCornerShape(50)
+    val pill = NumeShape.Pill
     val haptics = LocalHapticFeedback.current
     var commentRect by remember { mutableStateOf(Rect.Zero) }
     Row(

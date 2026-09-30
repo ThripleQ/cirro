@@ -54,6 +54,8 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.ui.components.BigCoverVisual
+import com.thripleq.nume.ui.components.NumeMediaRow
+import com.thripleq.nume.ui.components.NumeSectionHeader
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.numeEntrySurface
 import com.thripleq.nume.ui.components.shellSharedCover
@@ -85,7 +87,7 @@ internal fun HomeContent(
         // 每日推荐歌曲（小封面单曲行，每页 4 首左右翻页）
         val daily = data.dailySongs
         if (daily != null) {
-            item(key = "h_daily") { SectionHeader("每日推荐歌曲") }
+            item(key = "h_daily") { NumeSectionHeader("每日推荐歌曲") }
             if (daily.isNotEmpty()) {
                 item(key = "daily_pager") { SongRowGrid(tracks = daily, onPlay = onPlay) }
             } else {
@@ -96,7 +98,7 @@ internal fun HomeContent(
         // 推荐歌单（大封面横滑卡片）
         val playlists = data.playlists
         if (playlists.isNullOrEmpty().not()) {
-            item(key = "h_pl") { SectionHeader("推荐歌单") }
+            item(key = "h_pl") { NumeSectionHeader("推荐歌单") }
             item(key = "row_pl") {
                 CarouselRow(
                     items = playlists,
@@ -115,7 +117,7 @@ internal fun HomeContent(
         // 排行榜（大封面横滑卡片）
         val charts = data.charts
         if (charts.isNullOrEmpty().not()) {
-            item(key = "h_chart") { SectionHeader("排行榜") }
+            item(key = "h_chart") { NumeSectionHeader("排行榜") }
             item(key = "row_chart") {
                 CarouselRow(
                     items = charts,
@@ -134,7 +136,7 @@ internal fun HomeContent(
         // 最近播放（小封面单曲行，每页 4 首左右翻页）
         val recent = data.recentSongs
         if (recent != null) {
-            item(key = "h_recent") { SectionHeader("最近播放") }
+            item(key = "h_recent") { NumeSectionHeader("最近播放") }
             if (recent.isNotEmpty()) {
                 item(key = "recent_pager") { SongRowGrid(tracks = recent, onPlay = onPlay) }
             } else {
@@ -167,16 +169,6 @@ private fun HomeTopBar(onRefresh: () -> Unit) {
             )
         }
     }
-}
-
-@Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
-    )
 }
 
 /** 大封面横滑卡片行（歌单 / 榜单）。 */
@@ -241,72 +233,6 @@ private fun BigCoverCard(
     }
 }
 
-/** 小封面单曲行：点了直接播（无展开动效）。 */
-@Composable
-private fun SmallTrackRow(track: Track, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val context = LocalContext.current
-    val model = remember(track.artworkUrl) {
-        track.artworkUrl?.let { ImageRequest.Builder(context).data(it).size(96).build() }
-    }
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .numeEntrySurface()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .size(52.dp)
-                .clip(NumeShape.Chip),
-        ) {
-            if (model != null) {
-                val painter = rememberAsyncImagePainter(model)
-                ShimmerImagePlaceholder(painter, Modifier.matchParentSize())
-                Image(
-                    painter = painter,
-                    contentDescription = track.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Box(
-                    Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Filled.MusicNote,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = track.name,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (track.artist.isNotBlank()) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = track.artist,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
 /** 单曲区块行高（封面 52dp + 上下 8dp）。 */
 private val TrackRowHeight = 68.dp
 
@@ -335,10 +261,13 @@ private fun SongRowGrid(
                 items = tracks,
                 key = { _, track -> track.id },
             ) { index, track ->
-                SmallTrackRow(
-                    track = track,
+                NumeMediaRow(
+                    title = track.name,
+                    subtitle = track.artist.ifBlank { null },
+                    coverUrl = track.artworkUrl,
+                    onClick = { onPlay(tracks, index) },
                     modifier = Modifier.width(itemWidth),
-                ) { onPlay(tracks, index) }
+                )
             }
         }
     }

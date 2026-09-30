@@ -48,9 +48,11 @@ import com.thripleq.nume.ui.components.BigCoverVisual
 import com.thripleq.nume.ui.components.CoverExpandShell
 import com.thripleq.nume.ui.components.LocalShellHeroAlpha
 import com.thripleq.nume.ui.components.LocalShellSettled
+import com.thripleq.nume.ui.components.NumeArtwork
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.numeEntrySurface
 import com.thripleq.nume.ui.components.shellSharedCover
+import com.thripleq.nume.ui.theme.NumeFade
 import com.thripleq.nume.ui.theme.NumeShape
 
 /**
@@ -214,8 +216,8 @@ private fun PlaylistGridPanel(
                     modifier = Modifier.fillMaxSize(),
                     // 恒显示数量（含 0）：与卡片/hero 同文案，末尾交接不出现数据消失。
                     meta = "${playlists.size} 个歌单",
-                    scrimTop = 0.35f,
-                    scrimAlpha = 0.85f,
+                    scrimTop = NumeFade.BANNER_SCRIM_TOP,
+                    scrimAlpha = NumeFade.BANNER_SCRIM,
                     requestSize = 1024,
                     onLoadSuccess = onCoverReady,
                     watermarkIcon = watermarkIcon,
@@ -256,43 +258,16 @@ private fun PlaylistCell(
             .clickable(onClick = onClick)
             .padding(8.dp),
     ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(160.dp)
-                .clip(NumeShape.CardSmall),
-        ) {
-            // model 整体 remember：AsyncImagePainter 以 model 为 key，避免每次重组
-            // 新建 ImageRequest 重走请求分发；按 320px（160dp 封面 @2x）尺寸请求。
-            val context = LocalContext.current
-            val model = remember(playlist.coverUrl) {
-                playlist.coverUrl?.let {
-                    ImageRequest.Builder(context).data(it).size(320).build()
-                }
-            }
-            if (model != null) {
-                val painter = rememberAsyncImagePainter(model)
-                ShimmerImagePlaceholder(painter, Modifier.matchParentSize())
-                Image(
-                    painter = painter,
-                    contentDescription = playlist.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Box(
-                    Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Filled.List,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(32.dp),
-                    )
-                }
-            }
-        }
+        NumeArtwork(
+            url = playlist.coverUrl,
+            contentDescription = playlist.name,
+            modifier = Modifier.fillMaxWidth().height(160.dp),
+            size = null,
+            shape = NumeShape.CardSmall,
+            requestSize = 320,
+            fallbackIcon = Icons.Filled.List,
+            fallbackIconSize = 32.dp,
+        )
         Spacer(Modifier.height(6.dp))
         Text(
             playlist.name,

@@ -41,6 +41,11 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
 import com.thripleq.nume.core.repo.Chart
+import com.thripleq.nume.ui.components.NumeErrorState
+import com.thripleq.nume.ui.components.NumeMediaRow
+import com.thripleq.nume.ui.components.NumeMediaRowSkeleton
+import com.thripleq.nume.ui.components.NumeSectionHeader
+import com.thripleq.nume.ui.components.NumeSectionHeaderSkeleton
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
@@ -58,13 +63,7 @@ fun LibraryScreen(
 
     when (val s = state) {
         is LibraryUiState.Loading -> LibrarySkeleton()
-        is LibraryUiState.Error -> CenteredBox {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("加载失败，请检查网络", color = MaterialTheme.colorScheme.onSurface)
-                Spacer(Modifier.size(12.dp))
-                Button(onClick = vm::load) { Text("重试") }
-            }
-        }
+        is LibraryUiState.Error -> NumeErrorState(onRetry = vm::load)
         is LibraryUiState.Charts -> ChartList(
             charts = s.charts,
             onChart = { c, origin -> onOpenChart(c.id, c.name, origin) },
@@ -84,51 +83,17 @@ private fun ChartList(charts: List<Chart>, onChart: (Chart, Rect) -> Unit) {
         ),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item { Text("排行榜", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(start = 16.dp)) }
+        item { NumeSectionHeader("排行榜") }
         items(charts, key = { it.id }) { c ->
             var rect by remember { mutableStateOf(Rect.Zero) }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .numeEntrySurface()
-                    .onGloballyPositioned { rect = it.boundsInWindow() }
-                    .clickable { onChart(c, rect) }
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    Modifier
-                        .size(52.dp)
-                        .clip(NumeShape.Chip)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    c.coverUrl?.let { url ->
-                        val painter = rememberAsyncImagePainter(Uri.parse(url))
-                        ShimmerImagePlaceholder(painter, Modifier.matchParentSize())
-                        Image(
-                            painter = painter,
-                            contentDescription = c.name,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = c.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            NumeMediaRow(
+                title = c.name,
+                coverUrl = c.coverUrl,
+                onClick = { onChart(c, rect) },
+                modifier = Modifier.onGloballyPositioned { rect = it.boundsInWindow() },
+            )
         }
     }
-}
-
-@Composable
-private fun CenteredBox(content: @Composable () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
 }
 
 /** 排行榜骨架：标题 + 榜单行（52dp 封面 + 名称）。 */
@@ -137,22 +102,10 @@ private fun LibrarySkeleton() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .shimmer()
-            .padding(16.dp),
+            .shimmer(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        SkeletonLine(widthFraction = 0.3f, height = 22.dp)
-        repeat(8) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SkeletonBox(Modifier.size(52.dp), NumeShape.Chip)
-                Spacer(Modifier.width(12.dp))
-                SkeletonLine(widthFraction = 0.5f, height = 16.dp)
-            }
-        }
+        NumeSectionHeaderSkeleton()
+        repeat(8) { NumeMediaRowSkeleton() }
     }
 }

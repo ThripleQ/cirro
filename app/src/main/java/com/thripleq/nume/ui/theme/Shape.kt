@@ -30,6 +30,15 @@ object NumeShape {
     val Chip = RoundedCornerShape(8.dp)
     val Track = RoundedCornerShape(2.dp)
 
+    /**
+     * 全圆角胶囊：半径恒为高的一半（`percent = 50`）。
+     *
+     * 与 [Capsule] 的区别：`Capsule` 是固定 22dp 的品牌圆角；`Pill` 用于**任意高度**都要
+     * 两端成半圆的按钮 / 导航 pill / 骨架胶囊，半径随高度自适应。原 `RoundedCornerShape(50)`
+     * 与 `RoundedCornerShape(percent = 50)` 两种裸写法散落各处，统一到这里。
+     */
+    val Pill = RoundedCornerShape(percent = 50)
+
     /** 展开壳顶角基准（dock 顶角动画终值同源；壳动画内部动态插值，不直接引用）。 */
     val ShellTop = 26.dp
 }

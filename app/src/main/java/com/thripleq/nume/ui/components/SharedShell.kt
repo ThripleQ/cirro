@@ -6,21 +6,14 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -81,7 +74,7 @@ fun ShellPanel(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = NumeFade.SHELL_SCRIM)),
+                    .background(NumeInk.Scrim.copy(alpha = NumeFade.SHELL_SCRIM)),
             )
         }
         Box(
@@ -93,23 +86,12 @@ fun ShellPanel(
             // 与自研壳一致：否则 banner 顶到 0、压在状态栏图标上。
             Box(Modifier.fillMaxSize().statusBarsPadding()) { content() }
         }
-        Box(
-            Modifier
+        NumeCloseButton(
+            onClick = onDismiss,
+            modifier = Modifier
                 .align(Alignment.TopStart)
                 .statusBarsPadding()
-                .padding(12.dp)
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = NumeFade.CONTROL_SCRIM))
-                .clickable { onDismiss() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Filled.KeyboardArrowDown,
-                contentDescription = "收起",
-                tint = NumeInk.OnImage,
-                modifier = Modifier.size(24.dp),
-            )
-        }
+                .padding(12.dp),
+        )
     }
 }

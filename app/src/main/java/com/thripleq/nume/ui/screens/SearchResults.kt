@@ -13,12 +13,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,10 +36,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.thripleq.nume.ui.components.ArtistAvatarSize
+import com.thripleq.nume.ui.components.NumeEmptyState
+import com.thripleq.nume.ui.components.NumeErrorState
+import com.thripleq.nume.ui.components.NumeLoadMoreFailed
+import com.thripleq.nume.ui.components.NumeLoadMoreIndicator
+import com.thripleq.nume.ui.components.NumeMediaRow
 import com.thripleq.nume.ui.components.SharedKeys
 import com.thripleq.nume.ui.search.SearchTab
 import com.thripleq.nume.ui.search.SearchUiState
@@ -88,19 +98,11 @@ internal fun ResultsContent(
         val empty = !state.loading && isTabEmpty(state)
         when {
             state.loading -> SearchSkeleton()
-            empty -> SearchCenteredBox(
-                // 错误必须给出路：空态文案可点重试（与播客/评论/歌手/曲目页同一交互语言）。
-                // 「请稍后重试」没给任何重试入口——用户只能重搜或切页签，不合理。
-                if (state.error) {
-                    Modifier.clickable { onRetry() }
-                } else {
-                    Modifier
-                },
-            ) {
-                Text(
-                    text = if (state.error) "搜索失败，点此重试" else "没有找到相关内容",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            // 错误必须给出路：错误态可点重试（与播客/评论/歌手/曲目页同一交互语言）。
+            empty -> if (state.error) {
+                NumeErrorState(text = "搜索失败，点此重试", onRetry = onRetry)
+            } else {
+                NumeEmptyState("没有找到相关内容")
             }
             else -> {
                 LoadMoreWatcher(listState, onLoadMore)
@@ -180,7 +182,24 @@ private fun ResultList(
                 key = { _, t -> "s_${t.id}" },
                 contentType = { _, _ -> "song" },
             ) { index, track ->
-                SearchSongRow(track) { onPlayTrack(index) }
+                val sub = listOf(track.artist, track.albumName)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" - ")
+                NumeMediaRow(
+                    title = track.name,
+                    subtitle = sub.ifBlank { null },
+                    coverUrl = track.artworkUrl,
+                    onClick = { onPlayTrack(index) },
+                    trailing = {
+                        IconButton(onClick = { /* 三点菜单：暂无功能 */ }) {
+                            Icon(
+                                Icons.Filled.MoreVert,
+                                contentDescription = "更多",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
+                )
             }
 
             SearchTab.PLAYLISTS -> itemsIndexed(
@@ -188,16 +207,18 @@ private fun ResultList(
                 key = { _, p -> "p_${p.id}" },
                 contentType = { _, _ -> "playlist" },
             ) { _, p ->
-                SearchMediaRow(
-                    coverUrl = p.coverUrl,
+                var rect by remember { mutableStateOf(Rect.Zero) }
+                NumeMediaRow(
                     title = p.name,
                     subtitle = mediaSubtitle(
                         "${p.trackCount}首",
                         p.creator,
                         p.playCount,
                     ),
-                    circle = false,
-                ) { rect -> onOpenTracks("playlist", p.id, p.name, rect) }
+                    coverUrl = p.coverUrl,
+                    onClick = { onOpenTracks("playlist", p.id, p.name, rect) },
+                    modifier = Modifier.onGloballyPositioned { rect = it.boundsInWindow() },
+                )
             }
 
             SearchTab.RADIOS -> itemsIndexed(
@@ -205,12 +226,14 @@ private fun ResultList(
                 key = { _, r -> "r_${r.id}" },
                 contentType = { _, _ -> "radio" },
             ) { _, r ->
-                SearchMediaRow(
-                    coverUrl = r.coverUrl,
+                var rect by remember { mutableStateOf(Rect.Zero) }
+                NumeMediaRow(
                     title = r.name,
                     subtitle = mediaSubtitle("${r.programCount}个声音", r.djName, r.playCount),
-                    circle = false,
-                ) { rect -> onOpenRadio(r.id, r.name, rect) }
+                    coverUrl = r.coverUrl,
+                    onClick = { onOpenRadio(r.id, r.name, rect) },
+                    modifier = Modifier.onGloballyPositioned { rect = it.boundsInWindow() },
+                )
             }
 
             SearchTab.ALBUMS -> itemsIndexed(
@@ -218,12 +241,14 @@ private fun ResultList(
                 key = { _, a -> "a_${a.id}" },
                 contentType = { _, _ -> "album" },
             ) { _, a ->
-                SearchMediaRow(
-                    coverUrl = a.coverUrl,
+                var rect by remember { mutableStateOf(Rect.Zero) }
+                NumeMediaRow(
                     title = a.name,
                     subtitle = albumSubtitle(a),
-                    circle = false,
-                ) { rect -> onOpenTracks("album", a.id, a.name, rect) }
+                    coverUrl = a.coverUrl,
+                    onClick = { onOpenTracks("album", a.id, a.name, rect) },
+                    modifier = Modifier.onGloballyPositioned { rect = it.boundsInWindow() },
+                )
             }
 
             SearchTab.ARTISTS -> itemsIndexed(
@@ -231,6 +256,7 @@ private fun ResultList(
                 key = { _, a -> "ar_${a.id}" },
                 contentType = { _, _ -> "artist" },
             ) { _, a ->
+                var rect by remember { mutableStateOf(Rect.Zero) }
                 val coverModifier = if (shared != null && avScope != null) {
                     with(shared) {
                         Modifier.sharedElement(
@@ -244,47 +270,23 @@ private fun ResultList(
                 } else {
                     Modifier
                 }
-                SearchMediaRow(
-                    coverUrl = a.avatarUrl,
+                NumeMediaRow(
                     title = a.name,
-                    subtitle = null,
-                    circle = true,
-                    coverModifier = coverModifier,
+                    coverUrl = a.avatarUrl,
+                    coverShape = CircleShape,
                     // 与歌手页头像同尺寸请求 → 共享 morph 命中同一张缓存图，不中途重解码。
                     coverRequestSize = ArtistAvatarSize,
-                ) { rect -> onOpenArtist(a.id, a.name, a.avatarUrl.orEmpty(), rect) }
+                    coverModifier = coverModifier,
+                    onClick = { onOpenArtist(a.id, a.name, a.avatarUrl.orEmpty(), rect) },
+                    modifier = Modifier.onGloballyPositioned { rect = it.boundsInWindow() },
+                )
             }
         }
 
         if (state.loadingMore) {
-            item(key = "loading_more") {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator(Modifier.size(22.dp)) }
-            }
+            item(key = "loading_more") { NumeLoadMoreIndicator() }
         } else if (state.loadMoreFailed) {
-            // 翻页失败不能静默：尾部 spinner 消失后列表看起来"到底了"，用户无从得知
-            // 还有下一页。给重试入口；LoadMoreWatcher 的 shouldLoad 没翻转不会自动重触发，
-            // 故不会与点击重试打架。
-            item(key = "load_more_failed") {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(NumeShape.Chip)
-                        .clickable { onLoadMore() }
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "加载失败，点此重试",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
+            item(key = "load_more_failed") { NumeLoadMoreFailed(onRetry = onLoadMore) }
         }
     }
 }

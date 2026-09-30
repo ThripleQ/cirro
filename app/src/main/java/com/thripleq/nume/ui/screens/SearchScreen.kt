@@ -152,10 +152,7 @@ private fun SearchTopBar(
                 value = query,
                 onValueChange = onQueryChange,
                 singleLine = true,
-                textStyle = TextStyle(
-                    color = scheme.onSurface,
-                    fontSize = 16.sp,
-                ),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
                 cursorBrush = SolidColor(scheme.primary),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
@@ -180,8 +177,8 @@ private fun SearchTopBar(
                         if (query.isEmpty()) {
                             Text(
                                 text = "单曲、歌单、专辑以及更多内容",
+                                style = MaterialTheme.typography.bodyLarge,
                                 color = scheme.onSurfaceVariant,
-                                fontSize = 15.sp,
                                 maxLines = 1,
                             )
                         }

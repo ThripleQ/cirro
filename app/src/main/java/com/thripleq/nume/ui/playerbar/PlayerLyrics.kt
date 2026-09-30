@@ -1,6 +1,7 @@
 package com.thripleq.nume.ui.playerbar
 
 import com.thripleq.nume.ui.theme.Motion
+import com.thripleq.nume.ui.theme.NumeFade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -172,7 +173,7 @@ internal fun LyricRow(line: LyricLine, selected: Boolean, onClick: () -> Unit) {
                 MaterialTheme.colorScheme.onSurfaceVariant,
                 MaterialTheme.colorScheme.primary,
                 sel,
-            ).copy(alpha = lerp(0.55f, 1f, sel)),
+            ).copy(alpha = lerp(NumeFade.LYRIC, 1f, sel)),
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -182,7 +183,7 @@ internal fun LyricRow(line: LyricLine, selected: Boolean, onClick: () -> Unit) {
                 text = translation,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                    alpha = lerp(0.55f, 0.85f, sel),
+                    alpha = lerp(NumeFade.LYRIC, 0.85f, sel),
                 ),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),

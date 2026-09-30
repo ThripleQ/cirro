@@ -1,5 +1,6 @@
 package com.thripleq.nume.ui.screens
 
+import com.thripleq.nume.ui.theme.NumeFade
 import com.thripleq.nume.ui.theme.NumeShape
 import android.content.Context
 import android.widget.Toast
@@ -26,7 +27,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -72,6 +72,11 @@ import com.thripleq.nume.ui.components.BigCoverVisual
 import com.thripleq.nume.ui.components.LocalShellHeroAlpha
 import com.thripleq.nume.ui.components.LocalShellProgress
 import com.thripleq.nume.ui.components.LocalShellSettled
+import com.thripleq.nume.ui.components.NumeEmptyState
+import com.thripleq.nume.ui.components.NumeErrorState
+import com.thripleq.nume.ui.components.NumeMediaRow
+import com.thripleq.nume.ui.components.NumeMediaRowSkeleton
+import com.thripleq.nume.ui.components.NumeScreenTopBar
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
@@ -181,26 +186,7 @@ fun TrackListScreen(
     // 胶囊撑开：scale 0.92→1 + 圆角 28→0，内容像一颗胶囊被拉开成整屏。
     Column(Modifier.fillMaxSize()) {
         if (showTopBar) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(start = 8.dp, top = 8.dp),
-            ) {
-                Text(
-                    text = "‹",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.clickable { onBack() }.padding(end = 12.dp),
-                )
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            NumeScreenTopBar(title = title, onBack = onBack)
         }
         // 内容目标态：数据到达、壳动画结束**且大封面已就绪**后才切到列表；其余为骨架/空/错误。
         // 目标态作**不透明底板**先画，骨架叠在其上渐隐——而不是 Crossfade 让两者同时半透明。
@@ -267,19 +253,30 @@ fun TrackListScreen(
                         ) { index, track ->
                             // 行随内容浮现 / 收起退场淡入淡出（draw 阶段读，不重组）。
                             Box(Modifier.graphicsLayer { alpha = rowsAlpha.value }) {
-                                TrackRow(index, track, hPadding = 8.dp) {
-                                    vm.onTrackClick(target, index)
-                                }
+                                NumeMediaRow(
+                                    title = track.name,
+                                    subtitle = track.artist.ifBlank { null },
+                                    coverUrl = track.artworkUrl,
+                                    onClick = { vm.onTrackClick(target, index) },
+                                    trailing = {
+                                        IconButton(onClick = { /* 三点菜单：暂无功能 */ }) {
+                                            Icon(
+                                                Icons.Filled.MoreVert,
+                                                contentDescription = "更多",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    },
+                                )
                             }
                         }
                     }
                 }
-                TrackListUiState.Empty -> CenteredHint("暂无曲目", MaterialTheme.colorScheme.onSurfaceVariant)
+                TrackListUiState.Empty -> NumeEmptyState("暂无曲目")
                 // 错误必须给出路：文案本身可点重试（与播客/评论/歌手页同交互语言）。
-                TrackListUiState.Error -> CenteredHint(
-                    "曲目加载失败，点此重试",
-                    MaterialTheme.colorScheme.error,
-                    onClick = { vm.retry() },
+                TrackListUiState.Error -> NumeErrorState(
+                    text = "曲目加载失败，点此重试",
+                    onRetry = vm::retry,
                 )
             }
             // 用派生布尔（!skeletonGone）而非直接读 skeletonAlpha.value：后者每帧变化都会让
@@ -298,18 +295,6 @@ fun TrackListScreen(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun CenteredHint(text: String, color: Color, onClick: (() -> Unit)? = null) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .let { m -> onClick?.let { m.clickable(onClick = it) } ?: m },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
     }
 }
 
@@ -386,29 +371,11 @@ private fun TrackListSkeleton(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
             ) {
-                repeat(3) { SkeletonBox(Modifier.width(96.dp).height(40.dp), RoundedCornerShape(percent = 50)) }
+                repeat(3) { SkeletonBox(Modifier.width(96.dp).height(40.dp), NumeShape.Pill) }
             }
             Spacer(Modifier.height(12.dp))
-            repeat(6) { SkeletonTrackRow() }
+            repeat(6) { NumeMediaRowSkeleton() }
         }
-    }
-}
-
-@Composable
-private fun SkeletonTrackRow() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SkeletonBox(Modifier.size(48.dp), NumeShape.Chip)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            SkeletonLine(widthFraction = 0.6f, height = 14.dp)
-            SkeletonLine(widthFraction = 0.35f, height = 12.dp)
-        }
-        SkeletonBox(Modifier.size(24.dp), CircleShape)
     }
 }
 
@@ -473,8 +440,8 @@ private fun TrackListBannerHeader(
                 modifier = Modifier.fillMaxSize(),
                 meta = meta.ifBlank { null },
                 showName = showName,
-                scrimTop = 0.35f,
-                scrimAlpha = 0.85f,
+                scrimTop = NumeFade.BANNER_SCRIM_TOP,
+                scrimAlpha = NumeFade.BANNER_SCRIM,
                 requestSize = 1024,
                 onLoadSuccess = onCoverReady,
                 watermarkIcon = watermarkIcon,
@@ -519,83 +486,4 @@ private fun formatCount(n: Long): String = when {
 
 private fun trimZero(s: String) = if (s.endsWith(".0")) s.dropLast(2) else s
 
-/* ── 列表项：序号 + 封面 + 歌名/歌手 + 三点菜单 ───────── */
 
-/** 行级不可变基础 modifier（fillMaxWidth + 圆角裁剪），避免每次重组重建 modifier 链。 */
-private val trackRowBaseModifier = Modifier
-    .fillMaxWidth()
-
-@Composable
-private fun TrackRow(index: Int, track: Track, hPadding: Dp = 8.dp, onClick: () -> Unit) {
-    // model 整体 remember：AsyncImagePainter 以 model 为 key，每次重组新建 ImageRequest
-    // 会重走请求分发；按 96px（48dp 封面 @2x）尺寸构造并缓存。
-    val context = LocalContext.current
-    val artwork = remember(track.artworkUrl) {
-        track.artworkUrl?.let {
-            ImageRequest.Builder(context).data(it).size(96).build()
-        }
-    }
-    Row(
-        modifier = trackRowBaseModifier
-            .numeEntrySurface()
-            .clickable(onClick = onClick)
-            .padding(horizontal = hPadding, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(NumeShape.Chip),
-        ) {
-            if (artwork != null) {
-                val painter = rememberAsyncImagePainter(artwork)
-                ShimmerImagePlaceholder(painter, Modifier.matchParentSize())
-                Image(
-                    painter = painter,
-                    contentDescription = track.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Box(
-                    Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Filled.MusicNote,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = track.name,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            track.artist.takeIf { it.isNotBlank() }?.let {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        IconButton(onClick = { /* 三点菜单：暂无功能 */ }) {
-            Icon(
-                Icons.Filled.MoreVert,
-                contentDescription = "更多",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}

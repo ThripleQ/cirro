@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thripleq.nume.core.repo.PlaylistSummary
+import com.thripleq.nume.ui.components.NumeErrorState
 import com.thripleq.nume.ui.components.ShellPanel
 import com.thripleq.nume.ui.profile.ProfileUiState
 import com.thripleq.nume.ui.profile.ProfileViewModel
@@ -183,7 +184,7 @@ private fun ProfileBodyUi(
         Spacer(Modifier.height(20.dp))
         when (val s = state) {
             ProfileUiState.Loading -> ProfileSkeleton()
-            is ProfileUiState.Error -> ErrorRow(onRetry)
+            is ProfileUiState.Error -> NumeErrorState(onRetry = onRetry)
             // 未登录也先把完整窗口摆好：登录卡置顶，四个区块以占位呈现，
             // 结构与已登录完全一致，点击任意区块引导登录。
             ProfileUiState.LoggedOut -> LoggedOutContent(onWebLogin)

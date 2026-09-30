@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.Dp
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
+import com.thripleq.nume.ui.theme.NumeFade
 import kotlin.math.roundToInt
 
 /** 封面：卡片/全屏共用；无图时用弱化音符占位，有图按目标像素解码。 */
@@ -51,7 +52,7 @@ internal fun CoverArt(
             Icon(
                 Icons.Filled.MusicNote,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = NumeFade.ART_PLACEHOLDER),
                 modifier = Modifier.size(iconSize),
             )
         } else {

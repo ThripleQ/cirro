@@ -385,7 +385,7 @@ fun ExpandableShell(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer { alpha = NumeFade.SHELL_SCRIM * Motion.scrimT(progressAnim.value) }
-                .background(Color.Black),
+                .background(NumeInk.Scrim),
         )
         // 触摸拦截层（在壳之下、底下页面之上）：吃掉所有落在壳外的指针事件。
         // 否则展开动画期间壳还小，手指会穿透去滑动底下的列表；底下页面一滚，收起时
@@ -683,26 +683,15 @@ fun CoverExpandShell(
                 // 关闭按钮：浮在左上、不随列表滚，随展开进度淡入（p=0 不可见、不响应点击）。
                 val shellProgress = LocalShellProgress.current
                 val requestClose = LocalShellRequestClose.current
-                Box(
-                    Modifier
+                // 走 requestClose（= startClose），完整播放收起动画后才 onDismiss；
+                // 绝不可直接 onDismiss——那会跳过动画、壳瞬没。
+                NumeCloseButton(
+                    onClick = { if (shellProgress.value > 0.5f) requestClose() },
+                    modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(12.dp)
-                        .size(36.dp)
-                        .graphicsLayer { alpha = shellProgress.value }
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = NumeFade.CONTROL_SCRIM))
-                        // 走 requestClose（= startClose），完整播放收起动画后才 onDismiss；
-                        // 绝不可直接 onDismiss——那会跳过动画、壳瞬没。
-                        .clickable { if (shellProgress.value > 0.5f) requestClose() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Filled.KeyboardArrowDown,
-                        contentDescription = "收起",
-                        tint = NumeInk.OnImage,
-                        modifier = Modifier.size(24.dp),
-                    )
-                }
+                        .graphicsLayer { alpha = shellProgress.value },
+                )
             }
         },
     )

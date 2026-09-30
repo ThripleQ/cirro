@@ -58,6 +58,13 @@ import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.ui.artist.ArtistUiState
 import com.thripleq.nume.ui.artist.ArtistViewModel
 import com.thripleq.nume.ui.components.ArtistAvatarSize
+import com.thripleq.nume.ui.components.NumeArt
+import com.thripleq.nume.ui.components.NumeArtwork
+import com.thripleq.nume.ui.components.NumeMediaRow
+import com.thripleq.nume.ui.components.NumeMediaRowSkeleton
+import com.thripleq.nume.ui.components.NumeScreenTopBar
+import com.thripleq.nume.ui.components.NumeSectionHeader
+import com.thripleq.nume.ui.components.NumeSectionHeaderSkeleton
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SharedKeys
 import com.thripleq.nume.ui.components.SkeletonBox
@@ -118,7 +125,7 @@ fun ArtistScreen(
     val ready = state as? ArtistUiState.Ready
 
     Column(Modifier.fillMaxSize()) {
-        TopBar(onBack = onBack, title = ready?.profile?.name ?: "歌手")
+        NumeScreenTopBar(title = ready?.profile?.name ?: "歌手", onBack = onBack)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = bottomPadding),
@@ -140,30 +147,36 @@ fun ArtistScreen(
                     ) {
                         Text(
                             text = "歌手加载失败，点此重试",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.clickable { vm.retry() },
                         )
                     }
                 }
                 ready == null -> {
-                    item(key = "albums_skel_header") { SkeletonHeading() }
+                    item(key = "albums_skel_header") { NumeSectionHeaderSkeleton() }
                     item(key = "albums_skel") { AlbumSkeletonRow() }
-                    item(key = "songs_skel_header") { SkeletonHeading() }
-                    items(6, key = { "song_skel_$it" }) { ArtistSkeletonSongRow() }
+                    item(key = "songs_skel_header") { NumeSectionHeaderSkeleton() }
+                    items(6, key = { "song_skel_$it" }) { NumeMediaRowSkeleton() }
                 }
                 else -> {
                     if (ready.albums.isNotEmpty()) {
-                        item(key = "albums_header") { SectionHeader("专辑") }
+                        item(key = "albums_header") { NumeSectionHeader("专辑") }
                         item(key = "albums") { AlbumsRow(ready.albums, onOpenAlbum) }
                     }
                     if (ready.hotSongs.isNotEmpty()) {
-                        item(key = "songs_header") { SectionHeader("热门歌曲") }
+                        item(key = "songs_header") { NumeSectionHeader("热门歌曲") }
                         itemsIndexed(
                             ready.hotSongs,
                             key = { _, t -> "s_${t.id}" },
                             contentType = { _, _ -> "song" },
                         ) { index, track ->
-                            SongRow(track) { vm.onPlayTrack(index) }
+                            NumeMediaRow(
+                                title = track.name,
+                                subtitle = track.albumName.ifBlank { null },
+                                coverUrl = track.artworkUrl,
+                                onClick = { vm.onPlayTrack(index) },
+                            )
                         }
                     }
                 }
@@ -188,7 +201,14 @@ private fun ArtistHeader(
             .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Avatar(avatar, name, avatarModifier)
+        NumeArtwork(
+            url = avatar,
+            contentDescription = name,
+            modifier = avatarModifier,
+            size = NumeArt.AvatarLg,
+            shape = CircleShape,
+            requestSize = ArtistAvatarSize,
+        )
         Spacer(Modifier.height(14.dp))
         if (name.isNotBlank()) {
             Text(
@@ -244,17 +264,6 @@ private fun AlbumsRow(albums: List<ArtistAlbum>, onOpenAlbum: (String, String, R
 }
 
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 10.dp),
-    )
-}
-
-@Composable
 private fun AlbumCard(album: ArtistAlbum, onClick: (Rect) -> Unit) {
     var rect by remember { mutableStateOf(Rect.Zero) }
     Column(
@@ -265,7 +274,13 @@ private fun AlbumCard(album: ArtistAlbum, onClick: (Rect) -> Unit) {
             .clickable { onClick(rect) }
             .padding(8.dp),
     ) {
-        Cover(album.coverUrl, album.name, 118.dp, circle = false)
+        NumeArtwork(
+            url = album.coverUrl,
+            contentDescription = album.name,
+            size = NumeArt.AlbumCard,
+            shape = NumeShape.CardSmall,
+            requestSize = NumeArt.RequestLarge,
+        )
         Spacer(Modifier.height(6.dp))
         Text(
             text = album.name,
@@ -289,119 +304,6 @@ private fun AlbumCard(album: ArtistAlbum, onClick: (Rect) -> Unit) {
     }
 }
 
-@Composable
-private fun SongRow(track: Track, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .numeEntrySurface()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Cover(track.artworkUrl, track.name, 48.dp, circle = false)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = track.name,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (track.albumName.isNotBlank()) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = track.albumName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun Avatar(url: String?, name: String, modifier: Modifier = Modifier) {
-    Cover(url, name, 96.dp, circle = true, modifier = modifier)
-}
-
-@Composable
-private fun Cover(
-    url: String?,
-    contentDescription: String?,
-    size: androidx.compose.ui.unit.Dp,
-    circle: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val shape = if (circle) CircleShape else NumeShape.CardSmall
-    val context = LocalContext.current
-    // remember(url)：否则每次重组都新建 ImageRequest，AsyncImagePainter 视其为新 model 重走请求。
-    val model = remember(url) {
-        url?.takeIf { it.isNotBlank() }?.let {
-            ImageRequest.Builder(context).data(it).size(ArtistAvatarSize).build()
-        }
-    }
-    Box(
-        modifier
-            .size(size)
-            .clip(shape),
-    ) {
-        if (model != null) {
-            val painter = rememberAsyncImagePainter(model)
-            ShimmerImagePlaceholder(painter, Modifier.matchParentSize())
-            Image(
-                painter = painter,
-                contentDescription = contentDescription,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Filled.MusicNote,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TopBar(onBack: () -> Unit, title: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        androidx.compose.material3.IconButton(onClick = onBack) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "返回",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
 /* ── 加载骨架（头部以下） ─────────────────────────── */
 
 @Composable
@@ -421,28 +323,4 @@ private fun AlbumSkeletonRow() {
     }
 }
 
-@Composable
-private fun SkeletonHeading() {
-    SkeletonLine(
-        modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 10.dp),
-        widthFraction = 0.22f,
-        height = 18.dp,
-    )
-}
 
-@Composable
-private fun ArtistSkeletonSongRow() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SkeletonBox(Modifier.size(48.dp), NumeShape.CardSmall)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SkeletonLine(widthFraction = 0.6f, height = 14.dp)
-            SkeletonLine(widthFraction = 0.35f, height = 12.dp)
-        }
-    }
-}

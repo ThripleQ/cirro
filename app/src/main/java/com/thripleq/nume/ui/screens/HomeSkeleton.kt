@@ -15,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.thripleq.nume.ui.components.NumeMediaRowSkeleton
+import com.thripleq.nume.ui.components.NumeSectionHeaderSkeleton
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
 import com.thripleq.nume.ui.theme.NumeShape
@@ -42,28 +44,18 @@ internal fun HomeSkeleton(bottomPadding: Dp) {
             SkeletonBox(Modifier.size(28.dp), CircleShape)
         }
 
-        SkeletonSectionHeader()
-        repeat(4) { SkeletonTrackRow(artSize = 52.dp) }
+        NumeSectionHeaderSkeleton()
+        repeat(4) { NumeMediaRowSkeleton() }
 
-        SkeletonSectionHeader()
+        NumeSectionHeaderSkeleton()
         SkeletonCarousel()
 
-        SkeletonSectionHeader()
+        NumeSectionHeaderSkeleton()
         SkeletonCarousel()
 
-        SkeletonSectionHeader()
-        repeat(4) { SkeletonTrackRow(artSize = 52.dp) }
+        NumeSectionHeaderSkeleton()
+        repeat(4) { NumeMediaRowSkeleton() }
     }
-}
-
-@Composable
-private fun SkeletonSectionHeader() {
-    SkeletonLine(
-        modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp),
-        widthFraction = 0.3f,
-        height = 22.dp,
-        shape = NumeShape.Chip,
-    )
 }
 
 @Composable
@@ -78,19 +70,4 @@ private fun SkeletonCarousel() {
     }
 }
 
-@Composable
-private fun SkeletonTrackRow(artSize: Dp) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SkeletonBox(Modifier.size(artSize), NumeShape.Chip)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            SkeletonLine(widthFraction = 0.55f, height = 14.dp)
-            SkeletonLine(widthFraction = 0.3f, height = 12.dp)
-        }
-    }
-}
+

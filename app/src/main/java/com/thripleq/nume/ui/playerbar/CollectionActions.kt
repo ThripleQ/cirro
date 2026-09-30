@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Chat
@@ -22,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.thripleq.nume.ui.theme.NumeShape
 
 /** 收藏 / 播放 / 评论 三个胶囊按钮，统一规格（等宽、同高、胶囊圆角、
  *  contentPadding 一致），列表头部与滚动浮岛共用，避免三者形状观感不一。
@@ -35,7 +35,7 @@ fun CollectionActions(
     vertical: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(percent = 50)
+    val shape = NumeShape.Pill
     val contentPadding = PaddingValues(horizontal = 8.dp)
     // 形状/间距固定不变：等宽胶囊 + 等距排列，仅内容随 showText 增减。
     val btnModifier = Modifier.width(96.dp).height(40.dp)

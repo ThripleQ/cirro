@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.thripleq.nume.ui.components.NumeSectionHeader
 import com.thripleq.nume.ui.theme.NumeShape
 
 /* ── 落地页：分类标签 ───────────────────────────────────── */
@@ -44,7 +45,7 @@ internal fun LandingContent(bottomPadding: Dp, onTag: (String) -> Unit) {
         contentPadding = PaddingValues(bottom = bottomPadding),
     ) {
         TAG_SECTIONS.forEach { (title, tags) ->
-            item(key = "h_$title") { TagHeader(title) }
+            item(key = "h_$title") { NumeSectionHeader(title) }
             itemsIndexed(
                 items = tags.chunked(2),
                 key = { index, _ -> "$title-$index" },
@@ -64,17 +65,6 @@ internal fun LandingContent(bottomPadding: Dp, onTag: (String) -> Unit) {
             }
         }
     }
-}
-
-@Composable
-private fun TagHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 10.dp),
-    )
 }
 
 @Composable

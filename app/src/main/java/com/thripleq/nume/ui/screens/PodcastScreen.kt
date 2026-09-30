@@ -49,6 +49,13 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.thripleq.nume.core.repo.Program
 import com.thripleq.nume.core.repo.RadioDetail
+import com.thripleq.nume.ui.components.NumeArt
+import com.thripleq.nume.ui.components.NumeArtwork
+import com.thripleq.nume.ui.components.NumeErrorState
+import com.thripleq.nume.ui.components.NumeLoadMoreIndicator
+import com.thripleq.nume.ui.components.NumeMediaRow
+import com.thripleq.nume.ui.components.NumeMediaRowSkeleton
+import com.thripleq.nume.ui.components.NumeScreenTopBar
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
@@ -78,16 +85,10 @@ fun PodcastScreen(
     val bottomPadding = (islandHeight + 16f).dp
 
     Column(Modifier.fillMaxSize()) {
-        TopBar(onBack = onBack, title = state.detail?.name ?: "播客")
+        NumeScreenTopBar(title = state.detail?.name ?: "播客", onBack = onBack)
         when {
             state.loading -> PodcastSkeleton()
-            state.error -> Center {
-                Text(
-                    text = "播客加载失败",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.clickable { vm.retry() },
-                )
-            }
+            state.error -> NumeErrorState(text = "播客加载失败，点此重试", onRetry = vm::retry)
             else -> ProgramsContent(
                 detail = state.detail,
                 programs = state.programs,
@@ -124,15 +125,15 @@ private fun ProgramsContent(
             key = { _, p -> "pg_${p.id}" },
             contentType = { _, _ -> "program" },
         ) { _, p ->
-            ProgramRow(p) { onPlay(p) }
+            NumeMediaRow(
+                title = p.name,
+                subtitle = "${formatDuration(p.durationMs)} · ${formatCount(p.listenerCount)} 听过",
+                coverUrl = p.coverUrl,
+                onClick = { onPlay(p) },
+            )
         }
         if (loadingMore) {
-            item(key = "loading_more") {
-                Box(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator(Modifier.size(22.dp)) }
-            }
+            item(key = "loading_more") { NumeLoadMoreIndicator() }
         }
     }
 }
@@ -144,7 +145,13 @@ private fun RadioHeader(detail: RadioDetail) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        Cover(detail.coverUrl, detail.name, 112.dp, circle = false)
+        NumeArtwork(
+            url = detail.coverUrl,
+            contentDescription = detail.name,
+            size = NumeArt.Radio,
+            shape = NumeShape.CardSmall,
+            requestSize = NumeArt.RequestLarge,
+        )
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -186,37 +193,6 @@ private fun RadioHeader(detail: RadioDetail) {
 }
 
 @Composable
-private fun ProgramRow(program: Program, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .numeEntrySurface()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Cover(program.coverUrl, program.name, 52.dp, circle = false)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = program.name,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "${formatDuration(program.durationMs)} · ${formatCount(program.listenerCount)} 听过",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-        }
-    }
-}
-
-@Composable
 private fun LoadMoreWatcher(listState: LazyListState, onLoadMore: () -> Unit) {
     val shouldLoad by remember(listState) {
         derivedStateOf {
@@ -226,75 +202,6 @@ private fun LoadMoreWatcher(listState: LazyListState, onLoadMore: () -> Unit) {
         }
     }
     LaunchedEffect(shouldLoad) { if (shouldLoad) onLoadMore() }
-}
-
-@Composable
-private fun Cover(
-    url: String?,
-    contentDescription: String?,
-    size: androidx.compose.ui.unit.Dp,
-    circle: Boolean,
-) {
-    val shape = if (circle) CircleShape else NumeShape.CardSmall
-    val context = LocalContext.current
-    val model = url?.takeIf { it.isNotBlank() }?.let {
-        ImageRequest.Builder(context).data(it).size(360).build()
-    }
-    Box(Modifier.size(size).clip(shape)) {
-        if (model != null) {
-            val painter = rememberAsyncImagePainter(model)
-            ShimmerImagePlaceholder(painter, Modifier.matchParentSize())
-            Image(
-                painter = painter,
-                contentDescription = contentDescription,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            Box(
-                Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Filled.MusicNote,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TopBar(onBack: () -> Unit, title: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "返回",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun Center(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
 }
 
 /** 播客详情骨架：电台头（大封面 + 标题/元信息） + 节目行。 */
@@ -318,24 +225,7 @@ private fun PodcastSkeleton() {
                 SkeletonLine(widthFraction = 0.85f, height = 12.dp)
             }
         }
-        repeat(6) { ProgramSkeletonRow() }
-    }
-}
-
-@Composable
-private fun ProgramSkeletonRow() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SkeletonBox(Modifier.size(52.dp), NumeShape.CardSmall)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SkeletonLine(widthFraction = 0.85f, height = 14.dp)
-            SkeletonLine(widthFraction = 0.45f, height = 12.dp)
-        }
+        repeat(6) { NumeMediaRowSkeleton() }
     }
 }
 

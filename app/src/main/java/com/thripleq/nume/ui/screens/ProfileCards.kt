@@ -53,6 +53,8 @@ import coil.request.ImageRequest
 import com.thripleq.nume.core.repo.Account
 import com.thripleq.nume.core.repo.ProfileData
 import com.thripleq.nume.ui.components.BigCoverVisual
+import com.thripleq.nume.ui.components.NumeArt
+import com.thripleq.nume.ui.components.NumeArtwork
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.shellSharedCover
 import com.thripleq.nume.ui.theme.NumeShape
@@ -82,12 +84,13 @@ internal fun LoggedOutContent(onLogin: () -> Unit) {
 
 @Composable
 private fun LoginCard(onLogin: () -> Unit) {
-    Card(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
+            .clip(NumeShape.Card)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
             .clickable { onLogin() },
-        shape = NumeShape.Card,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -317,34 +320,15 @@ private fun UserCard(account: Account) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
     ) {
-        Box(Modifier.size(64.dp).clip(CircleShape)) {
-            if (account.avatarUrl != null) {
-                val context = LocalContext.current
-                val model = remember(account.avatarUrl) {
-                    ImageRequest.Builder(context).data(account.avatarUrl).size(128).build()
-                }
-                val painter = rememberAsyncImagePainter(model)
-                ShimmerImagePlaceholder(painter, Modifier.matchParentSize())
-                Image(
-                    painter = painter,
-                    contentDescription = account.nickname,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Box(
-                    Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Filled.AccountCircle,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(56.dp),
-                    )
-                }
-            }
-        }
+        NumeArtwork(
+            url = account.avatarUrl,
+            contentDescription = account.nickname,
+            size = NumeArt.AvatarMd,
+            shape = CircleShape,
+            requestSize = 128,
+            fallbackIcon = Icons.Filled.AccountCircle,
+            fallbackIconSize = 56.dp,
+        )
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(

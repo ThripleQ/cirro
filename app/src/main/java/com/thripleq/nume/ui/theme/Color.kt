@@ -29,6 +29,13 @@ object NumeInk {
 
     /** 图上内容属性水印（白 @28%）。原 `Color.White.copy(alpha=0.28f)`。 */
     val Watermark = Color(0x47FFFFFF)
+
+    /**
+     * 通用黑遮罩色基。用于「压暗不受控背景 / 浮层控件圆底」——
+     * 与 [NumeFade.SHELL_SCRIM] / [NumeFade.CONTROL_SCRIM] / [NumeFade.IMAGE_SCRIM]
+     * 组合出具体不透明度，避免在调用点裸写 `Color.Black`。
+     */
+    val Scrim = Color.Black
 }
 
 /** 需要「跟随主题色再乘透明度」的场景：只能给 alpha，不能给固化 Color。 */
@@ -39,6 +46,10 @@ object NumeFade {
     /** 缺封面兜底块上的水印图标不透明度（压在 `secondaryContainer` 上）。 */
     const val WATERMARK_ON_CONTAINER: Float = 0.75f
 
+    /** banner / hero 大封面承载多行文字时的渐变遮罩：起始位置与底部黑度。 */
+    const val BANNER_SCRIM_TOP: Float = 0.35f
+    const val BANNER_SCRIM: Float = 0.85f
+
     /**
      * 伸展壳展开时「壳以外」区域退暗的最大不透明度。
      * 原 `ExpandableShell` 私有常量 `SHELL_SCRIM_ALPHA`：提到这里是为了和
@@ -48,4 +59,21 @@ object NumeFade {
 
     /** 浮层控件圆底（收起按钮）的黑底不透明度。 */
     const val CONTROL_SCRIM: Float = 0.38f
+
+    // ── 播放页「功能性控件」的弱化不透明度（原散落的裸 alpha）─────────────
+
+    /** 顶部拉手 / 播放页次要图标的弱化。 */
+    const val HANDLE: Float = 0.4f
+
+    /** 进度条 / 滑块未填充轨道底的弱化。 */
+    const val TRACK: Float = 0.12f
+
+    /** 进度槽（无曲目时的静态轨道）弱化。 */
+    const val PROGRESS_SLOT: Float = 0.25f
+
+    /** 无封面兜底里的音符图标弱化。 */
+    const val ART_PLACEHOLDER: Float = 0.35f
+
+    /** 歌词非当前行的弱化（当前行插值到 1）。 */
+    const val LYRIC: Float = 0.55f
 }

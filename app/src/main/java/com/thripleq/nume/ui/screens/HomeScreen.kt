@@ -37,6 +37,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.ui.components.LocalShellSettled
+import com.thripleq.nume.ui.components.NumeErrorState
 import com.thripleq.nume.ui.components.ShellPanel
 import com.thripleq.nume.ui.components.shellSharedCover
 import com.thripleq.nume.ui.home.HomeUiState
@@ -178,13 +179,7 @@ private fun HomeBodyUi(
 ) {
     when (state) {
         HomeUiState.Loading -> HomeSkeleton(bottomPadding = bottomPadding)
-        HomeUiState.Error -> Centered {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("加载失败，请检查网络", color = MaterialTheme.colorScheme.onSurface)
-                Spacer(Modifier.height(12.dp))
-                TextButton(onClick = onRefresh) { Text("重试") }
-            }
-        }
+        HomeUiState.Error -> NumeErrorState(onRetry = onRefresh)
         is HomeUiState.Ready -> HomeContent(
             data = state,
             bottomPadding = bottomPadding,
@@ -240,7 +235,4 @@ private fun HomePanelContent(
     }
 }
 
-@Composable
-private fun Centered(content: @Composable () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
-}
+
