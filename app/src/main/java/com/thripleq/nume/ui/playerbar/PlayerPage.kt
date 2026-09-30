@@ -1,5 +1,6 @@
 package com.thripleq.nume.ui.playerbar
 
+import com.thripleq.nume.ui.theme.NumeFade
 import com.thripleq.nume.ui.theme.NumeShape
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
@@ -210,6 +211,12 @@ internal fun PlayerPage(
     val contentAlpha = (p / SPLIT).coerceIn(0f, 1f)
     // 顶部拉手/收起：分裂成卡后才浮现。
     val headerAlpha = splitT
+    // 胶囊→卡片段：内容固定为卡片档尺寸，由壳裁剪揭示（封面不随气泡长大）；
+    // 过卡片锚点后才切换成逐帧连续过渡到全屏，避免半档处布局跳变。
+    val pastCard = p > HALF_ANCHOR_P
+    val cardRect = shellRect(HALF_ANCHOR_P)
+    val contentProgress = if (pastCard) p else HALF_ANCHOR_P
+    val contentRect = if (pastCard) rect else cardRect
 
     // 沉浸：只在接近全屏时隐藏系统导航栏（半高时保持显示，dock 的 navigationBarsPadding
     // 布局稳定）；收起/回落到半高时恢复。用 snapshotFlow 轮询 progress，不引重组。
@@ -280,9 +287,9 @@ internal fun PlayerPage(
         Box(Modifier.fillMaxSize()) {
             PlayerPageContent(
                 player = player,
-                contentProgress = p,
-                shellHeightPx = rect.height,
-                shellWidthPx = rect.width,
+                contentProgress = contentProgress,
+                shellHeightPx = contentRect.height,
+                shellWidthPx = contentRect.width,
                 sleepEndAt = state.sleepEndAt,
                 onSleepEndAtChange = { state.sleepEndAt = it },
                 onPlaceholderAction = onPlaceholderAction,
@@ -307,7 +314,7 @@ internal fun PlayerPage(
                             .size(width = 36.dp, height = 4.dp)
                             .clip(NumeShape.Track)
                             .background(
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = NumeFade.HANDLE),
                             ),
                     )
                 }
@@ -513,7 +520,7 @@ internal fun PlayerPageContent(
             Modifier
                 .fillMaxWidth()
                 .height(1.dp * sc)
-                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f * sc)),
+                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = NumeFade.PROGRESS_SLOT * sc)),
         )
         Spacer(Modifier.height(16.dp * sc))
 
@@ -541,7 +548,7 @@ internal fun PlayerPageContent(
                         .fillMaxWidth()
                         .height(4.dp)
                         .clip(NumeShape.Track)
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)),
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = NumeFade.TRACK)),
                 )
             }
         }
