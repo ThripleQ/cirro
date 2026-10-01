@@ -3,7 +3,6 @@ package com.thripleq.nume.ui.playerbar
 import com.thripleq.nume.ui.theme.Motion
 import com.thripleq.nume.ui.theme.NumeShape
 import android.net.Uri
-import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -73,7 +72,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
@@ -118,9 +116,6 @@ fun PlayerDock(
     val positionState = rememberPlayerPosition(player)
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
-    // 触觉用原生常量（同 ExpandableShell）：CLOCK_TICK 过档轻响、CONTEXT_CLICK 落档实响。
-    // Compose 的 HapticFeedbackType 只有粗粒度几档，分不出「过档」与「停稳」两层手感。
-    val view = LocalView.current
     // 是否已进入「卡片→全屏」档：决定 dock 与气泡的叠放层级。
     // 只在跨过 p=1 时翻转，derivedStateOf 保证不因每帧 progress 变化而重组。
     val isFullscreen by remember { derivedStateOf { state.progress > 1f } }
@@ -196,33 +191,16 @@ fun PlayerDock(
     // 组合与否由锚点状态驱动：迷你条一拖动（offset>0）就组合播放面；
     // 完全落回 dock 锚点（settled）才卸载。替代手搓的 beginDrag。
     LaunchedEffect(state.sheetState) {
-        var lastBand = 0
-        snapshotFlow {
-            state.sheetState.offset to state.sheetState.isAnimationRunning
-        }.collect { (offset, animating) ->
-            // 一偏离收起锚点就组合播放面（px 判定：offset>1 即已起拖）。
+        snapshotFlow { state.sheetState.offset }.collect { offset ->
             if (offset > 1f) state.open = true
-            // 拖动过档：手指拖过档位边界时给一个轻 tick（机械档位的「咔」）。
-            // 只在**手指拖动中**响，松手后的吸附动画跨档不响——否则会和下面的落档触感
-            // 在两百毫秒内叠成碎响。触感分两层：过档轻、停稳实。
-            val p = offset / state.travelPx
-            val band = when {
-                p >= 2f -> 2
-                p >= HALF_ANCHOR_P -> 1
-                else -> 0
-            }
-            if (band != lastBand) {
-                lastBand = band
-                if (!animating) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-            }
         }
     }
     LaunchedEffect(state.sheetState) {
         snapshotFlow { state.sheetState.settledValue }.collect { v ->
             if (v == PlayerSheet.Closed) state.open = false
-            // 落档停稳：比过档 tick 更「实」的一下，读得出「咬住档位」的分量。
+            // 松手吸附到位：半高/全屏给一个轻 tick，让「滑档成功」有明确触感（跟手）。
             if (v == PlayerSheet.Half || v == PlayerSheet.Full) {
-                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             }
         }
     }
@@ -259,10 +237,9 @@ fun PlayerDock(
                     )
                     clip = true
                     shadowElevation = 2.dp.toPx() * (1f - t0)
-                    // dock 全程不透明：卡片→全屏段它被壳盖住（zIndex 翻到 -1），不需要靠淡出隐藏。
-                    // 反而淡出会在壳盖满之前先"变虚"——那段里 dock 下半截还露在壳外，
-                    // 一透明就透出底下的页面背景，看着像播放条在闪。
-                    alpha = 1f
+                    // 卡片档（p≤HALF_ANCHOR_P）dock 完整可见；只有从卡片继续拉向全屏才淡出。
+                    alpha = if (p <= HALF_ANCHOR_P) 1f
+                    else ((2f - p) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
                 }
                 .background(MaterialTheme.colorScheme.surfaceContainer)
                 .onSizeChanged { dockHeightPx = it.height },
@@ -402,11 +379,9 @@ internal fun PlayerBar(
             // reverseDirection=true：上滑（y 减小）→ offset 增大 → 展开；下滑 → 收起。
             // 迷你条在 dock 里、dock 被播放面盖住时（全屏）不可点，天然不冲突。
             .anchoredDraggable(
-                state = state.sheetState,
-                orientation = Orientation.Vertical,
+                state.sheetState,
                 reverseDirection = true,
-                // 必须显式传：不传就用库默认弹簧，state 上的吸附参数一个都不会被读。
-                flingBehavior = state.flingBehavior,
+                orientation = Orientation.Vertical,
             )
             // 点击 → 胶囊原位展开到全屏（经过卡片矩形，一气呵成）。
             // 若拖动被 anchoredDraggable 消费，点击不会触发。
@@ -439,8 +414,9 @@ internal fun PlayerBar(
     }
 }
 
-/** 迷你条视觉本体（无手势）：[PlayerBar] 的唯一内容来源。
- *  单独拆出来是为了让「迷你条长什么样」集中在一处，改版式只改这里。 */
+/** 迷你条视觉本体（无手势）：真实迷你条与播放页壳低进度时共用的同一份布局，
+ *  保证「点击迷你条 → 壳展开」第一帧与迷你条原内容无缝衔接。
+ *  真实迷你条 [PlayerBar] = 手势 + 本内容；壳内副本 = 本内容（alpha 随进度淡出）。 */
 @Composable
 internal fun PlayerBarContent(
     playerState: PlayerUiState,

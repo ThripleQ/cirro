@@ -305,14 +305,12 @@ internal fun PlayerPage(
                     indication = null,
                 ) { }
                 // 官方 anchoredDraggable：卡内上滑续开到全屏、下拉回 dock/收起。
-                // 松手吸附由显式传入的 [PlayerDockState.flingBehavior] 决定（见 rememberPlayerDockState）。
+                // 松手吸附/甩动由 AnchoredDraggableState 原生处理（位置阈值 + 速度阈值）。
                 // reverseDirection=true：上滑（y 减小）→ offset 增大 → 展开。
                 .anchoredDraggable(
-                    state = state.sheetState,
-                    orientation = Orientation.Vertical,
+                    state.sheetState,
                     reverseDirection = true,
-                    // 必须显式传：不传就用库默认弹簧，state 上的吸附参数一个都不会被读。
-                    flingBehavior = state.flingBehavior,
+                    orientation = Orientation.Vertical,
                 ),
         ) {
         // 壳内两层叠放（同 Box）：
