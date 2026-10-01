@@ -6,6 +6,7 @@ import com.thripleq.nume.ui.theme.NumeShape
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.Orientation
@@ -36,7 +37,6 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -72,7 +72,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -504,43 +503,52 @@ internal fun PlayerPageContent(
 
         Spacer(Modifier.height(titleGap))
 
-        // Track / metadata（标题全程在封面下方）
-        Text(
-            text = state.title.ifEmpty { "暂无播放" },
-            style = MaterialTheme.typography.headlineSmall.copy(fontSize = titleFont),
-            color = titleColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center,
-        )
-        // 歌手为空时整行折叠，不留空洞。
-        if (state.artist.isNotEmpty()) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = state.artist,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = artistFont),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-            )
-        }
-
-        Spacer(Modifier.weight(1f))
-
-        // 全屏专属：动作行（收藏/评论 左，播放列表 右），高度与透明度随 sc 长出。
+        // Track / metadata + 红心/评论：参照网易云 —— 歌名/歌手左对齐上下叠放，
+        // 右侧红心+评论横向并排、与文字块垂直居中，贴近文字而非飘到最右。文字过长
+        // 横向跑马而不截断；右侧图标随全屏进度 sc 渐显（卡片档宽度收为 0）。
+        // 播放列表按钮按用户要求暂隐藏。
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp * sc)
-                .clipToBounds()
-                .graphicsLayer { alpha = sc },
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.Start,
+            ) {
+                Text(
+                    text = state.title.ifEmpty { "暂无播放" },
+                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = titleFont),
+                    color = titleColor,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .basicMarquee(iterations = Int.MAX_VALUE),
+                    textAlign = TextAlign.Start,
+                )
+                // 歌手为空时整行折叠，不留空洞。
+                if (state.artist.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = state.artist,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = artistFont),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .basicMarquee(iterations = Int.MAX_VALUE),
+                        textAlign = TextAlign.Start,
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp * sc))
+            // 红心/评论：全屏专属，横向并排，随 sc 长出。
+            Row(
+                modifier = Modifier
+                    .width(80.dp * sc)
+                    .clipToBounds()
+                    .graphicsLayer { alpha = sc },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 IconButton(onClick = onPlaceholderAction, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.Filled.Favorite, "收藏", tint = MaterialTheme.colorScheme.primary)
                 }
@@ -553,14 +561,10 @@ internal fun PlayerPageContent(
                     Icon(Icons.Filled.Chat, "评论", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            IconButton(onClick = { queueOpen = true }, modifier = Modifier.size(40.dp)) {
-                Icon(
-                    Icons.Filled.QueueMusic,
-                    "播放列表",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
+
+        Spacer(Modifier.weight(1f))
+
         Spacer(Modifier.height(16.dp * sc))
         Box(
             Modifier

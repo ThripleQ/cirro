@@ -67,6 +67,7 @@ import com.thripleq.nume.ui.components.ArtistAvatarSize
 import com.thripleq.nume.ui.components.BigCoverVisual
 import com.thripleq.nume.ui.components.NumeArt
 import com.thripleq.nume.ui.components.NumeArtwork
+import com.thripleq.nume.ui.components.shellSharedCover
 import com.thripleq.nume.ui.theme.Motion
 import com.thripleq.nume.ui.theme.NumeShape
 
