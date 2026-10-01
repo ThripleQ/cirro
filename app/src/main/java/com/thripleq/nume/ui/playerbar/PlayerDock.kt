@@ -380,6 +380,7 @@ internal fun PlayerBar(
             // 迷你条在 dock 里、dock 被播放面盖住时（全屏）不可点，天然不冲突。
             .anchoredDraggable(
                 state.sheetState,
+                flingBehavior = state.flingBehavior,
                 reverseDirection = true,
                 orientation = Orientation.Vertical,
             )

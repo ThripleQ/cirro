@@ -180,6 +180,39 @@ object Motion {
         stiffness = Spring.StiffnessMedium,
     )
 
+    // ── 卡片 ↔ 全屏 落档（松手甩动）───────────────────────────────
+    /**
+     * **卡片→全屏 / 全屏→卡片**这一段落档的「先加速、后减速」专用曲线。
+     *
+     * ## 为什么需要它，而不是沿用 [SheetSettle]
+     * Compose 默认松手落档内部是 `NoOpDecayAnimationSpec`（完全没有甩动惯性）+ 一段
+     * `FastOutSlowIn`（**只有减速、没有加速**）——所以用户松手后壳只有"贴上去"的减速感，
+     * 永远读不出「先冲出去、再稳收住」。这条曲线是**中心对称的缓入缓出**（两端斜率趋平、
+     * 中段最陡），在**静态动画**里就能做出先加速再减速；配合从当前偏移起跑，甩出去那一下
+     * 也有惯性延续。
+     *
+     * 时长随「本次剩余行程占整段的比例」缩放：[SheetFullMinMs] 起、[SheetFullMaxMs] 封顶——
+     * 松手点离目标越远跑越久（从容读出动线），越近也不至于缩到把加速减速抹没（仍保最少时长）。
+     *
+     * @param remain 本次落档剩余行程占「卡片↔全屏」整段的比例（0..1，松手点越靠近卡片档越小）。
+     */
+    fun sheetFullFrom(remain: Float): AnimationSpec<Float> = tween(
+        durationMillis = (
+            SheetFullMinMs +
+                (SheetFullMaxMs - SheetFullMinMs) * remain.coerceIn(0f, 1f)
+            ).roundToInt(),
+        easing = SheetFullEase,
+    )
+
+    /** 卡片↔全屏落档：中心对称缓入缓出——起步沉、中段最快、末端稳稳收住（先加速再减速）。 */
+    private val SheetFullEase = CubicBezierEasing(0.33f, 0f, 0.33f, 1f)
+
+    /** 卡片↔全屏落档时长的下限：再近的松手点也要跑满它，否则加速减速读不出来。 */
+    const val SheetFullMinMs = 320
+
+    /** 卡片↔全屏落档时长的上限（松手点接近卡片档、行程最长时）。 */
+    const val SheetFullMaxMs = 540
+
     // ── 导航转场 ────────────────────────────────────────────────────
     /**
      * 页面级转场时长：比 [MicroMs] 略长（页面位移行程长于浮层显隐），同时明显短于

@@ -1,9 +1,9 @@
 package com.thripleq.nume.ui.playerbar
 
 import com.thripleq.nume.ui.theme.Motion
-import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.DraggableAnchors
+import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.foundation.layout.padding
@@ -87,6 +87,10 @@ enum class PlayerSheet { Closed, Half, Full }
  */
 class PlayerDockState internal constructor(
     val sheetState: AnchoredDraggableState<PlayerSheet>,
+    /** 松手落档行为：由 [rememberPlayerDockState] 用 [SheetFlingBehavior] 建好。
+     *  必须显式传给 `Modifier.anchoredDraggable`，否则库退回它写死的默认值（无惯性、只减速），
+     *  我们调的 spring / 曲线一个都读不到。 */
+    val flingBehavior: FlingBehavior,
     private val scope: CoroutineScope,
 ) {
     /** 全屏播放面是否在组合中：进入会话即 true，完全收起（尾帧落地）后才复位。
@@ -173,21 +177,32 @@ fun rememberPlayerDockState(): PlayerDockState {
     val scope = rememberCoroutineScope()
     // 官方 AnchoredDraggableState：三锚点（收起/半高/全屏），锚点像素值（offset）在
     // PlayerDock 布局后由 updateAnchors 填充（依赖 dock 高/屏高）。初始只有一个锚点。
+    //
+    // 注意：**只传新构造器参数**（initialValue/anchors/confirmValueChange）。旧版那四个参数
+    // （positionalThreshold/velocityThreshold/snapAnimationSpec/decayAnimationSpec）在 1.12
+    // 已移除——即使硬传，默认 fling 也会写死自己的行为（无惯性、只减速），读都读不到。
+    // 落档手感统一由下面的 [SheetFlingBehavior] 接管。
     val sheetState = remember {
         AnchoredDraggableState(
             initialValue = PlayerSheet.Closed,
             anchors = DraggableAnchors {
                 PlayerSheet.Closed at 0f
             },
-            positionalThreshold = { distance -> distance * 0.4f },
-            velocityThreshold = { 800f },
-            snapAnimationSpec = SPRING_CLOSE,
-            // 甩动衰减：低摩擦让「甩」更顺滑跟手（滑得远、不顿）。
-            decayAnimationSpec = exponentialDecay(frictionMultiplier = 0.7f),
             confirmValueChange = { true },
         )
     }
-    return remember { PlayerDockState(sheetState, scope) }
+    // 松手落档行为：**必须显式传给 `Modifier.anchoredDraggable`**，否则壳落档走的是库写死的
+    // 默认（NoOpDecay 无惯性 + FastOutSlowIn 只减速），加速减速读都读不出来——这是此前
+    // 「改了没感觉」的根因。这里按档位分派：全屏那一段用缓入缓出 S 曲线，卡片/收起保持弹簧。
+    val flingBehavior: FlingBehavior = remember(sheetState) {
+        SheetFlingBehavior(
+            state = sheetState,
+            cardSpec = SPRING_CLOSE,
+            fullSpecFor = Motion::sheetFullFrom,
+            closedSpec = SPRING_CLOSE,
+        )
+    }
+    return remember { PlayerDockState(sheetState, flingBehavior, scope) }
 }
 
 internal const val SWIPE_THRESHOLD_DP = 56
