@@ -63,15 +63,22 @@ class HomeViewModel @Inject constructor(
             _uiState.value = HomeUiState.Loading
 
             // 并行发起四块请求（登录态仅决定是否拉 daily/recent）。
-            val loggedIn = homeRepo.loggedIn()
+            // loggedIn 是网络调用（account 接口）：不能串行挡在四个内容块前面——
+            // account 慢（风控抖动时数秒）会让整个首页干等。它只是 daily/recent 的
+            // 前置条件，与 playlists/charts 无依赖，async 并行。
+            val loggedInAsync = async { homeRepo.loggedIn() }
             val playlists = async { homeRepo.recommendPlaylists() }
             val charts = async { chartRepo.charts() }
-            val daily = async { if (loggedIn) homeRepo.dailySongs() else emptyList() }
-            val recent = async { if (loggedIn) homeRepo.recentSongs() else emptyList() }
+            // account 慢只拖后 daily/recent 两块，playlists/charts 完全不受影响。
+            // Deferred.await() 幂等，两个块各 await 一次不产生重复请求。
+            val daily = async { if (loggedInAsync.await()) homeRepo.dailySongs() else emptyList() }
+            val recent = async { if (loggedInAsync.await()) homeRepo.recentSongs() else emptyList() }
 
             // 逐块回填：每一块一就绪就整体发布，最慢的那块不再拖慢整页首屏。
             // 四块全部聚齐后统一判空，全部为空才落到 Error。
-            var ready = HomeUiState.Ready(loggedIn, null, null, null, null)
+            // Ready.loggedIn 目前无 UI 消费者：先用占位值即刻发布首块，收尾时
+            // 再补真值——那时 daily/recent 已经等到过 account，await 瞬间返回。
+            var ready = HomeUiState.Ready(false, null, null, null, null)
 
             val pl = playlists.await()
             ready = ready.copy(playlists = pl)
@@ -86,7 +93,7 @@ class HomeViewModel @Inject constructor(
             _uiState.value = ready
 
             val re = recent.await()
-            ready = ready.copy(recentSongs = re)
+            ready = ready.copy(recentSongs = re, loggedIn = loggedInAsync.await())
 
             val allEmpty = ready.playlists.isNullOrEmpty() &&
                 ready.charts.isNullOrEmpty() &&

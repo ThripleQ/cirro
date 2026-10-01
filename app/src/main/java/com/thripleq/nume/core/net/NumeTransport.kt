@@ -37,6 +37,10 @@ object NumeTransport {
         private val client = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            // 全调用硬顶：网易云偶发慢响应（风控梯度/网关抖动）会挂满 read 超时（30s），
+            // 用户侧表现就是「某个内容等很久才就绪」。15s 顶格快速失败，交给上层
+            // 错误态 + 重试闭环（各屏已建）——比无限期等一个可能永远不回的响应合理。
+            .callTimeout(15, TimeUnit.SECONDS)
             .apply {
                 if (BuildConfig.DEBUG) {
                     // BASIC = method/url/status/timing; never bodies (cookies/credentials).

@@ -317,7 +317,13 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     g_apiresult_ctor = (*e)->GetMethodID(e, g_apiresult_cls, "<init>", "(II[B)V");
 
     ne_http_set_transport(&g_jni_transport);
-    ne_http_set_random_cn_ip(1);
+    /* 不开 ne_http_set_random_cn_ip：国内真机直连时 TCP 源 IP 就是真实的住宅
+     * 运营商 IP，再注入随机 CN IP 到 X-Real-IP/X-Forwarded-For 反而制造
+     * 「源 IP ≠ 声称 IP」的不一致特征（真实代理链才会不一致），且每请求随机
+     * 换 IP 在风控看来是同一会话跨省乱跳——两者都是教科书级风控信号，也是
+     * 偶发慢响应/空 body 的头号嫌疑。该开关按 RISKS.md 语义留给「海外/数据
+     * 中心出口」场景（NE_REAL_IP 显式配置），默认回到 libnetease README
+     * 承诺的关闭态。 */
     return JNI_VERSION_1_6;
 }
 
