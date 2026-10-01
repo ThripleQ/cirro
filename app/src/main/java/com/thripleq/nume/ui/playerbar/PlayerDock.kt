@@ -3,6 +3,7 @@ package com.thripleq.nume.ui.playerbar
 import com.thripleq.nume.ui.theme.Motion
 import com.thripleq.nume.ui.theme.NumeShape
 import android.net.Uri
+import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -72,6 +73,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
@@ -116,6 +118,9 @@ fun PlayerDock(
     val positionState = rememberPlayerPosition(player)
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
+    // 触觉用原生常量（同 ExpandableShell）：CLOCK_TICK 过档轻响、CONTEXT_CLICK 落档实响。
+    // Compose 的 HapticFeedbackType 只有粗粒度几档，分不出「过档」与「停稳」两层手感。
+    val view = LocalView.current
     // 是否已进入「卡片→全屏」档：决定 dock 与气泡的叠放层级。
     // 只在跨过 p=1 时翻转，derivedStateOf 保证不因每帧 progress 变化而重组。
     val isFullscreen by remember { derivedStateOf { state.progress > 1f } }
@@ -191,16 +196,33 @@ fun PlayerDock(
     // 组合与否由锚点状态驱动：迷你条一拖动（offset>0）就组合播放面；
     // 完全落回 dock 锚点（settled）才卸载。替代手搓的 beginDrag。
     LaunchedEffect(state.sheetState) {
-        snapshotFlow { state.sheetState.offset }.collect { offset ->
+        var lastBand = 0
+        snapshotFlow {
+            state.sheetState.offset to state.sheetState.isAnimationRunning
+        }.collect { (offset, animating) ->
+            // 一偏离收起锚点就组合播放面（px 判定：offset>1 即已起拖）。
             if (offset > 1f) state.open = true
+            // 拖动过档：手指拖过档位边界时给一个轻 tick（机械档位的「咔」）。
+            // 只在**手指拖动中**响，松手后的吸附动画跨档不响——否则会和下面的落档触感
+            // 在两百毫秒内叠成碎响。触感分两层：过档轻、停稳实。
+            val p = offset / state.travelPx
+            val band = when {
+                p >= 2f -> 2
+                p >= HALF_ANCHOR_P -> 1
+                else -> 0
+            }
+            if (band != lastBand) {
+                lastBand = band
+                if (!animating) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            }
         }
     }
     LaunchedEffect(state.sheetState) {
         snapshotFlow { state.sheetState.settledValue }.collect { v ->
             if (v == PlayerSheet.Closed) state.open = false
-            // 松手吸附到位：半高/全屏给一个轻 tick，让「滑档成功」有明确触感（跟手）。
+            // 落档停稳：比过档 tick 更「实」的一下，读得出「咬住档位」的分量。
             if (v == PlayerSheet.Half || v == PlayerSheet.Full) {
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
             }
         }
     }

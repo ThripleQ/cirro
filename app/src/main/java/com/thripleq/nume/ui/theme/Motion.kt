@@ -174,10 +174,24 @@ object Motion {
     }
 
     // ── dock 档位 spec ──────────────────────────────────────────────
-    /** 档位吸附 / 收起：干净无回弹。 */
+    /** 档位吸附 / 收起：干净无回弹（刚度高、落定快）。 */
     val SheetSettle: AnimationSpec<Float> = spring(
         dampingRatio = Spring.DampingRatioNoBouncy,
         stiffness = Spring.StiffnessMedium,
+    )
+
+    /**
+     * 档位吸附（厚实版）：低刚度 + 高阻尼，让壳"有分量地沉到位"。
+     *
+     * 与 [SheetSettle] 的「干净快落」相对：刚度从 Medium(1500) 降到 320，落位过程明显变长、
+     * 有黏滞感；阻尼从 noBouncy(1.0) 定在 0.94 —— 不是不抑制，而是**几乎不过冲**：
+     * 壳沉到底就压住，不会弹回来。读起来是「有重量的东西稳稳放下」。
+     *
+     * 只用于**手势吸附**与**展开**；收起仍走 [SheetSettle]（回原处要比去新地方利落）。
+     */
+    val SheetSettleHeavy: AnimationSpec<Float> = spring(
+        dampingRatio = 0.94f,
+        stiffness = 320f,
     )
 
     // ── 导航转场 ────────────────────────────────────────────────────

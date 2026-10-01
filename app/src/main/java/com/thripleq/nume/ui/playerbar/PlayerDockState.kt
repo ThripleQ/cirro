@@ -29,6 +29,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.math.pow
 
 /** 播放页「打开程度」：0 = 完全收起在迷你条胶囊，2 = 盖满全屏。
  *  两段式：p∈[0,1] 胶囊原位展开成悬浮卡（dock 保持可见）；
@@ -40,22 +41,33 @@ internal const val SPLIT = 0.5f
 /** 卡片档吸附进度：分裂完成后壳顶继续线性升高到该进度才停 —— 卡片占屏约 2/3、
  *  高度足够装下封面+滑块+控制整组内容（此前卡片只有半屏高，内容溢出被裁、比例失调）。
  *  全屏固定 2；卡片→全屏的形变（贴边/收角/变色/dock淡出）全部在 [HALF_ANCHOR_P, 2] 内插值，
- *  壳顶仍全程随手指线性升降（跟手不变）、一行程直达全屏（行程不变）。 */
+ *  壳顶行程不变（一行程直达全屏），但这一段按 [FULL_DRAG_RESISTANCE] 带阻力、不跟手；
+ *  收起→卡片段仍严格跟手。 */
 internal const val HALF_ANCHOR_P = 1.66f
 
 /** 分裂段内部再分两拍：前一半「挤腰」（交界圆角涨大、两侧内收成腰），后一半「断开」（缝打开）。 */
 internal const val SPLIT_SQUEEZE = 0.5f
 
+/**
+ * 卡片→全屏段的拖动阻力指数（>1）：越大于 1，起步越沉、视觉进度越落后于手指。
+ *
+ * 1 = 完全跟手；1.4 时拖到该段中点，视觉只走到约 38%（落后约四成）。
+ * 这一段（卡片往全屏拉）不需要跟手，所以把「阻力」全放在这里；收起→卡片段仍严格跟手。
+ */
+internal const val FULL_DRAG_RESISTANCE = 1.4f
+
 /** 挤腰峰值圆角（dp）：分裂前拍交界处圆角从 0 涨到它，形成内收的腰。 */
 internal val WAIST_CORNER_DP = 36f
 
 /**
- * spring 动画参数：**数值保持原样，但集中到 [Motion]**。
+ * spring 动画参数：**集中到 [Motion]**，壳与 dock 同源，不再各写一套阻尼/刚度。
  *
- * 壳与 dock 过去各写一套阻尼/刚度与时长，并排看就是「两个不同 App 的手感」；现在两处
- * 同源于 [Motion]。刻意不改弹性数值——细胞分裂的吸附手感已在真机调过，盲改风险高于收益。
+ * 厚实化（本轮）：吸附与展开改用 [Motion.SheetSettleHeavy]（低刚度 + 高阻尼），
+ * 壳落档时"有分量地沉到位"、落定后压住不回弹；收起仍用 [Motion.SheetSettle] 保持利落。
  */
 internal val SPRING_CLOSE = Motion.SheetSettle
+/** 手势吸附 + 展开到卡片：厚实版（低刚度长行程、高阻尼，沉到位后压住不回弹）。 */
+internal val SPRING_SETTLE = Motion.SheetSettleHeavy
 /** 点击整页展开：低阻尼带一点弹性过冲 + 中低刚度，既有生长过程可见、又跟手不闷。 */
 internal val SPRING_FULL = Motion.SheetExpand
 
@@ -110,10 +122,24 @@ class PlayerDockState internal constructor(
     var anchorsReady by mutableStateOf(false)
         internal set
 
-    /** 胶囊展开进度 0..2（[0,1]=胶囊→卡片，[1,2]=卡片→全屏），由 [AnchoredDraggableState.offset] 归一化。
-     *  只应在 draw 阶段（graphicsLayer）读，勿在组合读。 */
+    /**
+     * 胶囊展开进度 0..2（[0,1]=胶囊→卡片，[1,2]=卡片→全屏）。
+     *
+     * 两段手感不同：
+     * - 收起→卡片（[0,[HALF_ANCHOR_P]]）**严格跟手**：手指移多少壳移多少。
+     * - 卡片→全屏（[[HALF_ANCHOR_P],2]）**带阻力**：这一段不需要跟手，视觉进度按
+     *   [FULL_DRAG_RESISTANCE] 落后于手指——起步最沉、越拖越顺，读起来像拖着有分量的东西往全屏拽。
+     *
+     * 两段的端点（0 / [HALF_ANCHOR_P] / 2）映射保持不动，所以档位几何与吸附目标不受影响。
+     * 只应在 draw 阶段（graphicsLayer）读，勿在组合读。
+     */
     val progress: Float
-        get() = (sheetState.offset / travelPx).coerceIn(0f, 2f)
+        get() {
+            val raw = (sheetState.offset / travelPx).coerceIn(0f, 2f)
+            if (raw <= HALF_ANCHOR_P) return raw
+            val x = (raw - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)
+            return HALF_ANCHOR_P + (2f - HALF_ANCHOR_P) * x.pow(FULL_DRAG_RESISTANCE)
+        }
 
     /**
      * 迷你条胶囊的窗口坐标 Rect（**遗留字段：当前无任何读取方**）。
@@ -148,7 +174,7 @@ class PlayerDockState internal constructor(
             // 锚点由 [PlayerDock] 布局后经 updateAnchors 注册，首个 LaunchedEffect 未必已跑过；
             // animateTo 到尚未注册的锚点会抛异常（崩溃）。等锚点就绪再跑。
             snapshotFlow { anchorsReady }.first { it }
-            sheetState.animateTo(target, if (toFull) SPRING_FULL else SPRING_CLOSE)
+            sheetState.animateTo(target, if (toFull) SPRING_FULL else SPRING_SETTLE)
         }
     }
 
@@ -179,11 +205,15 @@ fun rememberPlayerDockState(): PlayerDockState {
             anchors = DraggableAnchors {
                 PlayerSheet.Closed at 0f
             },
-            positionalThreshold = { distance -> distance * 0.4f },
+            // 换档阈值 0.4 → 0.5：要拖过一半行程才咬住下一档，档位"咬得牢"、
+            // 不被小拖动带跑；快速甩动仍由 velocityThreshold(800) 判定，不影响甩到全屏。
+            positionalThreshold = { distance -> distance * 0.5f },
             velocityThreshold = { 800f },
-            snapAnimationSpec = SPRING_CLOSE,
-            // 甩动衰减：低摩擦让「甩」更顺滑跟手（滑得远、不顿）。
-            decayAnimationSpec = exponentialDecay(frictionMultiplier = 0.7f),
+            // 松手吸附：厚实版（低刚度沉到位、高阻尼压住不回弹），不是轻快弹到位。
+            snapAnimationSpec = SPRING_SETTLE,
+            // 甩动衰减：摩擦从 0.7 提到 1.1 —— 低摩擦会让壳"一甩就飘很远"，读着轻；
+            // 提高摩擦后甩动有阻力、滑一小段就稳稳咬住最近档位，分量感来自这里。
+            decayAnimationSpec = exponentialDecay(frictionMultiplier = 1.1f),
             confirmValueChange = { true },
         )
     }
