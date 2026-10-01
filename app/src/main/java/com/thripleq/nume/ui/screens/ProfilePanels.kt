@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.thripleq.nume.core.repo.PlaylistSummary
+import com.thripleq.nume.ui.components.BannerCoverSize
 import com.thripleq.nume.ui.components.BigCoverVisual
 import com.thripleq.nume.ui.components.CoverExpandShell
 import com.thripleq.nume.ui.components.LocalShellHeroAlpha
@@ -218,7 +219,7 @@ private fun PlaylistGridPanel(
                     meta = "${playlists.size} 个歌单",
                     scrimTop = NumeFade.BANNER_SCRIM_TOP,
                     scrimAlpha = NumeFade.BANNER_SCRIM,
-                    requestSize = 1024,
+                    requestSize = BannerCoverSize,
                     onLoadSuccess = onCoverReady,
                     watermarkIcon = watermarkIcon,
                 )

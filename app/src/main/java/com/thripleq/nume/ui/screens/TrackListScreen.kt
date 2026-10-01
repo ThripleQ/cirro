@@ -68,6 +68,7 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.core.repo.TrackCollection
+import com.thripleq.nume.ui.components.BannerCoverSize
 import com.thripleq.nume.ui.components.BigCoverVisual
 import com.thripleq.nume.ui.components.LocalShellHeroAlpha
 import com.thripleq.nume.ui.components.LocalShellProgress
@@ -354,7 +355,7 @@ private fun TrackListSkeleton(
                     coverUrl = coverUrl,
                     name = title,
                     modifier = Modifier.fillMaxSize(),
-                    requestSize = 1024,
+                    requestSize = BannerCoverSize,
                     onLoadSuccess = onCoverReady,
                 )
             }
@@ -442,7 +443,7 @@ private fun TrackListBannerHeader(
                 showName = showName,
                 scrimTop = NumeFade.BANNER_SCRIM_TOP,
                 scrimAlpha = NumeFade.BANNER_SCRIM,
-                requestSize = 1024,
+                requestSize = BannerCoverSize,
                 onLoadSuccess = onCoverReady,
                 watermarkIcon = watermarkIcon,
                 textAlpha = textAlpha,

@@ -148,7 +148,7 @@ internal fun PlayerPage(
     //   p∈[SPLIT,1] 分裂：气泡在迷你条上方「掐断」——顶钉状态栏，底从 dock 顶升到
     //                    「dock 顶上方 edgePx」，左右收进 edgePx、四角转圆 → 悬浮卡；
     //                    下半 dock 顶角长回圆角（0→26）、露出原高。
-    //   p∈[HALF_ANCHOR_P,2] 卡片→全屏：盖满含状态栏/导航栏（卡片档先稳定到 1.35）。
+    //   p∈[HALF_ANCHOR_P,2] 卡片→全屏：盖满含状态栏/导航栏（卡片档先稳定到 1.66）。
     //
     //   **连续性保证**：分裂点（t0=SPLIT）上 dock 圆角=0、气泡底边=dockTop+edgePx，
     //   扩展段末与分裂段初逐值相等，无跳变（分裂不再割裂）。
@@ -156,7 +156,7 @@ internal fun PlayerPage(
         val dockTopPx = fullHeightPx - dockHeightPx
         val full = Rect(0f, 0f, fullWidthPx, fullHeightPx)
         val t0 = p.coerceIn(0f, 1f)
-        // 卡片→全屏的插值在 [HALF_ANCHOR_P, 2] 段内进行：卡片档先稳定停留到 1.35，
+        // 卡片→全屏的插值在 [HALF_ANCHOR_P, 2] 段内进行：卡片档先稳定停留到 1.66，
         // 再继续拉才贴满屏（此前 p>1 就开始盖满，卡片档形同虚设、高度只有半屏）。
         val t1 = ((p - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
         val extT = (t0 / SPLIT).coerceIn(0f, 1f)
@@ -232,8 +232,9 @@ internal fun PlayerPage(
         MaterialTheme.colorScheme.surfaceContainerHighest,
         t1,
     )
-    // 内容淡入：扩展段气泡长起来时内容浮现，分裂完成（p=1）已基本可见。
-    val contentAlpha = (p / SPLIT).coerceIn(0f, 1f)
+    // 内容淡入：扩展段气泡长起来时内容浮现，分裂完成（p=1）已基本可见（≈60%），
+    // 壳长到卡片档（p=HALF_ANCHOR_P）才全亮——避免「壳还矮、内容已全亮」的挤压感。
+    val contentAlpha = (p / HALF_ANCHOR_P).coerceIn(0f, 1f)
     // 顶部拉手/收起：分裂成卡后才浮现。
     val headerAlpha = splitT
     // 胶囊→卡片段：内容固定为卡片档尺寸，由壳裁剪揭示（封面不随气泡长大）；

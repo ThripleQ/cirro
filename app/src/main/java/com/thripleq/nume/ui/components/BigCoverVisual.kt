@@ -44,6 +44,15 @@ import com.thripleq.nume.ui.theme.NumeInk
 const val CardCoverSize = 480
 
 /**
+ * 全屏列表 banner 头（大封面）的解码尺寸（px）：比 [CardCoverSize] 大，拿高清。
+ *
+ * 与起点卡片**不同尺寸**，morph 期间会另起一次解码（不命中卡片的内存条目）——
+ * 这是清晰度换缓存命中：banner 满宽（≈360dp）显示，480 会发虚；条目在磁盘缓存里，
+ * 解码很快，一般设备上看不出交接间隙。
+ */
+const val BannerCoverSize = 1024
+
+/**
  * 歌手头像在「来源行（搜索结果）↔ 歌手页头部」两端**共用**的解码尺寸（px）。
  *
  * 共享元素两端必须请求同一尺寸才会命中 Coil 内存缓存：否则目标端（歌手页头像）会另起一次
@@ -64,7 +73,7 @@ const val ArtistAvatarSize = 360
  * @param scrimTop 渐变遮罩起始位置（0..1，越大遮罩越短）；banner 需承载多行文字故可调高
  * @param scrimAlpha 渐变底部黑度（0..1），保证文字可读
  * @param requestSize 解码尺寸（px）。卡片/hero 用 [CardCoverSize]（同源、内存命中）；
- *                    全屏 banner 用更大值（1024）拿高清。
+ *                    全屏 banner 用 [BannerCoverSize]（1024）拿高清。
  * @param textAlpha 文本图层透明度（[State]，只在 draw 阶段读）——展开时与骨架淡出互补地淡入，
  *                  避免元信息"闪现"。null 时恒 1。
  * @param onLoadSuccess 封面真正绘制出来（加载成功或失败落定）时回调一次；供 hero 交接。

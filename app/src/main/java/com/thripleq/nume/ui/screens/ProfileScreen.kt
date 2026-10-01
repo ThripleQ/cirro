@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -115,6 +116,7 @@ fun ProfileScreen(
                         onRetry = onRetry,
                         shared = shared,
                         avScope = scope,
+                        bottomPadding = panelBottomPad,
                     )
                 } else {
                     ShellPanel(onDismiss = onDismiss) {
@@ -144,6 +146,7 @@ fun ProfileScreen(
                 onRetry = onRetry,
                 shared = null,
                 avScope = null,
+                bottomPadding = panelBottomPad,
             )
             // 全屏列表面板：从被点击大卡的位置伸展成全屏（hero 封面 morph 到 banner 封面）。
             panel?.let { target ->
@@ -172,6 +175,7 @@ private fun ProfileBodyUi(
     onRetry: () -> Unit,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
+    bottomPadding: Dp,
 ) {
     // 避让必须放在滚动内容内部（同 TrackListScreen 的 contentPadding 做法）：
     // 放在外层 padding 会在岛背后留一条永久空白带，卡片进不去、岛像贴在画布上。
@@ -179,7 +183,7 @@ private fun ProfileBodyUi(
         Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            .padding(start = 16.dp, end = 16.dp, bottom = bottomPadding),
     ) {
         Spacer(Modifier.height(20.dp))
         when (val s = state) {
