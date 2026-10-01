@@ -83,10 +83,11 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 播放界面不是独立页面，而是**常驻底部 dock 与全屏播放页合体**在 `ui/playerbar/PlayerDock.kt`：
 
 - **单组件、单状态**：一份 `PlayerDockState` + 官方 `AnchoredDraggableState`，三档
-  `Closed / Half / Full`；`progress = offset / travelPx ∈ [0,2]`（0=收在迷你条胶囊、1=悬浮卡、
-  2=盖满全屏），**只在 draw 阶段（graphicsLayer）读，绝不驱动挂载/组合**（铁律）。
-- **两段式几何**：`[0,1]` 胶囊原位展开成悬浮卡（dock 仍可见可点），`[1,2]` 卡片放大盖满全屏
-  （dock 淡出）；几何/圆角在 draw 阶段用 `graphicsLayer` + `drawWithContent(clipPath)` 画实心卡，
+  `Closed / Half / Full`；`progress = offset / travelPx ∈ [0,2]`（0=收在迷你条胶囊、
+  `HALF_ANCHOR_P=1.66`=悬浮卡、2=盖满全屏），**只在 draw 阶段（graphicsLayer）读，绝不驱动挂载/组合**（铁律）。
+- **两段式几何**：`[0,1.66]` 胶囊原位展开成悬浮卡（dock 仍可见可点），`[1.66,2]` 卡片放大盖满全屏
+  （dock **不淡出**：全程不透明，靠壳盖住；这一段走 `fullSegmentEase` 先加速再减速，正反方向同一条曲线）；
+  几何/圆角在 draw 阶段用 `graphicsLayer` + `drawWithContent(clipPath)` 画实心卡，
   零重组、不透底。
 - **手势**：迷你条上滑 1:1 跟手、松手按位置/速度吸附；点迷你条/列表项 `open(toFull=true)` 直达全屏；
   收起箭头/返回键回落。

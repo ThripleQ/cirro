@@ -259,9 +259,10 @@ fun PlayerDock(
                     )
                     clip = true
                     shadowElevation = 2.dp.toPx() * (1f - t0)
-                    // 卡片档（p≤HALF_ANCHOR_P）dock 完整可见；只有从卡片继续拉向全屏才淡出。
-                    alpha = if (p <= HALF_ANCHOR_P) 1f
-                    else ((2f - p) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
+                    // dock 全程不透明：卡片→全屏段它被壳盖住（zIndex 翻到 -1），不需要靠淡出隐藏。
+                    // 反而淡出会在壳盖满之前先"变虚"——那段里 dock 下半截还露在壳外，
+                    // 一透明就透出底下的页面背景，看着像播放条在闪。
+                    alpha = 1f
                 }
                 .background(MaterialTheme.colorScheme.surfaceContainer)
                 .onSizeChanged { dockHeightPx = it.height },
@@ -401,9 +402,11 @@ internal fun PlayerBar(
             // reverseDirection=true：上滑（y 减小）→ offset 增大 → 展开；下滑 → 收起。
             // 迷你条在 dock 里、dock 被播放面盖住时（全屏）不可点，天然不冲突。
             .anchoredDraggable(
-                state.sheetState,
-                reverseDirection = true,
+                state = state.sheetState,
                 orientation = Orientation.Vertical,
+                reverseDirection = true,
+                // 必须显式传：不传就用库默认弹簧，state 上的吸附参数一个都不会被读。
+                flingBehavior = state.flingBehavior,
             )
             // 点击 → 胶囊原位展开到全屏（经过卡片矩形，一气呵成）。
             // 若拖动被 anchoredDraggable 消费，点击不会触发。
@@ -436,9 +439,8 @@ internal fun PlayerBar(
     }
 }
 
-/** 迷你条视觉本体（无手势）：真实迷你条与播放页壳低进度时共用的同一份布局，
- *  保证「点击迷你条 → 壳展开」第一帧与迷你条原内容无缝衔接。
- *  真实迷你条 [PlayerBar] = 手势 + 本内容；壳内副本 = 本内容（alpha 随进度淡出）。 */
+/** 迷你条视觉本体（无手势）：[PlayerBar] 的唯一内容来源。
+ *  单独拆出来是为了让「迷你条长什么样」集中在一处，改版式只改这里。 */
 @Composable
 internal fun PlayerBarContent(
     playerState: PlayerUiState,

@@ -1,9 +1,10 @@
 package com.thripleq.nume.ui.playerbar
 
 import com.thripleq.nume.ui.theme.Motion
-import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.foundation.gestures.AnchoredDraggableDefaults
 import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.DraggableAnchors
+import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.foundation.layout.padding
@@ -29,19 +30,18 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlin.math.pow
 
 /** 播放页「打开程度」：0 = 完全收起在迷你条胶囊，2 = 盖满全屏。
  *  两段式：p∈[0,1] 胶囊原位展开成悬浮卡（dock 保持可见）；
- *  p∈[1,2] 卡片放大盖满全屏（dock 淡出）。 */
+ *  p∈[1,2] 卡片放大盖满全屏（dock 不淡出，改由壳盖住）。 */
 
 /** 第一档（胶囊→卡片）的分裂点：progress ∈ [0,SPLIT] 是「扩展」，[SPLIT,1] 是「分裂」。 */
 internal const val SPLIT = 0.5f
 
 /** 卡片档吸附进度：分裂完成后壳顶继续线性升高到该进度才停 —— 卡片占屏约 2/3、
  *  高度足够装下封面+滑块+控制整组内容（此前卡片只有半屏高，内容溢出被裁、比例失调）。
- *  全屏固定 2；卡片→全屏的形变（贴边/收角/变色/dock淡出）全部在 [HALF_ANCHOR_P, 2] 内插值，
- *  壳顶行程不变（一行程直达全屏），但这一段按 [FULL_DRAG_RESISTANCE] 带阻力、不跟手；
+ *  全屏固定 2；卡片→全屏的形变（贴边/收角/变色）全部在 [HALF_ANCHOR_P, 2] 内插值，
+ *  壳顶行程不变（一行程直达全屏），但这一段走 [fullSegmentEase]（先加速再减速）、不跟手；
  *  收起→卡片段仍严格跟手。 */
 internal const val HALF_ANCHOR_P = 1.66f
 
@@ -49,12 +49,13 @@ internal const val HALF_ANCHOR_P = 1.66f
 internal const val SPLIT_SQUEEZE = 0.5f
 
 /**
- * 卡片→全屏段的拖动阻力指数（>1）：越大于 1，起步越沉、视觉进度越落后于手指。
+ * 卡片→全屏段的缓动：**先加速、再减速**（ease-in-out）。
  *
- * 1 = 完全跟手；1.4 时拖到该段中点，视觉只走到约 38%（落后约四成）。
- * 这一段（卡片往全屏拉）不需要跟手，所以把「阻力」全放在这里；收起→卡片段仍严格跟手。
+ * 一条曲线正反共用，所以上拉展开与下拉收起的手感一致——起步沉、中段最快、末端稳稳落定。
+ * s(x) = x²(3−2x)（smoothstep）：两端斜率都是 0（起步不窜、末端不撞），中段斜率 1.5。
+ * 端点 0/1 保持不动，档位几何与吸附目标不受影响。
  */
-internal const val FULL_DRAG_RESISTANCE = 1.4f
+internal fun fullSegmentEase(x: Float): Float = x * x * (3f - 2f * x)
 
 /** 挤腰峰值圆角（dp）：分裂前拍交界处圆角从 0 涨到它，形成内收的腰。 */
 internal val WAIST_CORNER_DP = 36f
@@ -62,14 +63,24 @@ internal val WAIST_CORNER_DP = 36f
 /**
  * spring 动画参数：**集中到 [Motion]**，壳与 dock 同源，不再各写一套阻尼/刚度。
  *
- * 厚实化（本轮）：吸附与展开改用 [Motion.SheetSettleHeavy]（中等刚度 + 略低阻尼），
+ * 厚实化：吸附与展开改用 [Motion.SheetSettleHeavy]（中等刚度 + 略低阻尼），
  * 壳"有力地咬住档位、落地微微一顿"；收起仍用 [Motion.SheetSettle] 保持利落。
+ *
+ * ⚠️ [SPRING_SETTLE] 用于**手势松手后的吸附**，必须经 [AnchoredDraggableDefaults.flingBehavior]
+ * 显式传给 `Modifier.anchoredDraggable` 才生效（见 [rememberPlayerDockState] 的说明）。
  */
 internal val SPRING_CLOSE = Motion.SheetSettle
 /** 手势吸附 + 展开到卡片：厚实版（中等刚度、不软；落定有克制的一顿）。 */
 internal val SPRING_SETTLE = Motion.SheetSettleHeavy
 /** 点击整页展开：低阻尼带一点弹性过冲 + 中低刚度，既有生长过程可见、又跟手不闷。 */
 internal val SPRING_FULL = Motion.SheetExpand
+
+/**
+ * 换档阈值（占单档行程的比例）：要拖过一半行程才咬住下一档，档位"咬得牢"、不被小拖动带跑。
+ *
+ * 同样**必须经 [AnchoredDraggableDefaults.flingBehavior] 显式传入**才生效。
+ */
+internal const val POSITIONAL_THRESHOLD = 0.5f
 
 /** 分裂段进度 [0,1] 拆成两拍：挤腰 ([0,SPLIT_SQUEEZE]) 与 断开 ([SPLIT_SQUEEZE,1])。 */
 internal fun splitSqueezeT(splitT: Float): Float = (splitT / SPLIT_SQUEEZE).coerceIn(0f, 1f)
@@ -94,12 +105,16 @@ enum class PlayerSheet { Closed, Half, Full }
  * - [PlayerSheet.Full]   = 2*travelPx → 壳盖满全屏（progress == 2）
  * [progress] = offset / travelPx ∈ [0,2]，在 draw 阶段读，不触发重组。
  *
- * - 手势由 `Modifier.anchoredDraggable(state)` 驱动（内部处理 slop 仲裁/松手吸附/甩动）。
+ * - 手势由 `Modifier.anchoredDraggable(state, flingBehavior = [flingBehavior])` 驱动：
+ *   slop 仲裁在库内，**松手吸附/甩动由显式传入的 [flingBehavior] 决定**（不传就用库默认弹簧）。
  * - 组合与否只由 [open] 显式布尔决定，由 offset/settledValue 观察驱动。
  */
 class PlayerDockState internal constructor(
     val sheetState: AnchoredDraggableState<PlayerSheet>,
     private val scope: CoroutineScope,
+    /** 松手吸附行为：[rememberPlayerDockState] 用 [AnchoredDraggableDefaults.flingBehavior] 建好。
+     *  必须显式传给 `Modifier.anchoredDraggable`，否则库退回默认弹簧、我们调的参数全部失效。 */
+    val flingBehavior: FlingBehavior,
 ) {
     /** 全屏播放面是否在组合中：进入会话即 true，完全收起（尾帧落地）后才复位。
      *  内部由 [AnchoredDraggableState] 的 offset/settledValue 观察驱动，外部只读。 */
@@ -127,8 +142,8 @@ class PlayerDockState internal constructor(
      *
      * 两段手感不同：
      * - 收起→卡片（[0,[HALF_ANCHOR_P]]）**严格跟手**：手指移多少壳移多少。
-     * - 卡片→全屏（[[HALF_ANCHOR_P],2]）**带阻力**：这一段不需要跟手，视觉进度按
-     *   [FULL_DRAG_RESISTANCE] 落后于手指——起步最沉、越拖越顺，读起来像拖着有分量的东西往全屏拽。
+     * - 卡片→全屏（[[HALF_ANCHOR_P],2]）**先加速再减速**：这一段不需要跟手，视觉进度走
+     *   [fullSegmentEase]——起步沉、中段快、末端稳稳落定；正反方向同一条曲线，收起时同样成立。
      *
      * 两段的端点（0 / [HALF_ANCHOR_P] / 2）映射保持不动，所以档位几何与吸附目标不受影响。
      * 只应在 draw 阶段（graphicsLayer）读，勿在组合读。
@@ -138,7 +153,7 @@ class PlayerDockState internal constructor(
             val raw = (sheetState.offset / travelPx).coerceIn(0f, 2f)
             if (raw <= HALF_ANCHOR_P) return raw
             val x = (raw - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)
-            return HALF_ANCHOR_P + (2f - HALF_ANCHOR_P) * x.pow(FULL_DRAG_RESISTANCE)
+            return HALF_ANCHOR_P + (2f - HALF_ANCHOR_P) * fullSegmentEase(x)
         }
 
     /**
@@ -199,25 +214,33 @@ fun rememberPlayerDockState(): PlayerDockState {
     val scope = rememberCoroutineScope()
     // 官方 AnchoredDraggableState：三锚点（收起/半高/全屏），锚点像素值（offset）在
     // PlayerDock 布局后由 updateAnchors 填充（依赖 dock 高/屏高）。初始只有一个锚点。
+    //
+    // 注意：这里**不再**传 positionalThreshold / velocityThreshold / snapAnimationSpec /
+    // decayAnimationSpec —— 那套构造器参数已被 Compose 弃用，而且在没显式传 flingBehavior 时
+    // **完全不会被读**（AnchoredDraggableNode.updateFlingBehavior 在 flingBehavior == null 时
+    // 用的是 AnchoredDraggableDefaults 的固定默认值 + NoOpDecay）。此前的手感参数因此从未生效。
+    // 现在统一由下面的 [AnchoredDraggableDefaults.flingBehavior] 显式提供。
     val sheetState = remember {
         AnchoredDraggableState(
             initialValue = PlayerSheet.Closed,
             anchors = DraggableAnchors {
                 PlayerSheet.Closed at 0f
             },
-            // 换档阈值 0.4 → 0.5：要拖过一半行程才咬住下一档，档位"咬得牢"、
-            // 不被小拖动带跑；快速甩动仍由 velocityThreshold(800) 判定，不影响甩到全屏。
-            positionalThreshold = { distance -> distance * 0.5f },
-            velocityThreshold = { 800f },
-            // 松手吸附：厚实版（中等刚度有力地咬住档位、落定微微一顿），不是软绵绵飘停。
-            snapAnimationSpec = SPRING_SETTLE,
-            // 甩动衰减：摩擦 0.7 → 1.35 —— 快速滑动时壳要"很快咬住"档位才读着实；
-            // 摩擦太低会让它一路飘过去，这正是"快速滑动时轻飘飘"的来源。
-            decayAnimationSpec = exponentialDecay(frictionMultiplier = 1.35f),
             confirmValueChange = { true },
         )
     }
-    return remember { PlayerDockState(sheetState, scope) }
+    // 松手吸附行为：**必须显式传给 `Modifier.anchoredDraggable`**，否则壳落档走的是库的默认弹簧，
+    // 我们调的刚度/阻尼读都读不到。
+    //
+    // 可调项就这两个：换档阈值（[POSITIONAL_THRESHOLD]）与吸附弹簧（[SPRING_SETTLE]）。
+    // 速度阈值与衰减不由这里控制——该重载内部固定用 AnchoredDraggableMinFlingVelocity 与
+    // NoOpDecayAnimationSpec（没有衰减段，整段落档都由吸附弹簧走完），所以不要再调 friction。
+    val flingBehavior = AnchoredDraggableDefaults.flingBehavior(
+        state = sheetState,
+        positionalThreshold = { distance -> distance * POSITIONAL_THRESHOLD },
+        animationSpec = SPRING_SETTLE,
+    )
+    return remember { PlayerDockState(sheetState, scope, flingBehavior) }
 }
 
 internal const val SWIPE_THRESHOLD_DP = 56
