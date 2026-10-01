@@ -62,11 +62,11 @@ internal val WAIST_CORNER_DP = 36f
 /**
  * spring 动画参数：**集中到 [Motion]**，壳与 dock 同源，不再各写一套阻尼/刚度。
  *
- * 厚实化（本轮）：吸附与展开改用 [Motion.SheetSettleHeavy]（低刚度 + 高阻尼），
- * 壳落档时"有分量地沉到位"、落定后压住不回弹；收起仍用 [Motion.SheetSettle] 保持利落。
+ * 厚实化（本轮）：吸附与展开改用 [Motion.SheetSettleHeavy]（中等刚度 + 略低阻尼），
+ * 壳"有力地咬住档位、落地微微一顿"；收起仍用 [Motion.SheetSettle] 保持利落。
  */
 internal val SPRING_CLOSE = Motion.SheetSettle
-/** 手势吸附 + 展开到卡片：厚实版（低刚度长行程、高阻尼，沉到位后压住不回弹）。 */
+/** 手势吸附 + 展开到卡片：厚实版（中等刚度、不软；落定有克制的一顿）。 */
 internal val SPRING_SETTLE = Motion.SheetSettleHeavy
 /** 点击整页展开：低阻尼带一点弹性过冲 + 中低刚度，既有生长过程可见、又跟手不闷。 */
 internal val SPRING_FULL = Motion.SheetExpand
@@ -209,11 +209,11 @@ fun rememberPlayerDockState(): PlayerDockState {
             // 不被小拖动带跑；快速甩动仍由 velocityThreshold(800) 判定，不影响甩到全屏。
             positionalThreshold = { distance -> distance * 0.5f },
             velocityThreshold = { 800f },
-            // 松手吸附：厚实版（低刚度沉到位、高阻尼压住不回弹），不是轻快弹到位。
+            // 松手吸附：厚实版（中等刚度有力地咬住档位、落定微微一顿），不是软绵绵飘停。
             snapAnimationSpec = SPRING_SETTLE,
-            // 甩动衰减：摩擦从 0.7 提到 1.1 —— 低摩擦会让壳"一甩就飘很远"，读着轻；
-            // 提高摩擦后甩动有阻力、滑一小段就稳稳咬住最近档位，分量感来自这里。
-            decayAnimationSpec = exponentialDecay(frictionMultiplier = 1.1f),
+            // 甩动衰减：摩擦 0.7 → 1.35 —— 快速滑动时壳要"很快咬住"档位才读着实；
+            // 摩擦太低会让它一路飘过去，这正是"快速滑动时轻飘飘"的来源。
+            decayAnimationSpec = exponentialDecay(frictionMultiplier = 1.35f),
             confirmValueChange = { true },
         )
     }
