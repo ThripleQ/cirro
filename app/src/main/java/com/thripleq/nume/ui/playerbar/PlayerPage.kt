@@ -6,7 +6,6 @@ import com.thripleq.nume.ui.theme.NumeShape
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.Orientation
@@ -84,6 +83,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import com.thripleq.nume.core.playback.PlayerHolder
+import com.thripleq.nume.ui.components.FadingMarqueeText
 import kotlinx.coroutines.flow.collect
 
 /**
@@ -515,28 +515,18 @@ internal fun PlayerPageContent(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.Start,
             ) {
-                Text(
+                FadingMarqueeText(
                     text = state.title.ifEmpty { "暂无播放" },
                     style = MaterialTheme.typography.headlineSmall.copy(fontSize = titleFont),
                     color = titleColor,
-                    maxLines = 1,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .basicMarquee(iterations = Int.MAX_VALUE),
-                    textAlign = TextAlign.Start,
                 )
                 // 歌手为空时整行折叠，不留空洞。
                 if (state.artist.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
-                    Text(
+                    FadingMarqueeText(
                         text = state.artist,
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = artistFont),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .basicMarquee(iterations = Int.MAX_VALUE),
-                        textAlign = TextAlign.Start,
                     )
                 }
             }
