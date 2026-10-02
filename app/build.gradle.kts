@@ -24,18 +24,27 @@ android {
 
         // libnetease is compiled without curl; the app installs an OkHttp
         // transport over JNI at runtime (see jni_glue.c / NumeTransport).
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
-        }
         externalNativeBuild {
             cmake {
                 arguments += listOf("-DNE_USE_CURL=OFF")
+                // Build only what the app ships. Without an explicit target AGP
+                // builds every target in the CMake project, dragging libnetease's
+                // CLI and test executables into the APK build (13 extra sources
+                // per ABI). `netease` comes along as a link dependency.
+                targets += "nume_jni"
             }
         }
     }
 
     buildTypes {
+        debug {
+            // Local debug only ever runs on the arm64 device; skipping the other
+            // two ABIs removes most of the native compile time.
+            ndk { abiFilters += "arm64-v8a" }
+        }
         release {
+            // Release stays ABI-complete.
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
