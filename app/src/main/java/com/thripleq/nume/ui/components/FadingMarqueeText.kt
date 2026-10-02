@@ -39,12 +39,14 @@ import kotlin.math.ceil
  * 与 `Modifier.basicMarquee` 的区别 —— 自带的两侧淡出**只在滚动时出现**：起滚时淡入、
  * 停顿时淡出。`basicMarquee` 不对外暴露滚动相位，做不到这件事，所以这里自持动画。
  *
- * 滚动策略是「单程读完」：从行首匀速滚到行尾（末字对齐右缘）→ 停下 → 从头再来；
- * 而不是首尾相接无限循环。位移用线性 tween（与 AOSP 一致的线性手感），左右遮罩的
- * 透明度由独立的 `fade` 动画驱动，和滚动同时起、同时收，带渐变过渡。
+ * 滚动策略是「单程读完」：从行首匀速滚到行尾（末字对齐右缘）→ 立即回卷 → 停在行首
+ * → 再滚，而不是首尾相接无限循环。**停顿只发生在行首**（与 AOSP BasicMarquee 的
+ * repeatDelay 一致），末尾不停留 —— 否则读者会在"读完那一刻"看到文字卡在末位不动。
+ * 位移用线性 tween（与 AOSP 一致的线性手感），左右遮罩的透明度由独立的 `fade` 动画
+ * 驱动，和滚动同时起、同时收，带渐变过渡。
  *
  * @param velocity 滚动速度，dp/秒（AOSP 默认 30）。
- * @param delayMillis 起滚前、以及每次读完后的停顿，毫秒。
+ * @param delayMillis 行首停顿（每次起滚前），毫秒。
  * @param fadeWidth 左右遮罩的渐变宽度。
  * @param fadeMillis 遮罩淡入/淡出的过渡时长。
  */
@@ -93,6 +95,7 @@ fun FadingMarqueeText(
             }
             val duration = ceil(overflow / (velocityPx / 1000f)).toInt().coerceAtLeast(1)
             while (true) {
+                // 停在行首：归位 + 停顿（停顿只发生在这里）。
                 offset.snapTo(0f)
                 fade.snapTo(0f)
                 delay(delayMillis.toLong())
@@ -101,8 +104,8 @@ fun FadingMarqueeText(
                     launch { fade.animateTo(1f, tween(durationMillis = fadeMillis)) }
                     offset.animateTo(overflow.toFloat(), tween(duration, easing = LinearEasing))
                 }
-                fade.animateTo(0f, tween(durationMillis = fadeMillis))
-                delay(delayMillis.toLong())
+                // 读完不停留、不淡出：直接回到循环顶部瞬时回卷（位置与遮罩一起归零），
+                // 停顿全部留给行首 —— 否则文字会在末位多停一拍，读起来像"卡在结尾"。
             }
         }
 

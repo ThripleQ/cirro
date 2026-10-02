@@ -75,13 +75,22 @@ fun rememberPlayerState(
     var meta by remember { mutableStateOf(PlayerUiState()) }
 
     LaunchedEffect(player) {
+        // MediaItem 元数据里声明的时长（trackMediaItem 写入）。恢复态停在 STATE_IDLE：
+        // 未 prepare/未联网，player.duration 为 0，靠它兜底，进度条与总时长在
+        // 「已恢复、未加载」时也能正确显示；一旦真实时长可用（READY）则以真实值为准。
+        var declaredDurationMs = 0L
+        fun effectiveDurationMs(): Long =
+            player.duration.takeIf { it > 0L } ?: declaredDurationMs
+
         val listener = object : Player.Listener {
             override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
+                declaredDurationMs = mediaMetadata.durationMs?.takeIf { it > 0L } ?: 0L
                 meta = meta.copy(
                     title = mediaMetadata.title?.toString() ?: "",
                     artist = mediaMetadata.artist?.toString() ?: "",
                     trackId = player.currentMediaItem?.mediaId,
                     coverUrl = mediaMetadata.artworkUri?.toString(),
+                    durationMs = effectiveDurationMs(),
                     errorText = null,
                 )
             }
@@ -97,7 +106,7 @@ fun rememberPlayerState(
             override fun onPlaybackStateChanged(s: Int) {
                 meta = meta.copy(isBuffering = s == Player.STATE_BUFFERING)
                 if (s == Player.STATE_READY) {
-                    meta = meta.copy(durationMs = player.duration.coerceAtLeast(0L))
+                    meta = meta.copy(durationMs = effectiveDurationMs())
                 }
             }
 
@@ -118,6 +127,7 @@ fun rememberPlayerState(
         // reality the moment it appears (e.g. already playing when the screen
         // opens) instead of defaulting to "not playing".
         val mediaMetadata = player.mediaMetadata
+        declaredDurationMs = mediaMetadata.durationMs?.takeIf { it > 0L } ?: 0L
         meta = PlayerUiState(
             title = mediaMetadata.title?.toString() ?: "",
             artist = mediaMetadata.artist?.toString() ?: "",
@@ -125,7 +135,7 @@ fun rememberPlayerState(
             coverUrl = mediaMetadata.artworkUri?.toString(),
             isPlaying = player.isPlaying,
             isBuffering = player.playbackState == Player.STATE_BUFFERING,
-            durationMs = player.duration.coerceAtLeast(0L),
+            durationMs = effectiveDurationMs(),
             hasTrack = player.currentMediaItem != null,
             shuffleEnabled = player.shuffleModeEnabled,
             repeatMode = player.repeatMode,
@@ -134,7 +144,7 @@ fun rememberPlayerState(
             while (true) {
                 // hasTrack / duration 由 listener 与这里共同维护；只在真实变化时写 meta。
                 val hasTrack = player.currentMediaItem != null
-                val duration = player.duration.coerceAtLeast(0L)
+                val duration = effectiveDurationMs()
                 if (meta.hasTrack != hasTrack || meta.durationMs != duration) {
                     meta = meta.copy(hasTrack = hasTrack, durationMs = duration)
                 }

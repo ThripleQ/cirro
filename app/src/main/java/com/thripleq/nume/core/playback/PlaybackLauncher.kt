@@ -54,6 +54,9 @@ class PlaybackLauncher @Inject constructor() {
 /**
  * [Track] → 队列 [MediaItem]：稳定合成 URI + 元数据。URL 惰性解析，故这里只放
  * `nume://song/<id>`。同时供 [PlayerHolder] 恢复上次队列时复用。
+ *
+ * 元数据里**声明时长**：恢复态停在 STATE_IDLE（不 prepare、不联网），此时
+ * `player.duration` 为 0，UI 靠这个声明值把进度条/总时长显示出来（见 rememberPlayerState）。
  */
 internal fun trackMediaItem(track: Track): MediaItem =
     MediaItem.Builder()
@@ -64,6 +67,7 @@ internal fun trackMediaItem(track: Track): MediaItem =
                 .setTitle(track.name)
                 .setArtist(track.artist)
                 .setArtworkUri(track.artworkUrl?.let { Uri.parse(it) })
+                .apply { if (track.durationMs > 0L) setDurationMs(track.durationMs) }
                 .build(),
         )
         .build()
