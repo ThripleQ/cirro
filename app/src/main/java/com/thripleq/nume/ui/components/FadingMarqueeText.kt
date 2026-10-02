@@ -5,7 +5,10 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,16 +42,18 @@ import kotlin.math.ceil
  * 与 `Modifier.basicMarquee` 的区别 —— 自带的两侧淡出**只在滚动时出现**：起滚时淡入、
  * 停顿时淡出。`basicMarquee` 不对外暴露滚动相位，做不到这件事，所以这里自持动画。
  *
- * 滚动策略是「单程读完」：从行首匀速滚到行尾（末字对齐右缘）→ 立即回卷 → 停在行首
- * → 再滚，而不是首尾相接无限循环。**停顿只发生在行首**（与 AOSP BasicMarquee 的
- * repeatDelay 一致），末尾不停留 —— 否则读者会在"读完那一刻"看到文字卡在末位不动。
- * 位移用线性 tween（与 AOSP 一致的线性手感），左右遮罩的透明度由独立的 `fade` 动画
- * 驱动，和滚动同时起、同时收，带渐变过渡。
+ * 滚动策略是「单向无缝循环」（与 AOSP `BasicMarquee` 一致）：内容 = 文本 + 间距 + 文本，
+ * 始终**向左**匀速滚过「文本宽 + 间距」，滚到第二份文本正好落在行首时位置与第一份的
+ * 行首重合 —— 视觉上自然接回开头，不反向、也不跳。两份文本之间留出 [spacingFraction]
+ * 个容器宽的空档，所以是「读完、空白、下一份」的循环，而不是首尾硬贴。
+ * **停顿只发生在行首**（与 AOSP 的 repeatDelay 语义一致），末尾不停留；遮罩在起滚时
+ * 淡入、回到行首后淡出，带渐变过渡。
  *
  * @param velocity 滚动速度，dp/秒（AOSP 默认 30）。
- * @param delayMillis 行首停顿（每次起滚前），毫秒。
+ * @param delayMillis 行首停顿（每轮起滚前），毫秒。
  * @param fadeWidth 左右遮罩的渐变宽度。
  * @param fadeMillis 遮罩淡入/淡出的过渡时长。
+ * @param spacingFraction 首尾之间的空档占容器宽的比例（AOSP 默认 1/3）。
  */
 @Composable
 fun FadingMarqueeText(
@@ -61,6 +66,7 @@ fun FadingMarqueeText(
     delayMillis: Int = 1200,
     fadeWidth: Dp = 18.dp,
     fadeMillis: Int = 280,
+    spacingFraction: Float = 1f / 3f,
 ) {
     val measurer = rememberTextMeasurer()
     // 量一次单行宽度，用来判断是否溢出、以及滚动行程（不随每帧重算）。
@@ -80,32 +86,37 @@ fun FadingMarqueeText(
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val containerPx = constraints.maxWidth
-        val overflow = (contentPx - containerPx).coerceAtLeast(0)
-        val scrolling = overflow > 0
+        val scrolling = contentPx > containerPx
+
+        // 首尾空档：占容器宽的比例。间距随容器自适应，长标题也有明显空档。
+        val spacing = maxWidth * spacingFraction
+        val spacingPx = with(density) { spacing.toPx() }
 
         val offset = remember { Animatable(0f) }
         // 1 = 两侧完全淡出，0 = 不淡出。只在滚动相位里抬到 1。
         val fade = remember { Animatable(0f) }
 
-        LaunchedEffect(text, contentPx, containerPx, velocityPx) {
+        LaunchedEffect(text, contentPx, containerPx, velocityPx, spacingFraction) {
             if (!scrolling || velocityPx <= 0f) {
                 offset.snapTo(0f)
                 fade.snapTo(0f)
                 return@LaunchedEffect
             }
-            val duration = ceil(overflow / (velocityPx / 1000f)).toInt().coerceAtLeast(1)
+            // 一份「文本 + 间距」，滚过它就等于把下一份文本带到行首。
+            val loopWidth = contentPx + spacingPx
+            val duration = ceil(loopWidth / (velocityPx / 1000f)).toInt().coerceAtLeast(1)
             while (true) {
                 // 停在行首：归位 + 停顿（停顿只发生在这里）。
                 offset.snapTo(0f)
                 fade.snapTo(0f)
                 delay(delayMillis.toLong())
-                // 起滚的同时淡入：两条动画并行，读完即到终点。
+                // 起滚的同时淡入：两条动画并行，读完即到终点（第二份文本刚好对齐行首）。
                 coroutineScope {
                     launch { fade.animateTo(1f, tween(durationMillis = fadeMillis)) }
-                    offset.animateTo(overflow.toFloat(), tween(duration, easing = LinearEasing))
+                    offset.animateTo(loopWidth, tween(duration, easing = LinearEasing))
                 }
-                // 读完不停留、不淡出：直接回到循环顶部瞬时回卷（位置与遮罩一起归零），
-                // 停顿全部留给行首 —— 否则文字会在末位多停一拍，读起来像"卡在结尾"。
+                // 回卷到行首后遮罩淡出，紧接着就是下一次行首停顿。
+                fade.animateTo(0f, tween(durationMillis = fadeMillis))
             }
         }
 
@@ -134,20 +145,33 @@ fun FadingMarqueeText(
                     }
                 },
         ) {
-            Text(
-                text = text,
-                style = style,
-                color = color,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Clip,
-                textAlign = textAlign,
+            // 两份文本 + 中间空档；整体向左平移 offset（0 ~ 文本宽+间距）即无缝循环。
+            Row(
                 modifier = Modifier
-                    // 允许文字宽于容器（否则会先被约束截断，量不出溢出）。
+                    // 允许整行宽于容器（否则会先被约束截断、跑不起来）。
                     .wrapContentWidth(unbounded = true, align = Alignment.Start)
-                    // 负向：文字向左滚出（offset 是正的行程度）。
                     .graphicsLayer { translationX = -offset.value },
-            )
+            ) {
+                Text(
+                    text = text,
+                    style = style,
+                    color = color,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                    textAlign = textAlign,
+                )
+                Spacer(Modifier.width(spacing))
+                Text(
+                    text = text,
+                    style = style,
+                    color = color,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                    textAlign = textAlign,
+                )
+            }
         }
     }
 }
