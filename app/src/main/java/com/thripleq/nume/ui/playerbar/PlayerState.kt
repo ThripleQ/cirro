@@ -111,7 +111,9 @@ fun rememberPlayerState(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                meta = meta.copy(errorText = error.errorCodeName ?: error.message)
+                // message 更贴近人话（errorCodeName 是 ERROR_CODE_* 这类技术串），
+                // 留给用户看的主文案优先 message；万一为空再退回枚举名。
+                meta = meta.copy(errorText = error.message ?: error.errorCodeName)
             }
 
             override fun onShuffleModeEnabledChanged(enabled: Boolean) {
