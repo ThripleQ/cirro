@@ -181,12 +181,6 @@ internal fun PlayerPage(
         // 点按路径不走这套：它没有「卡片档」这个概念，直接从 45% 行程起把壳推满（见 tapFillT）。
         val t1 = if (tapExpand) tapFillT(tapT)
                  else ((p - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
-        // 底边的「盖满」比顶边早 [BOTTOM_FILL_SPAN] 档走完（顶边仍走满到 2）——理由见该常量：
-        // 底边只有 dock 高 + gap 的行程可走（≈504px），却要塞进手指只走 ≈388px 的那一段，
-        // 铺满整段就会在「壳变沉」之后还拖着一截没走完，读成「下边软软的」。
-        // 点按路径不走这条改派：它的底边时机是那条 420ms 时间轴自己排的（t1）。
-        val tBottom = if (tapExpand) t1
-                      else ((p - HALF_ANCHOR_P) / BOTTOM_FILL_SPAN).coerceIn(0f, 1f)
         val extT = (t0 / SPLIT).coerceIn(0f, 1f)
         // 分裂形态量：点按期间整段归零 —— 不挤腰（腰是 `waistT` 从它派生的）、
         // 左右不收（`inset` 由它线性给出）、dock 顶角不回涨（下面的 dockCornerCur）。
@@ -231,12 +225,13 @@ internal fun PlayerPage(
             bottom + dockShiftPx,
         )
 
-        // 顶边 / 左右 / 圆角 / 颜色照旧走 t1；**只有底边**改用 tBottom（提前到位）。
-        // 壳高因此会比「两边同步」时略大，但终点（p=2）两条路径逐值相等，不会跳。
-        val filled = lerpRect(bubbleOrCard, full, t1)
-        val bottomFilled =
-            bubbleOrCard.bottom + (full.bottom - bubbleOrCard.bottom) * tBottom
-        return Rect(filled.left, filled.top, filled.right, bottomFilled)
+        // 顶边 / 左右 / 圆角 / 颜色 / **底边**全走同一条 t1：壳是一个刚体，两条边必须同时到位。
+        //
+        // 曾让底边提前 0.22 档到位（治「下边软软的」），代价是：底边在离全屏还有 ≈114px 时
+        // 突然停死，顶边却继续往上走 —— 读作「滑行中突然收到很大阻力，但距离结束还有不小距离」
+        // （用户 2026-10-03）。既然效果窗口已经推到 1.76→1.99（底边那时已走完 97%），
+        // 「底边拖着一截没走完」的旧问题已由窗口推后解决，不需要再让底边提前了。
+        return lerpRect(bubbleOrCard, full, t1)
     }
 
     val p = state.progress
@@ -294,8 +289,8 @@ internal fun PlayerPage(
     // 内容量是欠阻尼的（会越过 raw 一点），拿它判会让 contentRect 在阈值上抖。
     val pastCard = p > HALF_ANCHOR_P
     val cardRect = shellRect(HALF_ANCHOR_P)
-    // 内容档位由 [PlayerDockState.contentProgress] 给：拖动路径下它比壳**慢一拍**
-    // （跟随器 + 欠阻尼余振），点按路径下它随 entry 全程 0→1。两条都在状态里算好，
+    // 内容档位由 [PlayerDockState.contentProgress] 给：拖动路径下它比壳**慢半拍**
+    // （跟随器留下的相位滞后），点按路径下它随 entry 全程 0→1。两条都在状态里算好，
     // 这里不再自己从 p 推 —— 否则内容就与壳严格同相，纵深感没了。
     val contentProgress = state.contentProgress
     // 点按路径的壳矩形始终交给内容：内容跟着壳一起长（不做"按全屏版式排好再被揭示"，
