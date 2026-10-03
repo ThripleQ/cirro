@@ -77,7 +77,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.toDp
 import androidx.compose.ui.unit.toSize
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
