@@ -55,8 +55,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -294,18 +296,31 @@ fun TrackListScreen(
                 }
             }
         }
-        // nav 路径由本屏让开状态栏；壳路径的壳已经替内容让开了（shellTopInset），
-        // 故两条路径的头部封面落在**同一屏上位置**（见 [TrackListMetrics.HeroCoverTop]）。
+        // nav 路径由本屏让开状态栏；壳路径的壳已经替内容让开了（shellTopInset / ShellPanel 的
+        // statusBarsPadding），故两条路径的头部封面落在**同一屏上位置**（见 [TrackListMetrics.HeroCoverTop]）。
         //
         // 2026-10-03 照抄搜索页外壳（SearchScreen:89-148）：顶层铺 `surfaceContainer`
         // 放标题条，内容是一张 `surface` 圆角纸 —— 与搜索页同一种关系（那边容器色条
         // 放「搜索」大标题，这边放歌单标题条）。糊底/列表/骨架全部装进壳子，由壳子
         // 统一裁角；「播放全部」吸顶行不再自己切圆角（角外露出的是容器色条）。
+        //
+        // 壳路径还要**往上补一条**：壳替本屏让开了状态栏，那一条本屏够不到，而壳在自己那一段
+        // 画的是它的 `containerColor`（`surface`，近黑）—— 不补就是「屏顶黑 + 标题条灰」两段色，
+        // 中间一道横贯全屏的硬分界。搜索页没有壳、不躲状态栏，所以那边是连续一条容器色。
+        val statusBarTop = rememberStatusBarTop()
+        val statusBarTopPx = with(LocalDensity.current) { statusBarTop.toPx() }
+        val containerColor = MaterialTheme.colorScheme.surfaceContainer
         Column(
             Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceContainer)
-                .then(if (showBackButton) Modifier.statusBarsPadding() else Modifier),
+                .background(containerColor)
+                .then(
+                    if (showBackButton) {
+                        Modifier.statusBarsPadding()
+                    } else {
+                        Modifier.shellStatusBarBand(containerColor, statusBarTopPx)
+                    },
+                ),
         ) {
             // 内容目标态：数据到达、壳动画结束**且大封面已就绪**后才切到列表；其余为骨架/空/错误。
             // 目标态作**不透明底板**先画，骨架叠在其上渐隐——而不是 Crossfade 让两者同时半透明。
@@ -417,17 +432,20 @@ fun TrackListScreen(
                                 // 这一行是**吸顶**的（抄官方歌单页）：滚到停靠线（标题条下沿）就停住，
                                 // 曲目行从它下面过；返回键 / 壳关闭键在标题条里，一直看得见也点得到
                                 // （停靠线已经让开了它们那一档，不必再互相让位）。
-                                // **这一行是圆角纸的顶盖**：顶角半径与纸同源
-                                // （[TrackListMetrics.SheetCorner]），吸顶时与纸的上沿严丝合缝、两角
-                                // 外露出同一条容器色。全屏只有这一个圆角顶 —— 标题条已不再自带圆角
-                                // （见 [TrackListTitleBar]），不再出现「两个圆角顶夹一道束腰」。
+                                // **这一行是圆角纸的第一行**，但**不再自己切圆角**：顶角由壳子
+                                // （`clip(paperShape) + background(surface)`）统一给 —— 本行已装在
+                                // 壳子里，直接顺承纸的 28dp 顶角，与搜索页的搜索条同一种关系。
+                                // （早先它自带的 `clip(RoundedCornerShape(SheetCorner))` 是壳子之前
+                                // 那套的遗留，会让角外再露出一小块被裁过的糊底。）
+                                // 全屏只有壳子这一个圆角顶：标题条也已不自带圆角（见 [TrackListTitleBar]）。
                                 stickyHeader(key = "playall") { _ ->
                                     Box(
                                         Modifier
                                             .fillMaxWidth()
                                             .graphicsLayer { alpha = contentReveal.value }
-                                            // 这一行**必须自带不透明底**（与圆角纸同色、同圆角）：
-                                            // 吸顶行是画在曲目行**之上**的，没有底就盖不住从下面滚过的行。
+                                            // 这一行**必须自带不透明底**：它是吸顶的、画在曲目行
+                                            // **之上**，没有底就盖不住从下面滚过的行，也挡不住身下
+                                            // 那块糊底（糊底一直铺到面板这一带，见 [BackdropHeight]）。
                                             .background(MaterialTheme.colorScheme.surface),
                                     ) {
                                         PlayAllRow(
@@ -446,14 +464,24 @@ fun TrackListScreen(
                                         Modifier
                                             .fillMaxWidth()
                                             // 行随内容浮现 / 收起退场淡入淡出（draw 阶段读，不重组）。
-                                            .graphicsLayer { alpha = contentReveal.value },
+                                            .graphicsLayer { alpha = contentReveal.value }
+                                            // 面板必须是**不透明面**：糊底整块垫在壳子里，比条目卡
+                                            // 大一圈，行自己不铺底的话卡片四周那 8dp 缝里会透出封面色
+                                            // ——真机上就是「卡片之间的缝是绿的」，且随糊底退场进度
+                                            // 一路变色。（壳的 `surface` 底在糊底**之下**，盖不住它。）
+                                            .background(MaterialTheme.colorScheme.surface),
                                     ) {
                                         TrackListRow(track, onClick = { vm.onTrackClick(target, index) })
                                     }
                                 }
                                 item(key = "sheetTail") {
-                                    // 只占底部留白（面板底由圆角纸铺满），不再自带底色。
-                                    Box(Modifier.fillMaxWidth().height(bottomPadding))
+                                    // 只占底部留白；同样必须自带不透明底，理由见上一行。
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .height(bottomPadding)
+                                            .background(MaterialTheme.colorScheme.surface),
+                                    )
                                 }
                             }
                         }
@@ -477,22 +505,13 @@ fun TrackListScreen(
                             onCoverRect = onCoverRect,
                             onCoverReady = onCoverDrawn,
                             coverSharedModifier = coverSharedModifier,
+                            // 骨架装在壳子里（与糊底/列表同层），顶空档要减去标题条那一档，
+                            // 才与真列表首屏逐像素对齐（见 [TrackListSkeleton] 的 stickyTop）。
+                            stickyTop = stickyTopDp,
                             // 叠在目标态之上淡出（draw 阶段读，不重组）。
                             modifier = Modifier.graphicsLayer { alpha = skeletonAlpha.value },
                         )
-                    }                // 用派生布尔（!skeletonGone）而非直接读 skeletonAlpha.value：后者每帧变化都会让
-                // 整个 TrackListScreen 重组（含头部/列表），前者只在跨阈值时翻一次。
-                if (!skeletonGone) {
-                    TrackListSkeleton(
-                        coverUrl = previewCoverUrl,
-                        title = title,
-                        onCoverRect = onCoverRect,
-                        onCoverReady = onCoverDrawn,
-                        coverSharedModifier = coverSharedModifier,
-                        // 叠在目标态之上淡出（draw 阶段读，不重组）。
-                        modifier = Modifier.graphicsLayer { alpha = skeletonAlpha.value },
-                    )
-                }
+                    }
             }
         }
     }
@@ -500,7 +519,15 @@ fun TrackListScreen(
 
 /* ── 页底 ──────────────────────────────────────────────────────── */
 
-/** 糊底只铺到面板开始之前（官方同款）：面板以下是不透明面，糊底在那之前就化进底色。 */
+/**
+ * 糊底铺多高（自壳子顶算起）。梯度在这一段里从「封面透出一点」化到全不透明，再往下才是
+ * 干净的纸面 —— 官方同款：面板以下是不透明面。
+ *
+ * ⚠️ 「面板以下是不透明面」是**面板自己保证**的，糊底并不会自动停在面板上沿：糊底整块垫在
+ * 壳子里、铺满本值（360dp，比头部高得多，面板的头几行也落在它范围内）。所以吸顶行 / 曲目行 /
+ * 尾部 / 骨架面板都必须各自铺不透明底，否则条目卡四周那几 dp 的缝里会透出封面色 ——
+ * 真机上就是「卡片之间的缝是绿的」，且随糊底退场进度一路变色。
+ */
 private val BackdropHeight = 360.dp
 
 /** 糊底放大倍数：把 `blur` 的软边推到可视带之外，带口就不会看到一圈「糊边」。 */
@@ -541,6 +568,27 @@ private fun rememberStatusBarTop(): Dp {
 }
 
 /**
+ * 壳路径：把本屏的容器色条**往上补到屏幕顶**（补 [heightPx] 那一条，色 = [color]）。
+ *
+ * 壳（`ShellPanel` / `ExpandableShell`）会用 `statusBarsPadding()` / `shellTopInset` 把内容整体
+ * 推到状态栏之下，于是本屏的顶边就在状态栏下沿 —— 而屏顶那一条由壳画成它的 `containerColor`
+ * （`surface`，近黑），与本屏在标题条铺的 `surfaceContainer` 不同色：不补就是「黑 + 灰」两段、
+ * 中间一道横贯全屏的硬分界。搜索页没有壳、自己不躲状态栏，所以那边天然是一条连续容器色。
+ *
+ * 做法是**画到自己边界之外**（`topLeft.y` 取负）：壳给的是 padding、不是 `clip`，所以这截画得
+ * 出来 —— 与本屏早先糊底用 `offset(y = -statusBarTop)` 补状态栏是同一套办法。代价是上游一旦
+ * 改成 `clip`，这截会被裁掉（届时改为把色条交给壳来画）。
+ */
+private fun Modifier.shellStatusBarBand(color: Color, heightPx: Float): Modifier = drawBehind {
+    if (heightPx <= 0f) return@drawBehind
+    drawRect(
+        color = color,
+        topLeft = Offset(0f, -heightPx),
+        size = Size(size.width, heightPx),
+    )
+}
+
+/**
  * 页底：封面柔焦放大 + 主题色蒙版。
  *
  * 复用人物 hero 那套（放大 + `blur` + 同色渐隐）——同一份「不受控位图当背景」的解法不必写两遍。
@@ -573,9 +621,13 @@ private fun TrackListBackdrop(
         // 两个 offset 叠加：固定让开（上一条）+ 滚动退场（这条）。退场量读在 layout 阶段。
         .offset { IntOffset(0, -(exit.value * exitShiftPx).roundToInt()) }
     Box(modifier.fillMaxSize().background(surface)) {
-        // 圆角纸两角外露出的那条底色（吸顶后 = 状态栏那一带）：`surfaceContainer`，与探索 /
-        // 搜索页状态栏条同色。**只在吸顶后出现**——透明度跟着糊底退场进度走：没滚动时纸上面是
-        // 封面糊底、这层被它整个盖住，页面与改动前逐像素一样。
+        // 糊底自己的退场底色：透明度跟着糊底退场进度走（`exit`），到 1 时整块化进
+        // `surfaceContainer`（= 顶部那条容器色，收起后不露白）。
+        //
+        // 2026-10-03 勘误：这条原先写着「= 圆角纸两角外露出、吸顶后 = 状态栏那一带」——
+        // 那是糊底还铺在纸**外面**那套的说法。糊底挪进壳子（纸的里面）之后，那两个位置都
+        // 不在这里了：纸角由壳子的 `clip(paperShape)` 裁掉，状态栏那一条由本屏自己往上补
+        // （见 [shellStatusBarBand]）。
         //
         // 顺序要紧：`graphicsLayer`（alpha）必须在 `background` **之前** —— 它是外层图层，
         // 写到后面背景就画在图层之外、alpha 完全不生效（下面那条蒙版原先正是这么写的，
@@ -1074,6 +1126,14 @@ private fun TrackListSkeleton(
     onCoverRect: ((Rect) -> Unit)? = null,
     onCoverReady: (() -> Unit)? = null,
     coverSharedModifier: Modifier = Modifier,
+    /**
+     * 顶部标题条的实测高度（[TrackListMetrics] 的 stickyTop）。
+     *
+     * 骨架整体装在**壳子**里，而壳子顶就在标题条下沿 —— 真列表的头部 item 因此把顶空档
+     * 记成 `HeroCoverTop - stickyTop`（见 LazyColumn 的 `item(key = "header")`）。骨架若还按
+     * `HeroCoverTop` 铺，就整整低一个标题条（≈32dp），骨架→真列表的交接会「跳一下」。
+     */
+    stickyTop: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     // 展开动画期间 hero 正顶着封面：骨架封面与 hero 互补，避免两层重影（见 LocalShellHeroAlpha）。
@@ -1082,8 +1142,8 @@ private fun TrackListSkeleton(
         modifier
             .fillMaxSize()
             .then(if (coverUrl == null) Modifier.shimmer() else Modifier)
-            // 与真列表同一个顶部空档（见 LazyColumn 的 contentPadding）：差一点就是「跳一下」。
-            .padding(top = TrackListMetrics.HeroCoverTop),
+            // 与真列表同一个顶部空档（见 LazyColumn 的头部 item）：差一点就是「跳一下」。
+            .padding(top = TrackListMetrics.HeroCoverTop - stickyTop),
     ) {
         Row(
             Modifier
@@ -1147,15 +1207,12 @@ private fun TrackListSkeleton(
             }
         }
         Spacer(Modifier.height(24.dp))
+        // 面板整块：**不自带圆角** —— 顶角由壳子统一给（与真列表的吸顶「播放全部」行同一种
+        // 关系）。自带一份会在页面中间多立一个圆角顶，角外还露出被裁过的糊底。
+        // 但**必须自带不透明底**：糊底一直铺到这一带，不铺底的话骨架行之间会透出封面色。
         Column(
             Modifier
                 .fillMaxWidth()
-                .clip(
-                    RoundedCornerShape(
-                        topStart = TrackListMetrics.SheetCorner,
-                        topEnd = TrackListMetrics.SheetCorner,
-                    ),
-                )
                 .background(MaterialTheme.colorScheme.surface)
                 .then(if (coverUrl != null) Modifier.shimmer() else Modifier),
         ) {
