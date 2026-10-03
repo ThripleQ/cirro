@@ -306,10 +306,15 @@ class PlayerDockState internal constructor(
             .pow(Motion.DragFollowMixEase)
         dragFollowMix = w
 
-        // 末端阻力：临近全屏时 τ 放大，壳变「稠」——手指继续走、壳越走越慢。
-        // 只改 τ、不改端点映射，所以锚点与视觉终点严格对应：跟随器最终一定收敛到 raw，
-        // 松手后落位曲线接手把最后这段走完，读成「它自己滑进去」。
-        // 增长取 stickT² ：前一半几乎不生效，最后 10% 才陡然压住。
+        // 末端阻力：临近全屏时 τ 放大，壳变「稠」——注意它**不减慢壳、只增加滞后**
+        // （一阶低通稳态下 y 以同速跟随 x，差 τ·v），所以手感是「壳落后手指，越到后面差得越多」，
+        // 松手后这段落后被落位曲线吸收，读成「它自己滑进去」。
+        // 只改 τ、不改端点映射，所以锚点与视觉终点严格对应：跟随器最终一定收敛到 raw。
+        // 增长取 stickT 的 [Motion.DragFollowStickEase] 次幂（现为 7）：前一半几乎不生效，
+        // 最后一小段才陡然压住 —— 幂次 7 时「τ 涨 20%」的点落在 raw≈1.957，底边只剩 68px 给它涨。
+        // [Motion.DragFollowStickFrom] 取 0.88（raw = 1.76）与 [Motion.DragFollowMixFrom] 对齐——
+        // 两个效果同相：滞后开始积累的同一刻开始加压。取 0.80 时它铺满整段（底边 59% 行程），
+        // 用户 2026-10-03 报「下边高阻尼段还是太长了」。
         val stickT = ((raw / 2f - Motion.DragFollowStickFrom) / (1f - Motion.DragFollowStickFrom))
             .coerceIn(0f, 1f)
         val baseTauMs = when {
@@ -325,7 +330,7 @@ class PlayerDockState internal constructor(
         // 说明是「壳在追一个静止目标」——此刻再放大 τ 只会把这最后几像素的补齐拖成一条尾巴
         // （落位曲线收敛时残差约 6px，τ 被放大 1.8 倍后要 ~600ms 才抹平）。
         val stick = if (rawStill) 0f else stickGain()
-        val tau = baseTauMs * (1f + stick * stickT * stickT) / 1000f
+        val tau = baseTauMs * (1f + stick * stickT.pow(Motion.DragFollowStickEase)) / 1000f
 
         // 壳：τ 随 w 缩放（w→0 时 τ→0 = 严格跟手），**输出直接取积分量**。
         //
@@ -365,8 +370,9 @@ class PlayerDockState internal constructor(
     /**
      * 末端阻力增益：**落位期间为 0**。
      *
-     * 阻力是「手指继续走、壳越走越慢」那个手感，手指都离开了就无从谈起；而它按 `stickT²`
-     * 增长，贴到全屏时正好是满的（×1.8）—— 会把上面刚为落位收小的 τ 又放大回来。
+     * 阻力是「手指继续走、壳越走越慢」那个手感，手指都离开了就无从谈起；而它按
+     * `stickT^[Motion.DragFollowStickEase]` 增长，贴到全屏时正好是满的（×1.8）——
+     * 会把上面刚为落位收小的 τ 又放大回来。
      * 实测（回放脚本 `follow_check2.py`，真机参数）：不禁用时落位残余 16px/225ms，
      * 禁掉后 **4.9px/75ms**。
      */
