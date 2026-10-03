@@ -396,7 +396,7 @@ private fun ProfileRowCard(
         Icon(
             Icons.Filled.KeyboardArrowRight,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = NumeFade.ARROW_MUTED),
             modifier = Modifier.size(20.dp),
         )
     }
@@ -470,7 +470,7 @@ private fun LoginHeroCard(onLogin: () -> Unit) {
             Text(
                 "解锁喜欢 / 已购 / 歌单",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = NumeFade.ON_CONTAINER_BODY),
             )
         }
         Icon(

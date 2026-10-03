@@ -74,6 +74,12 @@ object NumeFade {
     /** 无封面兜底里的音符图标弱化。 */
     const val ART_PLACEHOLDER: Float = 0.35f
 
+    /** 行卡尾部箭头（chevron）的弱化。原 ProfileCards 裸写 0.5f。 */
+    const val ARROW_MUTED: Float = 0.5f
+
+    /** 彩色容器底（primaryContainer 等）上副文字的弱化。原裸写 0.72f。 */
+    const val ON_CONTAINER_BODY: Float = 0.72f
+
     /** 歌词非当前行的弱化（当前行插值到 1）。 */
     const val LYRIC: Float = 0.55f
 }
