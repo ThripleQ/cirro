@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,68 +20,44 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 
 /**
- * 面板首行（「播放全部」）**从封面派生出来的面**。
+ * 记住 [coverUrl] 的**封面强调色**：色相取自封面，明度贴着主题背景让开一小步，饱和度给足。
  *
- * 用户 2026-10-03 的要求：这一行的背景「从封面处理得来，亮主题就亮一点、暗主题就暗一点」。
+ * ## 为什么只有一个色（原来是三档 top / middle / bottom）
  *
- * ## 为什么不是「取封面主色直接用」
+ * 2026-10-03 用户：「主要是播放全部按钮的背景不太好看，要么简化，要么用效果更好的」。
  *
- * 这一行是**承载文字的面**（标题 + 曲目数 + 三枚图标），不是一块色标：
- * 1. **明度锚在主题背景上**，只让出很小的一步 —— 暗主题往上抬、亮主题往下压。
- *    封面色再亮也压得回来，于是正文/图标继续用 `onSurface` 就稳，不必为每张封面
- *    再算一套前景色（那会牵扯一整条 `contentColorFor` 分支，还会随封面跳）。
- * 2. **饱和度封顶**：封面可以是荧光绿，这一行不行 —— 它的职责是托住文字。
- * 3. **色相照抄封面**：全页只有这一处颜色来自内容，于是「气」从封面接到了面板上：
- *    上面是封面的糊底（图形），下面是它的色（面），有承接关系。
+ * 原来那套是**铺满整行**的纵向三档渐变：色相照抄封面，但为了不抢行里的文字，明度只让
+ * ±0.03~0.10、饱和度封顶 0.26 —— 绿/蓝封面过了换算就成了浑浊的灰蓝灰紫：有颜色但不干净；
+ * 明度差又小到看不出是渐变，屏幕上只剩「一块跟纸不一样、又说不上什么色的脏块」。更麻烦的是
+ * 行是四角圆角，这块色因此有明确边界，读作「纸面上贴了一片色」；而它与下面曲目行的 `surface`
+ * 还差一档，同一张面板被切成两种颜色 —— 正好和这一屏反复在追的「连成一片」是反的。
  *
- * ## 三档而不是一档
+ * 症结是**面积与浓度的关系搞反了**：大面积必须给稀、小面积可以给浓；原来是一整行给稀
+ * （只能出泥色），而真正该有颜色的那颗圆钮反而完全没有信息量。
  *
- * 这一行是一块**普通圆角**面（见 `TrackListScreen` 里的 `playAllShape`），上下都压着东西：
- * 上面是标题条所在的容器色，下面是曲目行的 `surface`。
+ * 现在这一行**不铺色了**（回到 `surface`，与曲目行连成一整片纸），封面色改从
+ * **圆钮身后一团径向晕**出来：面积小了二十倍，于是可以给浓。本文件因此只需要算**一个**色，
+ * 三档的组合连同它存在的理由一起删掉。
  *
- * - 上沿必须**几乎就是背景**：那一带压着标题、曲目数与三枚图标，差异一大对比度就掉；
- * - 下沿可以**离背景远一点**：那一带没有文字，而且面与曲目行之间的那条底边、以及下边两角
- *   的圆角缺口，全靠这点差才有轮廓 —— 平涂的话要么底边糊掉，要么上沿晃眼。
+ * ## 亮暗由背景自身的明度判定
  *
- * 于是明度偏移做成**沿行高递增的三档**（[top] → [middle] → [bottom]，配合调用点的
- * `Brush.verticalGradient`）。顺带还多出一层「封面的色往下渗」的观感，比一个平涂色块自然。
- */
-@Immutable
-data class CoverFace(
-    /** 上沿：几乎就是主题背景，只借了封面的色相。 */
-    val top: Color,
-    /** 中段 —— 与 [top] 一起把有文字那一段的差异压在很小。 */
-    val middle: Color,
-    /** 底沿：离背景最远的一档，底边与下边两角的圆角缺口就靠它。 */
-    val bottom: Color,
-) {
-    companion object {
-        /** 无封面 / 取色失败：[MaterialTheme.colorScheme.surface]，也就是这一行改动前的样子。 */
-        fun flat(base: Color) = CoverFace(base, base, base)
-    }
-}
-
-/**
- * 记住 [coverUrl] 的封面派生的面；取不到就回落到主题的 `surface`（不改动前的样子）。
- *
- * 亮暗由**背景自身的明度**判定，而不是再读一遍系统主题：面本来就要贴着这个背景走，
- * 两者必须来自同一个来源，否则会出现「亮主题下算出暗面」这种自相矛盾。
+ * 不再读一遍系统主题：色本来就要贴着背景走，两者必须来自同一个来源，
+ * 否则会出现「亮主题下算出暗色」这种自相矛盾。
  */
 @Composable
-fun rememberCoverFace(coverUrl: String?): CoverFace {
+fun rememberCoverAccent(coverUrl: String?): Color {
     val context = LocalContext.current
     val base = MaterialTheme.colorScheme.surface
-    val fallback = remember(base) { CoverFace.flat(base) }
     val dark = base.luminance() < 0.5f
-    var face by remember(coverUrl, dark, base) { mutableStateOf(fallback) }
+    var accent by remember(coverUrl, dark, base) { mutableStateOf(base) }
 
     LaunchedEffect(coverUrl, dark, base) {
-        face = fallback
+        accent = base
         val url = coverUrl?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
         val seed = readCoverSeed(context, url) ?: return@LaunchedEffect
-        face = faceOf(seed, base, dark)
+        accent = accentOf(seed, base, dark)
     }
-    return face
+    return accent
 }
 
 /**
@@ -109,11 +84,11 @@ private suspend fun readCoverSeed(context: Context, url: String): Int? {
  * 主色种子：**中心加权的「鲜艳桶」投票**。
  *
  * 封面里占面积最大的往往是黑边、白底、大面积灰渐变 —— 按出现次数投票会选出一个中性色，
- * 那就等于没取（面会跟背景几乎一样）。所以先按 HSL 剔掉过黑 / 过白 / 过灰的像素，再让
+ * 那就等于没取（晕会跟背景几乎一样）。所以先按 HSL 剔掉过黑 / 过白 / 过灰的像素，再让
  * 中间的像素多算几票（构图重心通常在中间，边角多是留白或黑边）。
  *
  * 全部像素落选（灰阶封面、纯黑封面）时返回 null，由调用方回落到 `surface` ——
- * 宁可这一行没有效果，也不能给一串跟封面无关的颜色。
+ * 宁可这一处没有效果，也不能给一串跟封面无关的颜色。
  */
 private fun dominantSeed(bitmap: Bitmap): Int? {
     val small = Bitmap.createScaledBitmap(bitmap, SampleGrid, SampleGrid, true)
@@ -156,19 +131,14 @@ private fun dominantSeed(bitmap: Bitmap): Int? {
 }
 
 /** 把封面种子搬到主题的明度带上：色相归封面，明度归背景，饱和度封顶。 */
-private fun faceOf(seed: Int, base: Color, dark: Boolean): CoverFace {
+private fun accentOf(seed: Int, base: Color, dark: Boolean): Color {
     val seedHsl = FloatArray(3)
     ColorUtils.colorToHSL(seed, seedHsl)
     val baseHsl = FloatArray(3)
     ColorUtils.colorToHSL(base.toArgb(), baseHsl)
 
-    val recipe = if (dark) DarkRecipe else LightRecipe
-    val lightness = baseHsl[2]
-    return CoverFace(
-        top = tinted(seedHsl, lightness + recipe.top, recipe.bodySaturation),
-        middle = tinted(seedHsl, lightness + recipe.middle, recipe.bodySaturation),
-        bottom = tinted(seedHsl, lightness + recipe.bottom, recipe.bottomSaturation),
-    )
+    val recipe = if (dark) DarkAccent else LightAccent
+    return tinted(seedHsl, baseHsl[2] + recipe.lightness, recipe.saturation)
 }
 
 /** 色相取 [seedHsl]，明度钉在 [lightness]，饱和度不超过 [maxSaturation]。 */
@@ -184,33 +154,18 @@ private fun tinted(seedHsl: FloatArray, lightness: Float, maxSaturation: Float):
 /**
  * 明度偏移（相对主题背景，HSL 0..1；正 = 更亮）与饱和度上限。
  *
- * [top] / [middle] 刻意取小：那一段压着正文，差异越大对比度掉得越多。暗主题下 `surface`
- * 约 L 0.08、`onSurfaceVariant` 约 L 0.65，主体只让 0.03 的话对比度与改动前基本持平；
- * [bottom] 那一带没有文字（行的下沿），可以放心让满 —— 底边与下边两角的轮廓全靠它。
+ * 这里可以**给满**，因为面积小：这团色只活在圆钮身后、直径约 112dp 的一圈里，
+ * 不承载任何文字，且大部分被圆钮本身盖住。原来铺满整行时的克制正是那一版不好看的原因
+ * （见 [rememberCoverAccent] 的说明），这里不做同样的让步。
+ *
+ * 明度偏移取「背景之上再走一步」：比背景明显、但不到刺眼。暗主题往上抬、亮主题往下压 ——
+ * 两个方向都是「离纸面更远」，与纸面的对比因此是同一个量级。
  */
-private class FaceRecipe(
-    val top: Float,
-    val middle: Float,
-    val bottom: Float,
-    val bodySaturation: Float,
-    val bottomSaturation: Float,
-)
+private class AccentRecipe(val lightness: Float, val saturation: Float)
 
-private val DarkRecipe = FaceRecipe(
-    top = 0.030f,
-    middle = 0.052f,
-    bottom = 0.105f,
-    bodySaturation = 0.26f,
-    bottomSaturation = 0.36f,
-)
+private val DarkAccent = AccentRecipe(lightness = 0.150f, saturation = 0.55f)
 
-private val LightRecipe = FaceRecipe(
-    top = -0.028f,
-    middle = -0.046f,
-    bottom = -0.088f,
-    bodySaturation = 0.20f,
-    bottomSaturation = 0.30f,
-)
+private val LightAccent = AccentRecipe(lightness = -0.120f, saturation = 0.45f)
 
 /** 采样网格边长（像素）：576 次取色，开销可忽略，够分出主色。 */
 private const val SampleGrid = 24

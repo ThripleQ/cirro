@@ -1,5 +1,6 @@
 package com.thripleq.nume.ui.screens
 
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
@@ -53,17 +54,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -103,7 +106,7 @@ import com.thripleq.nume.ui.components.NumeArt
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
 import com.thripleq.nume.ui.components.numeEntrySurface
-import com.thripleq.nume.ui.components.rememberCoverFace
+import com.thripleq.nume.ui.components.rememberCoverAccent
 import com.thripleq.nume.ui.profile.TrackListSource
 import com.thripleq.nume.ui.profile.TrackListUiState
 import com.thripleq.nume.ui.profile.TrackListViewModel
@@ -312,15 +315,10 @@ fun TrackListScreen(
     // 数据到了直接显示列表（不预载封面：滚动到哪张就单张串行下载）。
     val collection = (state as? TrackListUiState.Ready)?.collection
 
-    // 「播放全部」行的面：从封面派生（见 [rememberCoverFace]）。三档上浅下浓 —— 上沿几乎就是
-    // 主题背景（压着正文），往下让得越来越多，封面的色于是一路渗到行的下沿。封面没到
-    // （previewCoverUrl）就先用正片的 URL，两者同源，取出来的色一致。
-    val coverFace = rememberCoverFace(previewCoverUrl ?: collection?.coverUrl)
-    val faceBrush = remember(coverFace) {
-        Brush.verticalGradient(
-            listOf(coverFace.top, coverFace.middle, coverFace.bottom),
-        )
-    }
+    // 「播放全部」那一行的**强调色**：从封面派生（见 [rememberCoverAccent]），只用在圆钮身后的
+    // 径向晕上 —— 行的背景本身不再铺色（回到 `surface`，与曲目行连成一整片纸）。
+    // 封面没到（previewCoverUrl 为空）就先用正片的 URL，两者同源，取出来的色一致。
+    val coverAccent = rememberCoverAccent(previewCoverUrl ?: collection?.coverUrl)
 
     // 尚未接通的入口（分享 / 评论 / 收藏 / 下载 / 排序）统一给一句「开发中」，
     // 与底部浮岛的占位反馈同一套语言——空点没反应会被当成坏了。
@@ -349,6 +347,17 @@ fun TrackListScreen(
                         (-header.offset).toFloat().coerceIn(0f, h) / h
                     }
                 }
+            }
+        }
+        // 头部**滚出的像素量**（0..头部高度）：糊底的视差位移按它折算（见 [BackdropParallax]）。
+        // 与 [washExit] 同源但不同量纲 —— 那个是 0..1 的进度，视差要用 px 才对得上「背景慢半拍」
+        // 的比例。头部整个滚出视口时给 0：那一帧 washExit 已经是 1、糊底 alpha 归零、不可见。
+        val headerScrollPx = remember {
+            derivedStateOf {
+                val header = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.index == HeaderItemIndex }
+                    ?: return@derivedStateOf 0f
+                (-header.offset).toFloat().coerceAtLeast(0f)
             }
         }
         // nav 路径由本屏让开状态栏；壳路径的壳已经替内容让开了（shellTopInset / ShellPanel 的
@@ -486,6 +495,7 @@ fun TrackListScreen(
                 TrackListBackdrop(
                     coverUrl = previewCoverUrl ?: collection?.coverUrl,
                     exit = washExit,
+                    parallaxPx = { headerScrollPx.value },
                     panelTopInRoot = { panelTopInRootPx },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -515,6 +525,7 @@ fun TrackListScreen(
                                             onCoverDrawn,
                                             watermarkIcon,
                                             textAlpha = contentReveal,
+                                            exit = washExit,
                                             onPlaceholder = onPlaceholder,
                                             // 骨架还在时共享元素挂骨架（见 skeletonGone），避免同 key 双宿主。
                                             coverSharedModifier =
@@ -541,12 +552,17 @@ fun TrackListScreen(
                                 // 分工：**上边两角**在裁切线之上，切进头部的封面空气（那是面板这张纸
                                 // 的顶角，本来就该露空气）；**下边两角**在裁切线之下，切进纸面。
                                 //
-                                // 层级从外到内：`graphicsLayer`(alpha) → `clip`(四角圆) → 封面派生的面。
-                                // 1. 面来自封面（[rememberCoverFace]）而不是主题背景：全页只有这一处
-                                //    颜色来自内容，气于是从封面接到了面板上。它本身是不透明的，
-                                //    所以吸顶时照样盖得住从下面滚过的行。
+                                // 层级从外到内：`graphicsLayer`(alpha) → `clip`(四角圆) → 不透明底。
+                                // 1. 底就是主题的 `surface`，**不再铺封面色**（2026-10-03 用户：
+                                //    「播放全部按钮的背景不太好看，要么简化，要么用效果更好的」）：
+                                //    这一行与紧跟其后的曲目行同色，整张面板连成一整片纸。原先铺
+                                //    封面派生色的那版反而把面板切成两种颜色，恰与这一屏反复在追的
+                                //    「连成一片」相悖，详见 [rememberCoverAccent]。
+                                //    封面色没丢，只是挪到**圆钮身后一团径向晕**（见 [PlayAllRow]）：
+                                //    面积小了二十倍，于是可以给浓、给干净。
+                                //    底必须不透明：吸顶时它要盖住从下面滚过的行。
                                 // 2. `graphicsLayer`(alpha) 必须在最外，否则 alpha 罩不住里面这些层；
-                                //    `clip` 在面之前，顺带把内容与点按水波收进圆角。
+                                //    `clip` 在底之前，顺带把内容与点按水波收进圆角。
                                 // 3. 布局坐标回传用 `onGloballyPositioned`：它只是**测量**，
                                 //    不给这一行加任何绘制。
                                 stickyHeader(key = "playall") { _ ->
@@ -558,10 +574,11 @@ fun TrackListScreen(
                                             }
                                             .graphicsLayer { alpha = contentReveal.value }
                                             .clip(playAllShape)
-                                            .background(brush = faceBrush),
+                                            .background(MaterialTheme.colorScheme.surface),
                                     ) {
                                         PlayAllRow(
                                             target,
+                                            accent = coverAccent,
                                             onPlayAll = { vm.onPlayAll(target) },
                                             onPlaceholder = onPlaceholder,
                                         )
@@ -650,16 +667,66 @@ private val BackdropHeight = 360.dp
 private const val BackdropScale = 1.15f
 
 /**
- * 糊底退场时额外上移的量：头部滚出去的过程里，糊底同步往上让开这么多（同时淡出）。
- * 取值只需与头部高度同量级（头部实测约 174dp），读起来才像「色块被头部带走」。
- */
-private val BackdropExitShift = 120.dp
-
-/**
  * 糊底在**面板上沿**之前收口的长度：裁切线之上这最后一段，封面空气化进纸面，
  * 于是「裁」和「化」是同一件事，切口不留硬边。取值只要够盖住蒙版末段的余色即可。
  */
 private val BackdropFade = 28.dp
+
+/* ── 退场编舞的三条腿（2026-10-03） ─────────────────────────────
+ * 用户挑了「糊底随滚动化开」，实际要的是**一整套**读起来连贯的退场：糊底在散、在慢、
+ * 封面在缩。三条腿挂在**同一个信号源**上（头部滚出进度），比例才咬得住 ——
+ * 否则会出现「糊底在化开、封面却硬邦邦地滚走」这种割裂。
+ *
+ * 三条都只在 draw / layout 阶段读值，滚动时只重绘不重组。
+ */
+
+/** 糊底基础模糊半径（= 原来那版的固定值，头部未滚走时的样子）。 */
+private val BackdropBlur = 28.dp
+
+/** 头部滚走时糊底额外「化开」的模糊量：28 → 36dp，封面越走越散。 */
+private val BackdropBlurGrow = 8.dp
+
+/**
+ * 糊底随退场额外放大的比例：1.0 → 1.05。
+ *
+ * 与模糊是**互补**的两件事：模糊让边界变软，放大让色团铺得更开。只做前者，画面会
+ * 显得「糊在原地」；两者一起，才是封面在视野里一点点化掉。
+ *
+ * 走 `graphicsLayer` 的缩放（绘制层），不改布局尺寸 —— 每帧改布局尺寸会触发重排。
+ */
+private const val BackdropSpread = 0.05f
+
+/**
+ * 糊底的**视差系数**：头部滚走 x px，糊底只上移 x × 此值。
+ *
+ * 取 0.5 = 背景以一半速度跟随前景，这是视差产生深度的经验值。
+ * 关键在于它**与头部的实际滚出量成正比**（原来是一个固定 120dp 的终值）：头部高度随字体
+ * 缩放 / 屏高变化，固定终值会让视差比在别的设备上跑掉。
+ *
+ * 头部实测约 174dp（1080×2400 @480dpi、默认字体），滚到底 ×0.5 ≈ 87dp —— 与原来那个
+ * 固定值同量级，但现在是**算出来的**。
+ */
+private const val BackdropParallax = 0.5f
+
+/**
+ * 头部封面随退场**微缩**的比例：滚走时 1.0 → (1 - 此值)。
+ *
+ * 缩得很少是故意的 —— 多了就成了「有个东西在动」的抢戏；0.06 的幅度只有和滚动同步时才感知得到，
+ * 读作「封面被面板吸进去」，而不是「封面在缩放」。
+ */
+private const val HeaderExitShrink = 0.06f
+
+/** 微缩同时的下沉量（dp）：小幅度平移，让「被吸进去」有方向感。 */
+private val HeaderExitSink = 4.dp
+
+/**
+ * 「播放全部」圆钮身后那团封面色晕的直径 = 圆钮直径 × 此值。
+ * 1.4 → 晕直径 56dp：够在圆钮四周留出一圈看得见的颜色，又不会大到读成「一块色斑」。
+ */
+private const val PlayAllHaloRatio = 1.4f
+
+/** 色晕圆心处的不透明度。晕不承载文字，可以给到这个量级。 */
+private const val PlayAllHaloCore = 0.55f
 
 /** 头部 item 在列表里的下标：吸顶停靠线与糊底退场都按它判断。 */
 private const val HeaderItemIndex = 0
@@ -742,13 +809,21 @@ private fun Modifier.shellStatusBarBand(color: Color, heightPx: Float): Modifier
 private fun TrackListBackdrop(
     coverUrl: String?,
     exit: State<Float>,
+    /** 头部当前滚出的像素量（0..头部高度）。退场位移按它以 [BackdropParallax] 折算。 */
+    parallaxPx: () -> Float,
     panelTopInRoot: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     val surface = MaterialTheme.colorScheme.surface
+    // 退场后化入的底色：顶部那条容器色（见下面那条底盒）。蒙版颜色也从它插值而来。
+    val container = MaterialTheme.colorScheme.surfaceContainer
     // 退场位移：糊底不只淡出，还往上让开一段 —— 读起来是「封面色跟着头部走掉」，
     // 而不是眼看着内容从一块不动的色块上滑过去。
-    val exitShiftPx = with(LocalDensity.current) { BackdropExitShift.toPx() }
+    //
+    // 2026-10-03：让开的量改成**视差**（跟头部实际滚出量成正比、取其一半），不再是固定终值
+    // —— 见 [BackdropParallax]。
+    val blurPx = with(LocalDensity.current) { BackdropBlur.toPx() }
+    val blurGrowPx = with(LocalDensity.current) { BackdropBlurGrow.toPx() }
     val fadePx = with(LocalDensity.current) { BackdropFade.toPx() }
     // 裁切线比面板上沿再往下让一个纸角半径：面板行的**上边两角**就是面板这张纸的顶角，
     // 圆角之外本来就该是头部的封面空气 —— 让这一个半径，空气正好绕到弧的终点为止
@@ -765,8 +840,9 @@ private fun TrackListBackdrop(
         .fillMaxWidth()
         .height(BackdropHeight + BackdropBleed * 2)
         .offset(y = -BackdropBleed)
-        // 两个 offset 叠加：固定让开（上一条）+ 滚动退场（这条）。退场量读在 layout 阶段。
-        .offset { IntOffset(0, -(exit.value * exitShiftPx).roundToInt()) }
+        // 两个 offset 叠加：固定让开（上一条）+ 滚动视差（这条）。视差量读在 layout 阶段，
+        // 滚动时每帧只重排这一层。
+        .offset { IntOffset(0, -(parallaxPx() * BackdropParallax).roundToInt()) }
     Box(
         modifier
             .fillMaxSize()
@@ -810,13 +886,16 @@ private fun TrackListBackdrop(
         // （见 [shellStatusBarBand]）。
         //
         // 顺序要紧：`graphicsLayer`（alpha）必须在 `background` **之前** —— 它是外层图层，
-        // 写到后面背景就画在图层之外、alpha 完全不生效（下面那条蒙版原先正是这么写的，
-        // 于是它一直没淡出过：底色同为 `surface` 才没露馅）。
+        // 写到后面背景就画在图层之外、alpha 完全不生效（这条底盒刚写时正是这么错的，
+        // 底色同为 `surface` 才没露馅）。
+        //
+        // 底色走 `container` 而不是 `surface`：它只在蒙版顶部那 14% 的余量里透出来，与蒙版
+        // 同色即可 —— 两层同源，退场过程中这一带的色相才不会分叉。
         Box(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer { alpha = exit.value }
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(container),
         )
         if (coverUrl != null) {
             val context = LocalContext.current
@@ -827,22 +906,57 @@ private fun TrackListBackdrop(
                 painter = rememberAsyncImagePainter(model),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = band.blur(28.dp).graphicsLayer { alpha = 1f - exit.value },
+                // 化开：头部滚走时**越走越模糊 + 略微放大**（2026-10-03「糊底随滚动化开」）。
+                // 两者都在绘制层做，不改布局尺寸。
+                //
+                // 用 graphicsLayer 的 renderEffect 而不是 `Modifier.blur(r)`：后者是 modifier
+                // 参数，改它会重建整条链、每帧重组这个 Image；前者在绘制阶段读值，只重绘。
+                // API < 31 没有 RenderEffect，优雅降级为不模糊 —— 与 Compose 的 `Modifier.blur`
+                // 在低版本上的表现一致。
+                modifier = band.graphicsLayer {
+                    val e = exit.value
+                    alpha = 1f - e
+                    if (Build.VERSION.SDK_INT >= 31) {
+                        val r = blurPx + blurGrowPx * e
+                        renderEffect = BlurEffect(r, r, TileMode.Clamp)
+                    }
+                    val s = 1f + BackdropSpread * e
+                    scaleX = s
+                    scaleY = s
+                },
             )
         }
+        // 蒙版：把封面压到「当前底色」。**它不能跟着图像一起淡出。**
+        //
+        // 2026-10-03 修：上一版给这条也套了 `alpha = 1f - exit.value`，于是图像与蒙版共用同一个
+        // 淡出系数，封面的可见份额变成
+        //
+        //     (1-e) × [1 − 0.86(1-e)]
+        //
+        // —— 一条关于 e **开口向下的抛物线**：静止时 0.14，滚到 e≈0.44 反涨到 0.29（两倍多），
+        // 然后再归零。真机上读到的就是「先亮后暗」：封面色先漾出来、再整体淡掉。
+        // 那个 0.14 是「顶部蒙版 0.86 让出的余量」，它只该随**图像**的淡出而缩小；蒙版自己也
+        // 衰减一遍，等于把余量放大 —— 两块衰减相乘，中段必然反涨。
+        //
+        // 正解：**只让图像退场**，蒙版始终满强度，退场改由它的**颜色**承接 —— 底色从 `surface`
+        // 插值到 `container`（与下面那条底盒同源）。可见份额于是回到 0.14 × (1-e)，严格单调。
+        // 两个端点与改前一致：静止 = 0.86 surface + 0.14 封面；滚完 = 容器色。
+        //
+        // 色值在 draw 阶段读，滚动只重绘这一层、不重组。所以用 `drawBehind` 而不是
+        // `background(brush)`：后者在组合期构造 brush，读 `exit.value` 就成了每帧重组。
         Box(
-            band
-                // alpha 图层必须在 `background` 之前（见上一条注释）：否则这条蒙版不淡出。
-                .graphicsLayer { alpha = 1f - exit.value }
-                .background(
-                    Brush.verticalGradient(
+            band.drawBehind {
+                val paper = lerp(surface, container, exit.value)
+                drawRect(
+                    brush = Brush.verticalGradient(
                         // 顶部压得比中段重：状态栏图标与返回键都落在这一段，且封面可能是纯亮图
                         // （白封面时 0.78 会让白图标糊在浅灰上）；中段留住封面色相即可。
-                        0f to surface.copy(alpha = 0.86f),
-                        0.55f to surface.copy(alpha = 0.90f),
-                        1f to surface,
+                        0f to paper.copy(alpha = 0.86f),
+                        0.55f to paper.copy(alpha = 0.90f),
+                        1f to paper,
                     ),
-                ),
+                )
+            },
         )
     }
 }
@@ -865,6 +979,8 @@ private fun TrackListHeader(
     onCoverReady: (() -> Unit)?,
     watermarkIcon: ImageVector?,
     textAlpha: State<Float>?,
+    /** 头部滚出进度 0..1（= `washExit`）：驱动封面的退场微缩（见 [HeaderExitShrink]）。 */
+    exit: State<Float>,
     onPlaceholder: () -> Unit,
     coverSharedModifier: Modifier = Modifier,
     onActionsTop: (Float) -> Unit,
@@ -896,7 +1012,18 @@ private fun TrackListHeader(
                     .then(coverSharedModifier)
                     .clip(NumeShape.CardSmall)
                     // hero 顶着时透明；hero 一开始淡出即变为不透明底板、hero 在其上渐隐（draw 阶段读，不重组）。
-                    .graphicsLayer { alpha = if (heroAlpha.value >= 1f) 0f else 1f },
+                    .graphicsLayer {
+                        alpha = if (heroAlpha.value >= 1f) 0f else 1f
+                        // 退场微缩：封面跟着头部滚走时缩一点、往下沉一点，读作「被面板吸进去」
+                        // （2026-10-03「退场编舞」的第三条腿，见 [HeaderExitShrink]）。
+                        // 同样只在绘制层，**不动布局** —— 上面 `onGloballyPositioned` 回传的
+                        // 终态矩形因此不受影响（hero 终点契约不破）。
+                        val e = exit.value
+                        val s = 1f - HeaderExitShrink * e
+                        scaleX = s
+                        scaleY = s
+                        translationY = HeaderExitSink.toPx() * e
+                    },
             ) {
                 BigCoverVisual(
                     coverUrl = collection.coverUrl,
@@ -1130,12 +1257,21 @@ private fun TrackListTitleBar(
 /**
  * 「播放全部」行：红圆钮 + 标题 + 曲目数/播放量 + 右侧三枚图标。
  *
+ * ## 颜色只从圆钮身后出来
+ *
+ * 2026-10-03 起这一行的**背景不再铺色**（就是主题 `surface`，与曲目行连成一整片纸），
+ * 封面色改由 [accent] 在圆钮身后化成**一团径向晕** —— 这一行唯一的颜色来源。
+ * 面积小了二十倍，于是可以给浓、给干净，原来的问题与取舍见 [rememberCoverAccent]。
+ *
  * 副标题里「N首」用常规墨色、播放量用 tertiary（暖金）——官方那句「含20首VIP歌曲」是金色，
  * 本地没有 VIP 信息，就把金色留给「数据」这一档，位置与视觉权重与官方一致。
+ *
+ * @param accent 封面派生的强调色；取色失败时它等于 `surface`，晕自然不可见（不是 bug）
  */
 @Composable
 private fun PlayAllRow(
     collection: TrackCollection,
+    accent: Color,
     onPlayAll: () -> Unit,
     onPlaceholder: () -> Unit,
 ) {
@@ -1146,9 +1282,32 @@ private fun PlayAllRow(
             .padding(start = TrackListMetrics.SideInset, end = 4.dp, top = 14.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 晕走 `drawBehind` 而不是在外面套一个更大的 Box：套 Box 会把 Row 撑到 112dp 高
+        // （大于行本身的 68dp），布局跟着变形。`drawBehind` 画在圆钮自己的绘制范围内、向外溢出，
+        // **不参与测量**，行高不变。溢出的那圈由行的 `clip(playAllShape)` 收掉 —— 而那个位置
+        // 早衰减到近乎透明（见下面的 colorStops），所以裁切线看不出来。
         Box(
             Modifier
                 .size(TrackListMetrics.DiscSize)
+                .drawBehind {
+                    val r = size.minDimension * (PlayAllHaloRatio / 2f)
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            // 衰减刻意前重后轻：浓度集中在圆钮附近的那一小圈里，
+                            // 越往外越快趋近于零 —— 于是行边裁掉的全是无色的尾巴。
+                            colorStops = arrayOf(
+                                0f to accent.copy(alpha = PlayAllHaloCore),
+                                0.40f to accent.copy(alpha = PlayAllHaloCore * 0.45f),
+                                0.65f to accent.copy(alpha = PlayAllHaloCore * 0.10f),
+                                1f to accent.copy(alpha = 0f),
+                            ),
+                            center = center,
+                            radius = r,
+                        ),
+                        radius = r,
+                        center = center,
+                    )
+                }
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary),
             contentAlignment = Alignment.Center,
