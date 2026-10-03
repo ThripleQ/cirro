@@ -56,16 +56,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -371,20 +374,28 @@ fun TrackListScreen(
                     topEnd = TrackListMetrics.SheetCorner,
                 )
             }
-            // 「播放全部」这一行的面：**只有上边两角是圆角**（半径与纸同源
-            // [TrackListMetrics.SheetCorner]，吸顶时正好与壳子裁出来的纸角重合），下边直角，
-            // 与下面的曲目行连成一片。
+            // 「播放全部」这一行的**面**：四角都是普通圆角，半径与纸同源
+            // [TrackListMetrics.SheetCorner] —— 吸顶时上边两角正好与壳子裁出来的纸角重合
+            // （角外露容器色条），下边两角则切进**面板自己的底色**里。
             //
-            // 下边两角为什么不能圆（2026-10-03 用户：「切圆角露背景」）：这一行是**吸顶**的、
-            // 直接压在封面糊底上，圆角切掉的那两块弧外没有任何东西接得住 —— 透出来的就是
-            // 亮紫色的糊底，看着像在面板底边抠了两个洞。下边做成直角，底边与曲目行严丝合缝，
-            // 洞自然没有了；上边两角背后是头部（糊底本来就要透出来的地方），圆角才成立。
-            val playAllShape = remember {
-                RoundedCornerShape(
-                    topStart = TrackListMetrics.SheetCorner,
-                    topEnd = TrackListMetrics.SheetCorner,
-                )
-            }
+            // 下边两角为什么能圆（2026-10-03 用户：「切圆角露背景」→「做不到，也太逗了吧」）：
+            // 圆角本身从来不是问题，问题是**角外有什么接住**。这一行是吸顶的、底下垫着封面糊底
+            // （见 [BackdropHeight]），只裁面不铺底，切口里透出的就是亮紫/亮棕的封面色，
+            // 看着像在面板底边抠了两个洞 —— 那是**缺一层底**，不是形状做不了。
+            // 现在把它补上（见 stickyHeader 里那层 `surface`），四角圆角自然成立。
+            val playAllShape = remember { RoundedCornerShape(TrackListMetrics.SheetCorner) }
+            // 面板（「播放全部」行）**上沿在根坐标系里的 y** —— 封面糊底到这条线为止。
+            //
+            // 为什么要回传坐标（2026-10-03）：糊底整块垫在壳子里、铺 [BackdropHeight]，
+            // 一路盖到面板这一带，所以**面板四角切掉的那四块后面一直是封面**，不管怎么改
+            // 形状都会透出封面色。用户原话：「没有补色露的是封面背景，把背景也削掉」——
+            // 那就把糊底本身裁掉：封面空气只活在头部那一段，越过面板上沿就没了，
+            // 面板四角切开后看到的只能是**面板自己的纸**（壳子的 `surface`）。
+            //
+            // 这条线拿不到静态值：这一行是**吸顶**的，位置由列表滚动决定（头部滚走时它顶到
+            // 壳子顶）。布局阶段回传、draw 阶段读，不触发重组。
+            // 首帧给正无穷 = 先不裁，第二帧即修正（发生在壳动画 / 骨架期，不可见）。
+            var panelTopInRootPx by remember { mutableFloatStateOf(Float.POSITIVE_INFINITY) }
             // 标题条区：搜索页同款（headlineSmall 粗体、高度跟文字走），导航键浮在同区
             // （键盒右沿让出 TitleBarTextStart，见 TrackListMetrics）。
             Box {
@@ -411,9 +422,11 @@ fun TrackListScreen(
                     .background(MaterialTheme.colorScheme.surface),
             ) {
                 // 糊底垫底：头部 item 透明，封面色从头部区域透出；头部滚走淡出成纸面。
+                // 裁到面板上沿为止（`panelTopInRoot`）—— 见 [panelTopInRootPx] 那段说明。
                 TrackListBackdrop(
                     coverUrl = previewCoverUrl ?: collection?.coverUrl,
                     exit = washExit,
+                    panelTopInRoot = { panelTopInRootPx },
                     modifier = Modifier.fillMaxSize(),
                 )
                     when (display) {
@@ -455,20 +468,35 @@ fun TrackListScreen(
                                 // 这一行是**吸顶**的（抄官方歌单页）：滚到停靠线（标题条下沿）就停住，
                                 // 曲目行从它下面过；返回键 / 壳关闭键在标题条里，一直看得见也点得到
                                 // （停靠线已经让开了它们那一档，不必再互相让位）。
-                                // **这一行自带外形**（[playAllShape]，普通圆角）：上行贴着标题条，
-                                // 下边压着曲目行 —— 一块圆角面，四角都是普通圆角。
+                                // **这一行自带外形**（[playAllShape]）：四角普通圆角的一块面 ——
+                                // 上接头部（封面空气的那一段），下压曲目行（面板的 `surface`）。
+                                //
+                                // 圆角切掉的那四块露什么，是这一块的**全部要害**（2026-10-03 来回四版）：
+                                //   · 只给这一行铺底 `surface` → 屏幕上就是「圆角外面刷了块黑」，被否；
+                                //   · 干脆不铺，让切口透出去 → 透出来的是**封面糊底**（亮紫/亮棕），被否；
+                                //   · 正解：**把糊底自己裁掉**（见 [TrackListBackdrop] 的 `panelTopInRoot`），
+                                //     于是切口后面站着的是壳子的 `surface` —— 这一行什么都不用刷，
+                                //     四个角是真·空的，露出来的就是面板自己的纸，
+                                //     与紧跟其后的曲目行严丝合缝连成一整块。
+                                // 分工：**上边两角**在裁切线之上，切进头部的封面空气（那是面板这张纸
+                                // 的顶角，本来就该露空气）；**下边两角**在裁切线之下，切进纸面。
+                                //
+                                // 层级从外到内：`graphicsLayer`(alpha) → `clip`(四角圆) → 封面派生的面。
+                                // 1. 面来自封面（[rememberCoverFace]）而不是主题背景：全页只有这一处
+                                //    颜色来自内容，气于是从封面接到了面板上。它本身是不透明的，
+                                //    所以吸顶时照样盖得住从下面滚过的行。
+                                // 2. `graphicsLayer`(alpha) 必须在最外，否则 alpha 罩不住里面这些层；
+                                //    `clip` 在面之前，顺带把内容与点按水波收进圆角。
+                                // 3. 布局坐标回传用 `onGloballyPositioned`：它只是**测量**，
+                                //    不给这一行加任何绘制。
                                 stickyHeader(key = "playall") { _ ->
                                     Column(
                                         Modifier
                                             .fillMaxWidth()
+                                            .onGloballyPositioned {
+                                                panelTopInRootPx = it.positionInRoot().y
+                                            }
                                             .graphicsLayer { alpha = contentReveal.value }
-                                            // 必须是**不透明面**：它是吸顶的、画在曲目行之上，
-                                            // 没有底就盖不住从下面滚过的行，也挡不住身下那块糊底
-                                            // （糊底一直铺到面板这一带，见 [BackdropHeight]）。
-                                            // 面来自封面（[rememberCoverFace]）而不是主题背景：全页
-                                            // 只有这一处颜色来自内容，气于是从封面接到了面板上。
-                                            // 顺序：`graphicsLayer`（alpha）在最外，否则 alpha 罩不住
-                                            // 下面这层；`clip` 在面之前，顺带把内容与点按水波收进圆角。
                                             .clip(playAllShape)
                                             .background(brush = faceBrush),
                                     ) {
@@ -547,10 +575,14 @@ fun TrackListScreen(
  * 糊底铺多高（自壳子顶算起）。梯度在这一段里从「封面透出一点」化到全不透明，再往下才是
  * 干净的纸面 —— 官方同款：面板以下是不透明面。
  *
- * ⚠️ 「面板以下是不透明面」是**面板自己保证**的，糊底并不会自动停在面板上沿：糊底整块垫在
- * 壳子里、铺满本值（360dp，比头部高得多，面板的头几行也落在它范围内）。所以吸顶行 / 曲目行 /
- * 尾部 / 骨架面板都必须各自铺不透明底，否则条目卡四周那几 dp 的缝里会透出封面色 ——
- * 真机上就是「卡片之间的缝是绿的」，且随糊底退场进度一路变色。
+ * ⚠️ 这个值只是**上限**：真正决定糊底在哪里停的是**面板上沿**（见 [TrackListBackdrop] 的
+ * `panelTopInRoot`），本值只保证糊底长得够、够到面板。2026-10-03 之前糊底确实一路铺满本值、
+ * 盖到面板的头几行上，于是面板行切掉的圆角后面全是封面 —— 那是「切圆角露背景」的真因，
+ * 现在由裁切解决，不再靠各行自己铺底去遮。
+ *
+ * 各行的不透明底（吸顶行 / 曲目行 / 尾部）仍然必要：裁切线以下是壳子的 `surface`，
+ * 但条目卡是 `surfaceContainer` 且四周内缩 8dp，那几 dp 的缝里若没有行的 `surface` 底，
+ * 露出来的就是壳的纸色 —— 色号不同，会显出一条深色格线。
  */
 private val BackdropHeight = 360.dp
 
@@ -562,6 +594,12 @@ private const val BackdropScale = 1.15f
  * 取值只需与头部高度同量级（头部实测约 174dp），读起来才像「色块被头部带走」。
  */
 private val BackdropExitShift = 120.dp
+
+/**
+ * 糊底在**面板上沿**之前收口的长度：裁切线之上这最后一段，封面空气化进纸面，
+ * 于是「裁」和「化」是同一件事，切口不留硬边。取值只要够盖住蒙版末段的余色即可。
+ */
+private val BackdropFade = 28.dp
 
 /** 头部 item 在列表里的下标：吸顶停靠线与糊底退场都按它判断。 */
 private const val HeaderItemIndex = 0
@@ -626,17 +664,42 @@ private fun Modifier.shellStatusBarBand(color: Color, heightPx: Float): Modifier
  *
  * 蒙版用 `surface` 而非固定黑：明暗两套各自把封面压到「透出一点封面色」的程度，
  * 头部文字因此始终用主题墨色（onSurface / onSurfaceVariant），不必为浅色主题另备一套白字。
+ *
+ * ## 裁在面板上沿（2026-10-03）
+ *
+ * 糊底不是铺满整屏的：它到**面板上沿 + 一个纸角半径**（「播放全部」行的顶边再往下让一个
+ * 圆角，见 `panelTopInRoot`）为止。这不是省事，是那一行四个圆角能成立的前提 —— 面板行是
+ * 吸顶的、直接压在这块糊底上，糊底一天铺到面板这一带，行上切掉的圆角就一天透出封面
+ * （用户：「没有补色露的是封面背景，把背景也削掉」）。
+ *
+ * 让出这一个半径是为了上边两角：那一对角就是面板这张纸的顶角，圆角之外该是头部的封面空气，
+ * 且空气正好绕到弧的终点为止 —— 那一处凹口宽度收到 0，**裁切线本身不会露出来**。
+ * 再往下是面板内部，那一行**下边两角**切开的凹口落在裁切线之下，露出壳子的 `surface`（纸面）。
+ *
+ * 裁切线末端 [BackdropFade] 那一段把封面空气化进纸面，接上「面板以下是不透明面」这条规矩。
  */
 @Composable
 private fun TrackListBackdrop(
     coverUrl: String?,
     exit: State<Float>,
+    panelTopInRoot: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     val surface = MaterialTheme.colorScheme.surface
     // 退场位移：糊底不只淡出，还往上让开一段 —— 读起来是「封面色跟着头部走掉」，
     // 而不是眼看着内容从一块不动的色块上滑过去。
     val exitShiftPx = with(LocalDensity.current) { BackdropExitShift.toPx() }
+    val fadePx = with(LocalDensity.current) { BackdropFade.toPx() }
+    // 裁切线比面板上沿再往下让一个纸角半径：面板行的**上边两角**就是面板这张纸的顶角，
+    // 圆角之外本来就该是头部的封面空气 —— 让这一个半径，空气正好绕到弧的终点为止
+    // （那一处凹口宽度收到 0），裁切线于是**不可能露出来**；再往下才是面板内部，
+    // 那一行**下边两角**切开的凹口落在裁切线之下，露出的就是壳子的 `surface`（纸面）。
+    //
+    // 一个半径够不够，取决于行高 > 2×半径（实测 68dp 内容 ≫ 2×28dp），正常取不到边界。
+    val cornerPx = with(LocalDensity.current) { TrackListMetrics.SheetCorner.toPx() }
+    // 自己在根坐标系里的 y：把回传的「面板上沿」换算成本地裁切高度。
+    // 走布局回调、draw 阶段读，滚动时每帧只引发重绘。
+    var selfTopInRootPx by remember { mutableFloatStateOf(0f) }
     // 位图与蒙版共用同一套「格子」：都要盖住放大后的整块范围。
     val band = Modifier
         .fillMaxWidth()
@@ -644,7 +707,40 @@ private fun TrackListBackdrop(
         .offset(y = -BackdropBleed)
         // 两个 offset 叠加：固定让开（上一条）+ 滚动退场（这条）。退场量读在 layout 阶段。
         .offset { IntOffset(0, -(exit.value * exitShiftPx).roundToInt()) }
-    Box(modifier.fillMaxSize().background(surface)) {
+    Box(
+        modifier
+            .fillMaxSize()
+            .onGloballyPositioned { selfTopInRootPx = it.positionInRoot().y }
+            // `drawWithContent` 在 `background` **之前**：底色也得待在裁切线以内，
+            // 线以下交给壳子的 `surface`（同色，无缝）。
+            .drawWithContent {
+                val bottom = panelTopInRoot() - selfTopInRootPx + cornerPx
+                if (bottom >= size.height) {
+                    // 还没量到（首帧给的正无穷）或面板整个在壳子之外：整块照画。
+                    this@drawWithContent.drawContent()
+                } else {
+                    val cut = bottom.coerceAtLeast(0f)
+                    clipRect(right = size.width, bottom = cut) {
+                        // `clipRect` 的接收者是 DrawScope，`drawContent` 挂在 ContentDrawScope 上，
+                        // 这里必须显式指明外层的接收者。
+                        this@drawWithContent.drawContent()
+                        if (cut > 0f) {
+                            // 收口：把封面空气在裁切线之前化进纸面，线本身于是不留硬边。
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(Color.Transparent, surface),
+                                    startY = cut - fadePx,
+                                    endY = cut,
+                                ),
+                                topLeft = Offset(0f, cut - fadePx),
+                                size = Size(size.width, fadePx),
+                            )
+                        }
+                    }
+                }
+            }
+            .background(surface),
+    ) {
         // 糊底自己的退场底色：透明度跟着糊底退场进度走（`exit`），到 1 时整块化进
         // `surfaceContainer`（= 顶部那条容器色，收起后不露白）。
         //
