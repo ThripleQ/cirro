@@ -39,7 +39,8 @@ internal fun HomeSkeleton(bottomPadding: Dp) {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        // 标题条骨架与 [HomeTopBar] 同构：透明铺在容器色上、statusBarsPadding。
+        // 标题条骨架与 [NumePageTitleBar] 同构：透明铺在容器色上、statusBarsPadding、
+        // 左内缩 24dp、右侧 28dp 圆钮槽。
         Row(
             modifier = Modifier
                 .fillMaxWidth()

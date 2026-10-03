@@ -7,16 +7,19 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -25,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
@@ -34,6 +38,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thripleq.nume.core.repo.PlaylistSummary
 import com.thripleq.nume.ui.components.NumeErrorState
+import com.thripleq.nume.ui.components.NumePageTitleBar
 import com.thripleq.nume.ui.components.ShellPanel
 import com.thripleq.nume.ui.profile.ProfileUiState
 import com.thripleq.nume.ui.profile.ProfileViewModel
@@ -178,32 +183,45 @@ private fun ProfileBodyUi(
     avScope: AnimatedVisibilityScope?,
     bottomPadding: Dp,
 ) {
-    // 底部避让必须放在滚动内容内部（同 TrackListScreen 的 contentPadding 做法）：
-    // 放在外层 padding 会在岛背后留一条永久空白带，卡片进不去、岛像贴在画布上。
-    // 顶部反过来：状态栏让位放在**滚动之外**，因为本页没有钉顶标题条（探索页/搜索页
-    // 有大标题条兜住），内容直接从最上方起 —— 不裁掉状态栏那一条，第一张卡（登录卡）
-    // 会被状态栏和挖孔压住，滚动时也会一直钻到时钟底下。
+    // 与探索页 / 搜索页同一套外壳：顶层铺 `surfaceContainer` 放「我的」大标题，内容是一张
+    // `surface` 圆角纸 —— 纸的顶角把容器色露出来，就是状态栏那条容器色 + 下方圆角内容的关系。
+    // 标题条走 [NumePageTitleBar]（三页共用一份实现，内缩 24dp 与字形永远一致），
+    // 状态栏让位随之从内容挪到标题条上。
     Column(
         Modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .verticalScroll(scrollState)
-            .padding(start = 16.dp, end = 16.dp, bottom = bottomPadding),
+            .background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        Spacer(Modifier.height(20.dp))
-        when (val s = state) {
-            ProfileUiState.Loading -> ProfileSkeleton()
-            is ProfileUiState.Error -> NumeErrorState(onRetry = onRetry)
-            // 未登录也先把完整窗口摆好：登录卡置顶，四个区块以占位呈现，
-            // 结构与已登录完全一致，点击任意区块引导登录。
-            ProfileUiState.LoggedOut -> LoggedOutContent(onWebLogin)
-            is ProfileUiState.LoggedIn -> LoggedInContent(
-                data = s.data,
-                onOpenTracks = onOpenTracks,
-                onOpenPanel = onOpenPanel,
-                shared = shared,
-                avScope = avScope,
-            )
+        NumePageTitleBar("我的")
+
+        // 底部避让必须放在滚动内容内部（同 TrackListScreen 的 contentPadding 做法）：
+        // 放在外层 padding 会在岛背后留一条永久空白带，卡片进不去、岛像贴在画布上。
+        // 顶部反过来：状态栏让位**不再**由内容承担，改由标题条兜住 —— 内容从纸上沿起，
+        // 第一张卡（登录卡 / hero）压不到状态栏与挖孔上。
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(RoundedCornerShape(topStart = HomeSheetRadius, topEnd = HomeSheetRadius))
+                .background(MaterialTheme.colorScheme.surface)
+                .verticalScroll(scrollState)
+                .padding(start = 16.dp, end = 16.dp, bottom = bottomPadding),
+        ) {
+            Spacer(Modifier.height(20.dp))
+            when (val s = state) {
+                ProfileUiState.Loading -> ProfileSkeleton()
+                is ProfileUiState.Error -> NumeErrorState(onRetry = onRetry)
+                // 未登录也先把完整窗口摆好：登录卡置顶，四个区块以占位呈现，
+                // 结构与已登录完全一致，点击任意区块引导登录。
+                ProfileUiState.LoggedOut -> LoggedOutContent(onWebLogin)
+                is ProfileUiState.LoggedIn -> LoggedInContent(
+                    data = s.data,
+                    onOpenTracks = onOpenTracks,
+                    onOpenPanel = onOpenPanel,
+                    shared = shared,
+                    avScope = avScope,
+                )
+            }
         }
     }
 }

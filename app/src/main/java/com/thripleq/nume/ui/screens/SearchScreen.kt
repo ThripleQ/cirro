@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -47,12 +46,11 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.thripleq.nume.ui.components.NumePageTitleBar
 import com.thripleq.nume.ui.search.SearchViewModel
 
 /**
@@ -94,7 +92,7 @@ fun SearchScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        SearchTitleBar()
+        NumePageTitleBar("搜索")
         Column(
             Modifier
                 .fillMaxWidth()
@@ -145,31 +143,6 @@ fun SearchScreen(
                 }
             }
         }
-    }
-}
-
-/* ── 顶部「搜索」大标题（铺在容器色上） ─────────────────── */
-
-@Composable
-private fun SearchTitleBar() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(start = 24.dp, end = 8.dp, top = 0.dp, bottom = 0.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "搜索",
-            style = MaterialTheme.typography.headlineSmall.copy(
-                lineHeightStyle = LineHeightStyle(
-                    alignment = LineHeightStyle.Alignment.Center,
-                    trim = LineHeightStyle.Trim.Both,
-                ),
-            ),
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
     }
 }
 

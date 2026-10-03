@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -48,8 +47,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -59,6 +56,7 @@ import coil.request.ImageRequest
 import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.ui.components.BigCoverVisual
 import com.thripleq.nume.ui.components.NumeMediaRow
+import com.thripleq.nume.ui.components.NumePageTitleBar
 import com.thripleq.nume.ui.components.NumeSectionHeader
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.numeEntrySurface
@@ -100,7 +98,15 @@ internal fun HomeContent(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        HomeTopBar(onRefresh)
+        NumePageTitleBar("探索") {
+            IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    Icons.Filled.Refresh,
+                    contentDescription = "刷新",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -187,41 +193,10 @@ internal fun HomeContent(
 internal val HomeSheetRadius = 28.dp
 
 /**
- * 钉在顶部的「探索」大标题条：本身透明，铺在 [HomeContent] 顶层的 `surfaceContainer`
- * 之上；下方 [LazyColumn] 那张 `surface` 圆角纸的顶角会把容器色露出来。标题固定，内容
- * 在圆角纸里滚。
+ * 钉在顶部的「探索」大标题条由 [NumePageTitleBar] 担当（与搜索页 / 我的页共用一份实现）。
+ * 它本身透明，铺在 [HomeContent] 顶层的 `surfaceContainer` 之上；下方 [LazyColumn] 那张
+ * `surface` 圆角纸的顶角会把容器色露出来。标题固定，内容在圆角纸里滚。
  */
-@Composable
-private fun HomeTopBar(onRefresh: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(start = 24.dp, end = 8.dp, top = 0.dp, bottom = 0.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "探索",
-            style = MaterialTheme.typography.headlineSmall.copy(
-                // 去掉行高上下多余的 leading，让字的上沿贴到状态栏（否则字上方还留着一条空隙）。
-                lineHeightStyle = LineHeightStyle(
-                    alignment = LineHeightStyle.Alignment.Center,
-                    trim = LineHeightStyle.Trim.Both,
-                ),
-            ),
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-        IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
-            Icon(
-                Icons.Filled.Refresh,
-                contentDescription = "刷新",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-    }
-}
 
 /** 大封面横滑卡片行（歌单 / 榜单）。 */
 @Composable
