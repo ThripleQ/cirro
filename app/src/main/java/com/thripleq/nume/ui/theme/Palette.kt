@@ -71,14 +71,21 @@ val NumeLightColors = NumeColorRoles(
     onErrorContainer = Color(0xFF5A0900),
     surface = Color(0xFFF6F9FD),
     onSurface = Color(0xFF030305),
-    surfaceDim = Color(0xFFD2D4D8),
+    // 2026-10-03 用户：「亮色主题要亮一点」——**容器这一族整体上抬约 7 个亮度**。
+    // 原来 `surfaceContainer`(#E9EBEF) 与 `surface`(#F6F9FD) 差 14，落在页面上就是
+    // 「灰标题条 + 白纸 + 灰卡片」三块分明；抬到 #F0F2F7 后差值收到 7，颜色关系还在，
+    // 但整页不再是灰压白。
+    //
+    // 只动容器这一族（Low 以上）：`surface` / `surfaceBright` / `surfaceContainerLowest`
+    // 是「亮端」，本就接近纸白，不动；`surfaceDim` 在暗端，跟着抬以免梯度断掉。
+    surfaceDim = Color(0xFFDBDDE1),
     surfaceBright = Color(0xFFFAFCFF),
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFF3F5F9),
-    surfaceContainer = Color(0xFFE9EBEF),
-    surfaceContainerHigh = Color(0xFFE2E5E9),
-    surfaceContainerHighest = Color(0xFFD8DBDF),
-    surfaceVariant = Color(0xFFDADEE5),
+    surfaceContainerLow = Color(0xFFF4F6FA),
+    surfaceContainer = Color(0xFFF0F2F7),
+    surfaceContainerHigh = Color(0xFFE9ECF1),
+    surfaceContainerHighest = Color(0xFFE0E3E8),
+    surfaceVariant = Color(0xFFE2E5EC),
     onSurfaceVariant = Color(0xFF52555C),
     outline = Color(0xFF60636A),
     outlineVariant = Color(0xFFBABEC5),
