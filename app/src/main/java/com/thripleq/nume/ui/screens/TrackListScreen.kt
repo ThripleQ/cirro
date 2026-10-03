@@ -63,6 +63,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
@@ -918,6 +920,11 @@ private fun TrackListBackdrop(
                 painter = rememberAsyncImagePainter(model),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                // 无色（2026-10-03 用户：「歌单列表的那个模糊效果蒙版弄成无色的」）：
+                // 只取封面的**明暗**、丢掉色相。糊底是大面积底层，之前它把封面的色相
+                // 一路铺到状态栏一带，整块头图都跟着封面变色；去掉色相后它就是一团中性
+                // 的灰雾，封面色只留在圆钮身后那一小团（见 [rememberCoverAccent]）。
+                colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
                 // 化开：头部滚走时**越走越模糊 + 略微放大**（2026-10-03「糊底随滚动化开」）。
                 // 两者都在绘制层做，不改布局尺寸。
                 //
