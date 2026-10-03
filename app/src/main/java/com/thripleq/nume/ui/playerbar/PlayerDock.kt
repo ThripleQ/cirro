@@ -186,6 +186,16 @@ fun PlayerDock(
             newTarget = state.sheetState.currentValue,
         )
         state.anchorsReady = true
+        // 锚点/行程换了口径（导航显隐会让 dock 变矮 → travelPx 变），`offset/travelPx` 整体
+        // 平移。跟随器要一起对齐，否则会从旧口径一路追到新口径（壳自己滑一段）。
+        state.syncFollow()
+    }
+
+    // 拖动跟随器：只在播放页在场时跑（open 起跑、收起后自己退出并复位）。
+    // 它让卡片↔全屏这一段「不严格跟手」—— 壳追着手指走、内容再慢一拍，见 [PlayerDockState.runFollowLoop]。
+    // 点按时间轴期间它也空转（progress 读的是 entry），但每帧只做几次浮点运算，可忽略。
+    LaunchedEffect(state.open) {
+        if (state.open) state.runFollowLoop()
     }
 
     // 组合与否由锚点状态驱动：迷你条一拖动（offset>0）就组合播放面；

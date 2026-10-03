@@ -1,6 +1,7 @@
 package com.thripleq.nume.ui.playerbar
 
 import android.provider.Settings
+import com.thripleq.nume.ui.theme.Motion
 import com.thripleq.nume.ui.theme.NumeFade
 import com.thripleq.nume.ui.theme.NumeShape
 import androidx.activity.compose.BackHandler
@@ -180,6 +181,12 @@ internal fun PlayerPage(
         // 点按路径不走这套：它没有「卡片档」这个概念，直接从 45% 行程起把壳推满（见 tapFillT）。
         val t1 = if (tapExpand) tapFillT(tapT)
                  else ((p - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
+        // 底边的「盖满」比顶边早 [BOTTOM_FILL_SPAN] 档走完（顶边仍走满到 2）——理由见该常量：
+        // 底边只有 dock 高 + gap 的行程可走（≈504px），却要塞进手指只走 ≈388px 的那一段，
+        // 铺满整段就会在「壳变沉」之后还拖着一截没走完，读成「下边软软的」。
+        // 点按路径不走这条改派：它的底边时机是那条 420ms 时间轴自己排的（t1）。
+        val tBottom = if (tapExpand) t1
+                      else ((p - HALF_ANCHOR_P) / BOTTOM_FILL_SPAN).coerceIn(0f, 1f)
         val extT = (t0 / SPLIT).coerceIn(0f, 1f)
         // 分裂形态量：点按期间整段归零 —— 不挤腰（腰是 `waistT` 从它派生的）、
         // 左右不收（`inset` 由它线性给出）、dock 顶角不回涨（下面的 dockCornerCur）。
@@ -224,7 +231,12 @@ internal fun PlayerPage(
             bottom + dockShiftPx,
         )
 
-        return lerpRect(bubbleOrCard, full, t1)
+        // 顶边 / 左右 / 圆角 / 颜色照旧走 t1；**只有底边**改用 tBottom（提前到位）。
+        // 壳高因此会比「两边同步」时略大，但终点（p=2）两条路径逐值相等，不会跳。
+        val filled = lerpRect(bubbleOrCard, full, t1)
+        val bottomFilled =
+            bubbleOrCard.bottom + (full.bottom - bubbleOrCard.bottom) * tBottom
+        return Rect(filled.left, filled.top, filled.right, bottomFilled)
     }
 
     val p = state.progress
@@ -275,14 +287,17 @@ internal fun PlayerPage(
     // 顶部拉手/收起：拖动路径分裂成卡后才浮现；点按路径要**立刻**出现 —— 否则 420ms 的展开里
     // 前段根本没有收起键，用户点进去想退却发现按钮还没长出来。
     val headerAlpha = if (tapExpand) (tapT / tapHeaderIn).coerceIn(0f, 1f) else splitT
-    // 胶囊→卡片段：内容固定为卡片档尺寸，由壳裁剪揭示（封面不随气泡长大）；
-    // 过卡片锚点后才切换成逐帧连续过渡到全屏，避免半档处布局跳变。
-    // 点按路径没有这层冻结：内容档位随行程全程 0→1，壳长大与内容运镜同时发生 ——
-    // 「展开感」正来自这里（拖动路径下这一步全挤在最后 17%，点上去就成了"先卡片再全屏"）。
+    // 胶囊→卡片段：内容固定为卡片档尺寸，由壳裁剪揭示（封面不随气泡长大）—— 这层"冻结"
+    // 现在已经落在 [PlayerDockState.contentProgress] 里（`coerceAtLeast(HALF_ANCHOR_P)`）；
+    // 过卡片锚点后内容才逐帧连续过渡到全屏，避免半档处布局跳变。
+    // pastCard 用**壳**的进度 p 判：壳是一阶跟随、不会过冲，不会在锚点附近来回翻；
+    // 内容量是欠阻尼的（会越过 raw 一点），拿它判会让 contentRect 在阈值上抖。
     val pastCard = p > HALF_ANCHOR_P
     val cardRect = shellRect(HALF_ANCHOR_P)
-    val contentProgress = if (tapExpand) HALF_ANCHOR_P + (2f - HALF_ANCHOR_P) * tapT
-                          else if (pastCard) p else HALF_ANCHOR_P
+    // 内容档位由 [PlayerDockState.contentProgress] 给：拖动路径下它比壳**慢一拍**
+    // （跟随器 + 欠阻尼余振），点按路径下它随 entry 全程 0→1。两条都在状态里算好，
+    // 这里不再自己从 p 推 —— 否则内容就与壳严格同相，纵深感没了。
+    val contentProgress = state.contentProgress
     // 点按路径的壳矩形始终交给内容：内容跟着壳一起长（不做"按全屏版式排好再被揭示"，
     // 那样壳还矮时内容会被裁掉大半）。
     val contentRect = if (tapExpand || pastCard) rect else cardRect
@@ -337,7 +352,14 @@ internal fun PlayerPage(
                     translationX = rect.left
                     translationY = rect.top
                     // 扩展/挤腰段不投影（与 dock 浑然一体），「断开」成卡才浮起。
-                    shadowElevation = 4.dp.toPx() * breakT
+                    // 再叠一项**速度耦合**：拖得越快壳越压得低（阴影越沉）——「甩起来的东西有风」，
+                    // 慢下来自动收回去。读 [PlayerDockState.followSpeed] 在绘制阶段，不引重组。
+                    // 速度项还要乘接入权重 [PlayerDockState.dragFollowMix] —— 这一项与位置无关，
+                    // 不乘的话中途甩动就变沉，与「这些效果集中在展开末端」的意图相反。
+                    shadowElevation = 4.dp.toPx() * breakT +
+                        Motion.ShellShadowSpeedDp.dp.toPx() *
+                        (state.followSpeed / Motion.ShellShadowSpeedRef).coerceIn(0f, 1f) *
+                        state.dragFollowMix
                     shape = shellShape
                     clip = true
                 }
@@ -495,7 +517,10 @@ internal fun PlayerPageContent(
     }
 
     val density = LocalDensity.current
-    val sc = ((contentProgress - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
+    // 上限放到 1 以上（[Motion.ContentOvershootMax]）：内容跟随器是欠阻尼的，收尾会越过一点
+    // 再收回 —— 钳在 1 就正好把这一下的余振抹掉了。
+    val sc = ((contentProgress - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P))
+        .coerceIn(0f, Motion.ContentOvershootMax)
     val statusBarDp = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
     // 三键导航常显，全屏时底部的功能胶囊行要抬到三键之上；随 sc 渐入，卡片档不动，
     // 避免半档处布局跳变（三键 inset 恒定，不存在"隐藏后归零"的抖动）。

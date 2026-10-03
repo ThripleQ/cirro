@@ -32,6 +32,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.pow
 
 /** 播放页「打开程度」：0 = 完全收起在迷你条胶囊，2 = 盖满全屏。
  *  两段式：p∈[0,1] 胶囊原位展开成悬浮卡（dock 保持可见）；
@@ -50,8 +53,24 @@ internal const val SPLIT = 0.5f
 /** 卡片档吸附进度：分裂完成后壳顶继续线性升高到该进度才停 —— 卡片占屏约 2/3、
  *  高度足够装下封面+滑块+控制整组内容（此前卡片只有半屏高，内容溢出被裁、比例失调）。
  *  全屏固定 2；卡片→全屏的形变（贴边/收角/变色/dock淡出）全部在 [HALF_ANCHOR_P, 2] 内插值，
- *  壳顶仍全程随手指线性升降（跟手不变）、一行程直达全屏（行程不变）。 */
+ *  一行程直达全屏（行程不变）。「壳顶全程随手指线性升降」这一条**已不再成立**：拖动路径下
+ *  这一段改由跟随器驱动（[PlayerDockState.runFollowLoop]），末端刻意不严格跟手 ——
+ *  滞后、末端阻力、「内容后到」都是从这里来的，也就是「质量感」本身。 */
 internal const val HALF_ANCHOR_P = 1.66f
+
+/**
+ * 「盖满全屏」时**底边的提前量**（progress 单位）：底边在 [HALF_ANCHOR_P] 之后只走这么多就贴到屏底，
+ * 顶边仍走满到 2（≈0.34 档）。
+ *
+ * 为什么必须让两条边错开到位：底边的总行程 = dock 高 + gap ≈ 504px，而 1.66→2 这段手指只走
+ * `travelPx × 0.34` ≈ 388px（真机 travelPx ≈ 1140px）—— **底边天生是手指的 1.3 倍速**
+ * （几何决定，改不掉）。让它铺满整段，底边就会在「壳已经变沉」之后还继续走完剩下的 68%，那段读成「下边软软的、被拖着」
+ * （用户 2026-10-03：「上边下边行程不一样，导致下边软软的」）。
+ *
+ * 提前到 1.88 到位后，最后 0.12 档只剩顶边在收 —— 重量感落在壳上，不拖在底部。
+ * 代价是底边速度从 1.3 倍提到 2.0 倍（504px ÷ 0.22 档 × 1140px），但它走在「壳还没变沉」的阶段，观感是「利落」而非「甩」。
+ */
+internal const val BOTTOM_FILL_SPAN = 0.22f
 
 /** 分裂段内部再分两拍：前一半「挤腰」（交界圆角涨大、两侧内收成腰），后一半「断开」（缝打开）。 */
 internal const val SPLIT_SQUEEZE = 0.5f
@@ -127,19 +146,28 @@ class PlayerDockState internal constructor(
 
     /** 胶囊展开进度 0..2（[0,1]=胶囊→卡片，[1,2]=卡片→全屏）。
      *
-     *  **两个数据源**：手势/吸附走 [sheetState.offset]（拖动路径，细胞分裂那套形态语言）；
-     *  点迷你条的展开走 [entry]（点按专用时间轴，跳过分裂、内容全程参与运镜）。
+     *  **两个数据源**：点迷你条的展开走 [entry]（点按专用时间轴，跳过分裂、内容全程参与运镜）；
+     *  手势拖动走 [visualP]（**跟随器的输出**，不是手指量本身 —— 见 [runFollowLoop]）。
      *  选哪一个由 [tapExpand] 决定 —— 两套都归一到同一个 0..2 量纲，所以所有读取方
      *  （壳几何、dock 淡出、系统栏隐藏、内容档位）不必知道自己在哪套里。
      *
-     *  拖动中读 offset 是"跟手"的前提，点按时要读一条**形态不同**的路径，这才需要一个独立源；
-     *  若强行让点按也走 offset，就只能靠 `animateTo` 一条曲线跑完，形态仍是拖动那套。
+     *  为什么拖动不再是 `offset / travelPx` 本身：线性 1:1 读起来是「UI 在等比缩放」，
+     *  不是「一个有重量的东西被抬起来」。`progress` 因此不读手指量，读的是追着手指量的
+     *  跟随器输出（滞后 + 追上来的尾巴 + 末端变稠 = 质量感）。**手指量仍然存在于
+     *  [rawProgress]，锚点/甩动选档/吸附判定全部继续读它** —— 变的只是「看起来怎么走」，
+     *  不是「松手落到哪」。
      *
      *  读取方既有组合阶段的（PlayerPage 的壳几何、圆角、颜色），也有绘制阶段的（dock 的
      *  graphicsLayer、系统栏显隐）—— 都走这一个口子，所以换数据源时它们全都跟着切。 */
     val progress: Float
-        get() = if (tapExpand) entry.value * 2f
-                else (sheetState.offset / travelPx).coerceIn(0f, 2f)
+        get() = if (tapExpand) entry.value * 2f else visualP.coerceIn(0f, 2f)
+
+    /** 内容档位（0..2）：与 [progress] 同量纲，但**比壳更慢**（内容跟随器 + 欠阻尼余振）。
+     *  [PlayerPage] 的 `contentProgress` 读它 —— 壳先到位、内容后到，这一个相位差就是纵深。
+     *  卡片锚点以下钳在 [HALF_ANCHOR_P]（那段内容固定为卡片版式、由壳裁剪揭示，不重新排版）。 */
+    val contentProgress: Float
+        get() = if (tapExpand) HALF_ANCHOR_P + (2f - HALF_ANCHOR_P) * entry.value
+                else visualContentP.coerceAtLeast(HALF_ANCHOR_P)
 
     /**
      * 点按展开的等效行程：0 = 收起在迷你条，1 = 盖满全屏。
@@ -151,6 +179,152 @@ class PlayerDockState internal constructor(
     /** 点按展开是否在跑。[progress] 据此选数据源；手势据此让路（见 [openByTap]）。 */
     var tapExpand by mutableStateOf(false)
         internal set
+
+    // ── 拖动跟随器：卡片↔全屏这一段「不严格跟手」的来源 ──────────────────────────
+    // 拖动路径下 [progress] 读的不是手指量（[rawProgress]），而是这里的跟随器输出：
+    //   壳 = 一阶低通追 raw（τ 上/下行不同 → 重力感；接近全屏时 τ 变大 → 末端阻力）
+    //   内容 = 更慢的欠阻尼二阶追 raw（相位差 = 层次；ζ<1 → 余振 = 质量）
+    // 三处「raw 会瞬变」的交接（点按落位 / 收起交接 / 锚点重注册）必须调 [syncFollow]，
+    // 否则视觉量会从旧值一路追过去 —— 表现为「动画都结束了，壳又自己滑一段」。
+    //
+    // 只在 [open] 期间跑（[PlayerDock] 发起 [runFollowLoop]），收敛后挂起：停下来零成本。
+
+    /** 壳的跟随量（0..2）。一阶，不会过冲 —— 壳位置要稳，过冲交给内容层。 */
+    private var shellFollow = 0f
+
+    /** 内容的跟随量与速度（0..2 / 每秒）：二阶欠阻尼，允许越过 raw 一点再收回。 */
+    private var contentFollow = 0f
+    private var contentVel = 0f
+
+    /** 上一帧的视觉量：用来取跟随速度（阴影等速度耦合表现读 [followSpeed]）。 */
+    private var lastVisual = 0f
+
+    /** 壳的平滑进度：非点按期间 [progress] 读它。 */
+    var visualP by mutableFloatStateOf(0f)
+        private set
+
+    /** 内容的平滑档位（0..2）：[contentProgress] 读它。 */
+    var visualContentP by mutableFloatStateOf(0f)
+        private set
+
+    /** 跟随速度（progress 单位/秒）：拖动越快越大，落位后归零。 */
+    var followSpeed by mutableFloatStateOf(0f)
+        private set
+
+    /**
+     * 跟随的**接入权重**（0..1）：效果（滞后、内容相位差、阴影速度项）都乘它。
+     *
+     * 只在展开末端起作用（区间见 [Motion.DragFollowMixFrom]）—— 启动段严格 1:1，
+     * 末端陡然增强。壳/内容的位置本身已在 [visualP]/[visualContentP] 里乘过它，
+     * 这里单独暴露是给 **速度耦合** 那类「与位置无关」的表现用（[PlayerPage] 的阴影速度项）：
+     * 不乘它的话，中途甩动就会变沉，与「效果集中在末端」矛盾。
+     */
+    var dragFollowMix by mutableFloatStateOf(0f)
+        private set
+
+    /** 手指量：锚点、甩动选档、吸附判定用的那条（跟随器不动它）。
+     *
+     *  上限放到 [RAW_MAX] 而不是 2：落位到全屏时会故意冲过锚点一点点再收回（[Motion.SheetFullOvershoot]），
+     *  钳在 2 会把这次过冲整个吃掉。壳的 [progress] 另有一道 `coerceIn(0f, 2f)`，所以壳不会
+     *  真的被拉出屏幕；能读出这次过冲的只有内容档位（[contentProgress] 不设上限）。 */
+    private fun rawProgress(): Float = (sheetState.offset / travelPx).coerceIn(0f, RAW_MAX)
+
+    /**
+     * 把跟随器直接对齐到当前 raw —— **所有会让 raw 瞬变的交接点都要调它**。
+     *
+     * 三处：点按时间轴落位（offset 被 snap 到 Full）、点按期间点收起（同）、
+     * 锚点重注册（travelPx 变化会让 `offset/travelPx` 整体改口径）、循环起停。
+     */
+    fun syncFollow() {
+        val raw = rawProgress()
+        shellFollow = raw
+        contentFollow = raw
+        contentVel = 0f
+        visualP = raw
+        visualContentP = raw
+        lastVisual = raw
+        followSpeed = 0f
+        // 权重跟位置走：收敛挂起期间不会再算，留在旧值上会让阴影速度项的口径对不上
+        // （比如从「拖到 1.7 停住」收敛时，旧值还可能是上一次全屏的 1）。
+        dragFollowMix = smoothstep(Motion.DragFollowMixFrom, Motion.DragFollowMixTo, raw)
+            .pow(Motion.DragFollowMixEase)
+    }
+
+    /**
+     * 跟随循环：[open] 期间每帧积分，收敛后**挂起等 raw 变化**（不空转唤醒 Choreographer）。
+     *
+     * dt 取 [withFrameNanos] 的真实帧间隔而不是固定 16ms：掉帧时手感的「时间常数」才是真的
+     * 时间常数，不会随帧率变软。
+     */
+    suspend fun runFollowLoop() {
+        syncFollow()
+        var lastNs = 0L
+        while (open) {
+            val raw = rawProgress()
+            if (abs(raw - shellFollow) < FOLLOW_EPS && abs(raw - contentFollow) < FOLLOW_EPS) {
+                // 收敛：**先精确对齐再挂起**。留残差会在全屏档露出发丝缝（壳差一两像素没盖到顶），
+                // 卡片档同理会让内容比例差一点点。
+                syncFollow()
+                snapshotFlow { rawProgress() }.first { abs(it - raw) > FOLLOW_EPS }
+                // 挂起期间的时间不能当一帧用（否则第一帧 dt 巨大、跟随器一步跨过去）。
+                lastNs = 0L
+                continue
+            }
+            val nowNs = withFrameNanos { it }
+            val dt = if (lastNs == 0L) 0f
+                     else ((nowNs - lastNs) / 1_000_000_000f).coerceIn(0f, MAX_FRAME_S)
+            lastNs = nowNs
+            if (dt <= 0f) continue
+            step(raw, dt)
+        }
+        // 收起后复位：raw 已回到 0，视觉量不能留在旧值上（下次打开第一帧就是迷你条本身）。
+        syncFollow()
+    }
+
+    /** 一帧的积分：壳（一阶 + 末端阻力）、内容（欠阻尼二阶）、接入权重。 */
+    private fun step(raw: Float, dt: Float) {
+        // 末端阻力：临近全屏时 τ 放大，壳变「稠」——手指继续走、壳越走越慢。
+        // 只改 τ、不改端点映射，所以锚点与视觉终点严格对应：跟随器最终一定收敛到 raw，
+        // 松手后落位曲线接手把最后这段走完，读成「它自己滑进去」。
+        // 增长取 stickT² ：前一半几乎不生效，最后 10% 才陡然压住。
+        val stickT = ((raw / 2f - Motion.DragFollowStickFrom) / (1f - Motion.DragFollowStickFrom))
+            .coerceIn(0f, 1f)
+        val baseTauMs = if (raw >= shellFollow) Motion.DragFollowRiseMs else Motion.DragFollowFallMs
+        val tau = baseTauMs * (1f + Motion.DragFollowStickGain * stickT * stickT) / 1000f
+        shellFollow += (raw - shellFollow) * (1f - exp(-dt / tau))
+        // 滞后上限：甩得越快，无界的滞后越离谱（也越会在权重渐入处产生拖动中的倒退）。
+        // 钳住之后「重量」有个恒定的上限，慢拖又不会被钳到（滞后≈速度×τ 本身更小）。
+        shellFollow = shellFollow.coerceIn(raw - Motion.DragFollowMaxLagP, raw + Motion.DragFollowMaxLagP)
+
+        // 内容：欠阻尼二阶，手指停住/松手时它会荡一下再稳 —— 这就是余振（质量感的来源之一）。
+        // ω 由时间常数换算：一阶「τ 秒收敛」≈ 二阶 ω = 5/τ（同一稳态带）。
+        // 半隐式欧拉要分子步：ω·h 过大时会发散。
+        val omega = 5f / (Motion.ContentFollowMs / 1000f)
+        var remain = dt
+        while (remain > 0f) {
+            val h = if (remain > MAX_SUBSTEP_S) MAX_SUBSTEP_S else remain
+            val acc = omega * omega * (raw - contentFollow) -
+                2f * Motion.ContentFollowDamping * omega * contentVel
+            contentVel += acc * h
+            contentFollow += contentVel * h
+            remain -= h
+        }
+
+        // 接入权重：**整段压在展开末端**（区间见 [Motion.DragFollowMixFrom]→[DragFollowMixTo]，
+        // 之前严格 1:1、之后满额），曲线再取 [Motion.DragFollowMixEase] 次幂 → 前段几乎无、
+        // 末端陡然起。数字不写在这里：它是真机上唯一要反复调的旋钮，写死必然过期。
+        // 用户 2026-10-03：这些效果属于「展开将要完成」那一下，启动过程不该有。
+        // 用混合而不是硬切，且交界两侧本就相等（raw 长时间为 0 时跟随器已收敛到 0），
+        // 所以不会出现「跟手性突变」那种掉帧感。
+        val w = smoothstep(Motion.DragFollowMixFrom, Motion.DragFollowMixTo, raw)
+            .pow(Motion.DragFollowMixEase)
+        dragFollowMix = w
+        val visual = raw + (shellFollow - raw) * w
+        visualP = visual
+        visualContentP = raw + (contentFollow - raw) * w
+        followSpeed = (visual - lastVisual) / dt
+        lastVisual = visual
+    }
 
     /**
      * 迷你条胶囊的窗口坐标 Rect（**遗留字段：当前无任何读取方**）。
@@ -246,6 +420,9 @@ class PlayerDockState internal constructor(
             entry.animateTo(1f, tween(Motion.TapExpandMs, easing = Motion.EmphasizedDecelerate))
             snapshotFlow { anchorsReady }.first { it }
             sheetState.snapTo(PlayerSheet.Full)
+            // 交接给拖动路径：跟随器也直接落到 2。不调的话它还在 0，撤掉 tapExpand 之后
+            // 会从 0 一路追上来 —— 表现为「点按动画都结束了，壳又自己滑一段」。
+            syncFollow()
             tapExpand = false
         }
     }
@@ -260,6 +437,8 @@ class PlayerDockState internal constructor(
             if (tapExpand) {
                 snapshotFlow { anchorsReady }.first { it }
                 sheetState.snapTo(PlayerSheet.Full)
+                // 同 openByTap 的交接：跟随器一起落到 2，否则壳会从 0 追过来。
+                syncFollow()
                 tapExpand = false
             }
             runClose()
@@ -311,3 +490,21 @@ fun rememberPlayerDockState(): PlayerDockState {
 }
 
 internal const val SWIPE_THRESHOLD_DP = 56
+
+/** 跟随器收敛阈值（progress 单位）：两侧都小于它就精确对齐并挂起。 */
+private const val FOLLOW_EPS = 0.002f
+
+/** 单帧 dt 上限（s）：掉帧或从后台回来时不能一步跨过整段行程。 */
+private const val MAX_FRAME_S = 0.05f
+
+/** 二阶内容弹簧的最大子步长（s）：半隐式欧拉的稳定性要求 ω·h 别太大。 */
+private const val MAX_SUBSTEP_S = 0.016f
+
+/** raw 的上限：略高于全屏锚点，留出落位过冲的余量（见 [Motion.SheetFullOvershoot]）。 */
+private const val RAW_MAX = 2.08f
+
+/** 平滑阶跃：0 在 edge0 以下、1 在 edge1 以上，中间走 S 曲线（两端导数为 0，无突变）。 */
+private fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
+    val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
+}
