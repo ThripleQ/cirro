@@ -43,6 +43,10 @@
 | 曲目列表页（喜欢 / 已购 / 歌单 / 专辑） | `ui/screens/TrackListScreen.kt` + `ui/profile/TrackListViewModel.kt` |
 | 曲目列表页的版式与间距（头部 / 胶囊 / 面板 / 糊底 / 行） | `ui/screens/TrackListScreen.kt`：令牌在 `TrackListMetrics`，各区块是紧随其后的 private 组件 |
 | 曲目行 = nume 条目卡（8dp 外缩 + `surfaceContainer`） | `TrackListRow` 里用 `ui/components/Containers.kt` 的 `numeEntrySurface()`；面板底铺在整条 item 上，卡缝才不漏糊底 |
+| 「播放全部」行吸顶 + 糊底随头部退场 | `TrackListScreen` 的 `stickyHeader(key = "playall")` + `washExit`（头部 item 的偏移）；停靠线由 `LazyColumn` 的固定 `padding(top = TrackListMetrics.PanelStickyTop)` 撑出（8dp，只在状态栏下一点），糊底见 `TrackListBackdrop` |
+| 顶部标题条（类型标签 ↔ 实际标题随滚动交叉淡变、单行截断） | `TrackListScreen` 的 `TrackListTitleBar`（高度 = `TrackListMetrics.PanelStickyTop`，底色随 `washExit` 淡入）；类型标签取 `TrackListSource.label` |
+| 吸顶后的容器色条 + 内容圆角纸（纸的上沿 = 标题条下沿） | 容器色：`TrackListBackdrop` 里 `graphicsLayer { alpha = exit }` + `background(surfaceContainer)`；纸：`TrackListScreen` 内层 `Box` 的 `.offset { paperTop }` + `Modifier.clip(SheetCorner)` + `background(surface)`（半径同 `ui/screens/HomeContent.kt` 的 `HomeSheetRadius`） |
+| 头部封面离状态栏 68dp（hero 终点） | `TrackListMetrics.HeroCoverTop`，落成头部 item 自己的上内缩 `HeaderTopInset`；`CoverExpandShell` 的 `heroCoverTop` 参数须同源 |
 | 底部滚动操作行（滑出头部按钮后出现的三按钮） | `ui/playerbar/PlayerDock.kt` 的 `ActionNavRow`（列表只上报是否滑出） |
 | 大卡 → 全屏列表时 hero 封面飞到哪里 | `ui/screens/{HomeExpandShell,ProfilePanels}.kt` 传的 `heroCover*`（必须与 `TrackListMetrics` 一致） |
 | 登录 / 验证码接口（JNI op 30/31、cookie 导入） | `app/src/main/cpp/libnetease_jni.c` + `core/net/NeteaseOp.kt` |

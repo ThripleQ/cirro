@@ -20,12 +20,12 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /** Which data source a [TrackListScreen] shows. */
-enum class TrackListSource(val wire: String) {
-    CHART("chart"),
-    LIKED("liked"),
-    PURCHASED("purchased"),
-    PLAYLIST("playlist"),
-    ALBUM("album");
+enum class TrackListSource(val wire: String, val label: String) {
+    CHART("chart", "榜单"),
+    LIKED("liked", "喜欢的音乐"),
+    PURCHASED("purchased", "已购音乐"),
+    PLAYLIST("playlist", "歌单"),
+    ALBUM("album", "专辑");
 
     companion object {
         fun from(wire: String): TrackListSource =
