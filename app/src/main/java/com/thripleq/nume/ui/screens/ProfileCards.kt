@@ -38,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContentColor
 import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -207,6 +209,7 @@ private fun ProfileHero(account: Account, likedCount: Int, purchasedCount: Int, 
             Text(
                 account.nickname,
                 style = MaterialTheme.typography.displaySmall,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -344,17 +347,44 @@ private fun ProfileRowCard(
                     },
                 ),
         ) {
-            BigCoverVisual(
-                coverUrl = coverUrl,
-                name = title,
-                showName = false,
-                watermarkIcon = icon,
-                modifier = Modifier.matchParentSize(),
-            )
+            if (coverUrl != null) {
+                // 真实封面：纯图展示，scrim 关掉（小图上 0.5 黑渐变占过半
+                // = 真机看到的「深色阴影」；无文字不需要遮罩）。
+                BigCoverVisual(
+                    coverUrl = coverUrl,
+                    name = title,
+                    showName = false,
+                    scrimAlpha = 0f,
+                    watermarkIcon = icon,
+                    modifier = Modifier.matchParentSize(),
+                )
+            } else {
+                // 无封面/未登录占位：干净底 + primary 图标。
+                // 不走 BigCoverVisual 的 secondaryContainer 兜底——那个
+                // 渐变底在深色模式下呈脏暗红褐（真机 2026-10-03 实拍）。
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(26.dp),
+                    )
+                }
+            }
         }
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
             Spacer(Modifier.height(2.dp))
             Text(
                 count,
@@ -376,6 +406,9 @@ private fun ProfileRowCard(
 
 @Composable
 internal fun LoggedOutContent(onLogin: () -> Unit) {
+    // 深底深字教训（2026-10-03 真机）：Box.background 不设置 contentColor，
+    // Text 全靠外层 LocalContentColor——显式钉死 onSurface，不赌容器。
+    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
     Column(Modifier.fillMaxWidth()) {
         StaggerIn(0) {
             LoginHeroCard(onLogin)
@@ -404,39 +437,46 @@ internal fun LoggedOutContent(onLogin: () -> Unit) {
             if (i < placeholders.lastIndex) Spacer(Modifier.height(10.dp))
         }
     }
+    }
 }
 
 @Composable
 private fun LoginHeroCard(onLogin: () -> Unit) {
+    // 未登录页唯一主 CTA：primaryContainer 成块存在感（深浅色协调），
+    // 文字钉死 onPrimaryContainer——不再依赖外层 contentColor。
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .clip(NumeShape.Card)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .background(MaterialTheme.colorScheme.primaryContainer)
             .clickable { onLogin() }
             .padding(horizontal = 20.dp, vertical = 22.dp),
     ) {
         Icon(
             imageVector = Icons.Filled.AccountCircle,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier.size(56.dp),
         )
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text("登录网易云", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "登录网易云",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
             Spacer(Modifier.height(4.dp))
             Text(
                 "解锁喜欢 / 已购 / 歌单",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
             )
         }
         Icon(
             imageVector = Icons.Filled.Person,
             contentDescription = "登录",
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier.size(24.dp),
         )
     }
@@ -450,6 +490,7 @@ internal fun LoggedInContent(
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
 ) {
+    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
     Column(Modifier.fillMaxWidth()) {
         val likedMeta = "${data.likedCount} 首"
         val purchasedMeta = "${data.purchasedSongCount + data.purchasedAlbums.size} 项"
@@ -536,5 +577,6 @@ internal fun LoggedInContent(
             }
             if (i < rows.lastIndex) Spacer(Modifier.height(10.dp))
         }
+    }
     }
 }
