@@ -61,9 +61,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -79,10 +76,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import androidx.core.view.ViewCompat
@@ -109,8 +104,6 @@ import com.thripleq.nume.ui.components.rememberCoverFace
 import com.thripleq.nume.ui.profile.TrackListSource
 import com.thripleq.nume.ui.profile.TrackListUiState
 import com.thripleq.nume.ui.profile.TrackListViewModel
-import com.thripleq.nume.ui.theme.NumeFade
-import com.thripleq.nume.ui.theme.NumeInk
 import com.thripleq.nume.ui.theme.NumeShape
 import com.valentinilk.shimmer.shimmer
 import java.util.Locale
@@ -172,20 +165,6 @@ object TrackListMetrics {
 
     /** 「播放全部」圆钮直径。 */
     val DiscSize = 40.dp
-
-    /** 「播放全部」行的**内容高度**（圆钮 40dp + 上下各 14dp 内缩）。 */
-    val PlayAllRowHeight = DiscSize + 28.dp
-
-    /**
-     * 「播放全部」行下边两角反圆角「向外张开」的那对**脚**的深度。
-     *
-     * 与纸角同半径：上下同半径才对称，且上边角在停靠线上与壳子的圆角严格重合。
-     * 这一段没有内容、是纯色面，所以行盒总高要额外加上它（见 [PlayAllBoxHeight]）。
-     */
-    val PlayAllFeet = SheetCorner
-
-    /** 行盒总高 = 内容 + 脚。封面派生色的渐变里，「脚的上沿」就落在两者之比处。 */
-    val PlayAllBoxHeight = PlayAllRowHeight + PlayAllFeet
 
     /** 曲目行封面边长。 */
     val RowCover = 44.dp
@@ -287,19 +266,13 @@ fun TrackListScreen(
     // 数据到了直接显示列表（不预载封面：滚动到哪张就单张串行下载）。
     val collection = (state as? TrackListUiState.Ready)?.collection
 
-    // 「播放全部」行的面：从封面派生（见 [rememberCoverFace]）。三档上浅下浓 —— 主体那一段
-    // 几乎就是主题背景（压着正文，不让），往下越浓，到两角那只**脚**上让满：脚内侧那道
-    // 反圆角的轮廓全靠「面 vs 底下曲目行」这点差。封面没到（previewCoverUrl）就先用正片的
-    // URL，两者同源，取出来的色一致。
+    // 「播放全部」行的面：从封面派生（见 [rememberCoverFace]）。三档上浅下浓 —— 上沿几乎就是
+    // 主题背景（压着正文），往下让得越来越多，封面的色于是一路渗到行的下沿。封面没到
+    // （previewCoverUrl）就先用正片的 URL，两者同源，取出来的色一致。
     val coverFace = rememberCoverFace(previewCoverUrl ?: collection?.coverUrl)
     val faceBrush = remember(coverFace) {
         Brush.verticalGradient(
-            colorStops = arrayOf(
-                0f to coverFace.top,
-                // 脚的上沿 = 内容高度那一条线（68 / 96）。
-                (TrackListMetrics.PlayAllRowHeight / TrackListMetrics.PlayAllBoxHeight) to coverFace.middle,
-                1f to coverFace.bottom,
-            ),
+            listOf(coverFace.top, coverFace.middle, coverFace.bottom),
         )
     }
 
@@ -398,9 +371,20 @@ fun TrackListScreen(
                     topEnd = TrackListMetrics.SheetCorner,
                 )
             }
-            // 「播放全部」这一行的外形：上边凸圆角（与纸同半径，停靠时与壳子的裁角重合）+
-            // 下边反圆角（向外张开的凹角）。详见 [PlayAllRowShape]。
-            val playAllShape = remember { PlayAllRowShape(TrackListMetrics.SheetCorner) }
+            // 「播放全部」这一行的面：**只有上边两角是圆角**（半径与纸同源
+            // [TrackListMetrics.SheetCorner]，吸顶时正好与壳子裁出来的纸角重合），下边直角，
+            // 与下面的曲目行连成一片。
+            //
+            // 下边两角为什么不能圆（2026-10-03 用户：「切圆角露背景」）：这一行是**吸顶**的、
+            // 直接压在封面糊底上，圆角切掉的那两块弧外没有任何东西接得住 —— 透出来的就是
+            // 亮紫色的糊底，看着像在面板底边抠了两个洞。下边做成直角，底边与曲目行严丝合缝，
+            // 洞自然没有了；上边两角背后是头部（糊底本来就要透出来的地方），圆角才成立。
+            val playAllShape = remember {
+                RoundedCornerShape(
+                    topStart = TrackListMetrics.SheetCorner,
+                    topEnd = TrackListMetrics.SheetCorner,
+                )
+            }
             // 标题条区：搜索页同款（headlineSmall 粗体、高度跟文字走），导航键浮在同区
             // （键盒右沿让出 TitleBarTextStart，见 TrackListMetrics）。
             Box {
@@ -471,15 +455,8 @@ fun TrackListScreen(
                                 // 这一行是**吸顶**的（抄官方歌单页）：滚到停靠线（标题条下沿）就停住，
                                 // 曲目行从它下面过；返回键 / 壳关闭键在标题条里，一直看得见也点得到
                                 // （停靠线已经让开了它们那一档，不必再互相让位）。
-                                // **这一行自带外形**（[PlayAllRowShape]）：上边两角普通凸圆角 ——
-                                // 停靠时与壳子的 `clip(paperShape)` 严格重合（同半径、同位置），
-                                // 没停靠时它也照样是「纸的顶盖」；下边两角**反圆角**，面往两端
-                                // 各淌下一只向内弯的脚。
-                                // 壳子只能裁到纸顶，裁不出这一行下边的凹角 —— 所以外形必须挂在本行
-                                // 自己身上，不能像早先那版整个交给壳子。
-                                //
-                                // 行盒比内容高一个 [TrackListMetrics.PlayAllFeet]：反圆角的脚有几深，
-                                // 画布就得留多高，否则脚画在盒外被直接裁掉、下边又变成直角。
+                                // **这一行自带外形**（[playAllShape]，普通圆角）：上行贴着标题条，
+                                // 下边压着曲目行 —— 一块圆角面，四角都是普通圆角。
                                 stickyHeader(key = "playall") { _ ->
                                     Column(
                                         Modifier
@@ -488,11 +465,10 @@ fun TrackListScreen(
                                             // 必须是**不透明面**：它是吸顶的、画在曲目行之上，
                                             // 没有底就盖不住从下面滚过的行，也挡不住身下那块糊底
                                             // （糊底一直铺到面板这一带，见 [BackdropHeight]）。
-                                            // 面来自封面（[rememberCoverFace]）而不是主题背景：
-                                            // 与下面曲目行的 `surface` 拉开的那点差，正是脚内侧那道
-                                            // 反圆角的轮廓。
+                                            // 面来自封面（[rememberCoverFace]）而不是主题背景：全页
+                                            // 只有这一处颜色来自内容，气于是从封面接到了面板上。
                                             // 顺序：`graphicsLayer`（alpha）在最外，否则 alpha 罩不住
-                                            // 下面这层 clip + background。
+                                            // 下面这层；`clip` 在面之前，顺带把内容与点按水波收进圆角。
                                             .clip(playAllShape)
                                             .background(brush = faceBrush),
                                     ) {
@@ -501,9 +477,6 @@ fun TrackListScreen(
                                             onPlayAll = { vm.onPlayAll(target) },
                                             onPlaceholder = onPlaceholder,
                                         )
-                                        // 脚：纯色、无内容。两只脚之间这一段是**空的**，
-                                        // 反圆角外露出的就是滚过这一行的内容。
-                                        Spacer(Modifier.height(TrackListMetrics.PlayAllFeet))
                                     }
                                 }
                                 itemsIndexed(
@@ -833,8 +806,7 @@ private fun TrackListHeader(
             }
         }
         Spacer(Modifier.height(16.dp))
-        // 面板上沿的投影：官方在面板顶上方压了一条更暗的带（实拍差值 ~11/255），
-        // 有它才读得出「面板浮在封面糊底上」；顺带把三胶囊与面板分开。
+        // 三枚等宽操作胶囊。
         Row(
             Modifier
                 .fillMaxWidth()
@@ -860,17 +832,12 @@ private fun TrackListHeader(
                 onClick = onPlaceholder,
             )
         }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        1f to NumeInk.Scrim.copy(alpha = NumeFade.SHEET_SHADOW),
-                    ),
-                ),
-        )
+        //
+        // 2026-10-03 撤掉「面板上沿的投影」：这里原先压了一条 8dp 的 `Transparent → Scrim`
+        // 渐变，本意是抄官方「面板浮在封面糊底上」的那点暗带。真机上它就是「播放全部」
+        // 上方一坨抹不开的黑影（用户：「播放全部上面的黑色阴影太丑了，去掉」），而且和
+        // 这一行自己从封面派生的面色打架。留 8dp 空白只为把面板与三胶囊隔开。
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -994,64 +961,6 @@ private fun TrackListTitleBar(
 }
 
 /* ── 面板首行：播放全部 ────────────────────────────────────────── */
-
-/**
- * 「播放全部」吸顶行的外形：**上边两角是普通（凸）圆角，下边两角是反圆角（凹角）**。
- *
- * 这是本页的一个小巧思，不是从官方歌单页搬来的：上边凸角让这一行像从容器色里长出来的
- * 一张纸的顶盖（与搜索页搜索条同一种关系，也与壳子的 `clip(paperShape)` 严丝合缝）；
- * 下边两角则**反着圆、向外张开** —— 这一行的「面」在两端往下淌出一个 [radius] 深的小脚，
- * 两脚之间的凹弧正好把底下那条条目卡的顶角让出来。于是吸顶时这一行不是拿一条直边把
- * 列表拦腰切断，而是把底下的卡片「拢」在角里；角外的凹弧里透出的是下面滚过的内容。
- *
- * 半径与纸同源（[TrackListMetrics.SheetCorner]）：上下同半径才对称，且上边角在停靠线上
- * 与壳子的圆角完全重合、不会出现「两个圆角顶夹一道束腰」。
- *
- * ## 反圆角为什么要「长出行盒」（2026-10-03 两次做错的地方）
- *
- * 凹角 = **补料**，不是**去料**。拿角点当圆心、半径 [radius] 画一段四分之一圆去「咬」角，
- * 弧是朝角鼓的 —— 那是**普通凸圆角**，四个角全这么画出来就是一张 `RoundedCornerShape`
- * （中途做错过一版，真机上四个角一模一样，等于没做）。要让角**凹**，圆心必须落在**弧的外侧**：
- * 边界先直着走到底边之外 `radius` 处，再反向扫弧收回到主体底边。于是两角各伸出一只
- * **向内弯的脚**（脚的外沿就是行盒的左右边），脚内侧那道弧的凹面朝下 —— 与上边两角一致。
- *
- * 代价是形状**比内容高一个 [TrackListMetrics.PlayAllFeet]**，画布必须照此留高，否则脚被裁掉
- * 又变回直角。调用点的 `Spacer` 就是干这个的。
- */
-private class PlayAllRowShape(private val radius: Dp) : Shape {
-    override fun createOutline(
-        size: Size,
-        layoutDirection: LayoutDirection,
-        density: Density,
-    ): Outline {
-        // 大半径在小盒上会自交，先夹一下（行盒 96dp，正常取不到这个上限）。
-        val r = with(density) { radius.toPx() }
-            .coerceAtMost(size.width / 2f)
-            .coerceAtMost(size.height / 2f)
-        val w = size.width
-        // 主体的底边：两角的反圆角从这里往下长，一直长到行盒底。
-        val h = size.height - r
-        val path = Path().apply {
-            // 上左角：普通凸圆角（圆心 (r,r) 在行内），180° 顺时针扫到 270°。
-            moveTo(0f, r)
-            arcTo(Rect(0f, 0f, 2 * r, 2 * r), 180f, 90f, false)
-            // 上边直线 → 上右角。
-            lineTo(w - r, 0f)
-            arcTo(Rect(w - 2 * r, 0f, w, 2 * r), 270f, 90f, false)
-            // 右边直下，越过主体底边、到脚尖（= 行盒底）。
-            lineTo(w, h + r)
-            // 下右角：**反圆角** —— 圆心 (w-r, h+r) 落在弧的**下方**，弧朝角 (w,h) 鼓出、
-            // 把角补满；边界于是从脚尖沿弧收回到主体底边。0° 逆时针扫到 270°。
-            arcTo(Rect(w - 2 * r, h, w, h + 2 * r), 0f, -90f, false)
-            // 主体底边直线 → 下左角，同样反向扫（270° → 180°）。
-            lineTo(r, h)
-            arcTo(Rect(0f, h, 2 * r, h + 2 * r), 270f, -90f, false)
-            // close() 从 (0, h+r) 沿左边收回 (0, r)。
-            close()
-        }
-        return Outline.Generic(path)
-    }
-}
 
 /**
  * 「播放全部」行：红圆钮 + 标题 + 曲目数/播放量 + 右侧三枚图标。
