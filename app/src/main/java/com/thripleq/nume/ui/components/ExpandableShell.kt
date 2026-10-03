@@ -597,7 +597,7 @@ fun ExpandableShell(
 
 /**
  * 通用「大封面卡 → 全屏内容」伸展壳：把卡片（窗口坐标 [fromRect]）长成全屏，期间用 hero 封面
- * 从卡片位置插值到内容里的头部封面，首尾无缝；左上角浮一个随展开进度淡入的收起按钮。
+ * 从卡片位置插值到内容里的头部封面，首尾无缝；**右上角**浮一个随展开进度淡入的收起按钮。
  *
  * 探索页（歌单/榜单 → 曲目列表）与「我的」页（大卡 → 曲目列表/歌单网格）共用本组件。
  *
@@ -689,7 +689,11 @@ fun CoverExpandShell(
         content = {
             Box(Modifier.fillMaxSize()) {
                 content { coverReady.value = true }
-                // 关闭按钮：浮在左上、不随列表滚，随展开进度淡入（p=0 不可见、不响应点击）。
+                // 收起键：浮在**右上角**、不随列表滚，随展开进度淡入（p=0 不可见、不响应点击）。
+                //
+                // 2026-10-03 从左上挪到右上（用户：「歌单上边的标题不要给收起按钮让位，收起按钮
+                // 放右上角」）：壳内容的标题在左上，键在左上就得给它让出一档内缩，标题白缩一块；
+                // 挪到右上后标题左起对齐内容缩进，让位翻到右边。站内所有壳页面统一。
                 val shellProgress = LocalShellProgress.current
                 val requestClose = LocalShellRequestClose.current
                 // 走 requestClose（= startClose），完整播放收起动画后才 onDismiss；
@@ -697,7 +701,10 @@ fun CoverExpandShell(
                 NumeCloseButton(
                     onClick = { if (shellProgress.value > 0.5f) requestClose() },
                     modifier = Modifier
-                        .align(Alignment.TopStart)
+                        .align(Alignment.TopEnd)
+                        // 上提一档：内容标题条只有 ~24dp 高，键按 12dp 外边距站就会比标题
+                        // 低 16dp（用户：「有点靠下」）。详见 [CloseButtonRaise]。
+                        .offset(y = -CloseButtonRaise)
                         .padding(12.dp)
                         .graphicsLayer { alpha = shellProgress.value },
                 )

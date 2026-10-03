@@ -133,7 +133,7 @@ object TrackListMetrics {
     /** 头部方封面边长。 */
     val CoverSize = 98.dp
 
-    /** 左上角返回键 / 壳关闭键那一行的净高（浮层控件 48dp + 上下各 4dp 余量）。 */
+    /** 浮层键（左上返回 / 右上收起）那一行的净高（控件 48dp + 上下各 4dp 余量）。 */
     val TopBarHeight = 56.dp
 
     /** 头部与返回栏（壳路径则是壳顶空档）之间的间距。 */
@@ -152,10 +152,36 @@ object TrackListMetrics {
      */
 
     /**
-     * 标题条文字的起始内缩：让开浮在左上的返回键 / 壳关闭键（48dp 触控盒 + 4dp 内缩）那一档，
-     * 与那颗键同排但不叠。
+     * 标题条文字的起始内缩 —— **只在 nav 路径**（本屏自己画左上返回键，`showBackButton = true`）
+     * 时用：让开那颗 48dp 触控盒 + 4dp 内缩（见 `TrackListBackButton`），与它同排但不叠。
+     *
+     * 壳路径**不用这个值**：收起键已经从左上挪到了右上（2026-10-03 用户原话：「歌单上边的标题
+     * 不要给收起按钮让位，收起按钮放右上角」），标题直接对齐站内那三个大标题 —— 用
+     * [TitleBarTextAligned]。
      */
     val TitleBarTextStart = TopBarHeight + 8.dp
+
+    /**
+     * 标题条文字的起始内缩 —— **壳路径**用：与探索页 / 搜索页的大标题左起**逐像素齐平**。
+     *
+     * 2026-10-03 用户：「标题的内缩去看搜索页面和探索，和他们保持一致」——那两页的标题条都是
+     * `padding(start = 24.dp)`（`HomeTopBar` / `SearchTitleBar`），歌单页壳路径原先走 [SideInset]
+     * 的 20dp，比它们少 4dp，三页并排看就是不齐。
+     *
+     * 不复用 [SideInset]：那是**内容**内缩（「播放全部」行、曲目行、头部封面），动它会连带挪动
+     * 整页布局；标题条这一档只跟另外两个大标题有关，单独一个常量才不会误伤。
+     */
+    val TitleBarTextAligned = 24.dp
+
+    /**
+     * 标题条文字在**右侧**让开右上角收起键的那一档：36dp 圆键 + 12dp 外边距 + 8dp 缝 = 56dp。
+     *
+     * 与 [TitleBarTextStart] 是一对 —— 让位是从左边**翻到**右边，不是取消让位：收起键是浮层、
+     * 就压在这一排上，标题再长也不能钻到它下面去（标题是 `maxLines = 1` + Ellipsis，收在键之前）。
+     *
+     * 只在**壳路径**用；nav 路径右端没有键，右侧回到 [SideInset]。
+     */
+    val TitleBarTextEnd = 56.dp
 
     /**
      * 内容圆角纸的顶角半径。
@@ -396,13 +422,30 @@ fun TrackListScreen(
             // 壳子顶）。布局阶段回传、draw 阶段读，不触发重组。
             // 首帧给正无穷 = 先不裁，第二帧即修正（发生在壳动画 / 骨架期，不可见）。
             var panelTopInRootPx by remember { mutableFloatStateOf(Float.POSITIVE_INFINITY) }
-            // 标题条区：搜索页同款（headlineSmall 粗体、高度跟文字走），导航键浮在同区
-            // （键盒右沿让出 TitleBarTextStart，见 TrackListMetrics）。
+            // 标题条区：搜索页同款（headlineSmall 粗体、高度跟文字走）。
+            //
+            // 让位方向按路径分（2026-10-03 用户：「歌单上边的标题不要给收起按钮让位，收起按钮放
+            // 右上角，标题壳内」）：
+            //   · **壳路径**：收起键挪到右上角了，左边不再有东西 —— 标题左起对齐探索页 / 搜索页
+            //     那三个大标题（[TrackListMetrics.TitleBarTextAligned] = 24dp，三页逐像素齐平），
+            //     右边才让开那颗键（[TrackListMetrics.TitleBarTextEnd]）；
+            //   · **nav 路径**：左上仍是本屏自己画的返回键（站内详情页的统一语言，见 `ScreenTopBar`），
+            //     左右内缩反过来。
             Box {
                 TrackListTitleBar(
                     label = src.label,
                     title = title,
                     reveal = washExit,
+                    textStart = if (showBackButton) {
+                        TrackListMetrics.TitleBarTextStart
+                    } else {
+                        TrackListMetrics.TitleBarTextAligned
+                    },
+                    textEnd = if (showBackButton) {
+                        TrackListMetrics.SideInset
+                    } else {
+                        TrackListMetrics.TitleBarTextEnd
+                    },
                     modifier = Modifier.onSizeChanged { stickyTopPx = it.height },
                 )
                 // 返回键压在最上层：不被列表滚走、不参与浮现淡入（骨架期也能退出）。
@@ -980,7 +1023,12 @@ private fun TrackListAction(
     }
 }
 
-/** 左上角返回键：浮在糊底 / 标题条上、不随列表滚（壳路径的关闭键同位，两者语言一致）。 */
+/**
+ * 左上角返回键：浮在糊底 / 标题条上、不随列表滚。
+ *
+ * 只走 **nav 路径**（站内详情页统一在左上放返回键，见 `ScreenTopBar`）；**壳路径**那颗收起键
+ * 2026-10-03 挪到了右上角（不再是「同位」），标题条按路径把内缩反过来用，见 [TrackListTitleBar]。
+ */
 @Composable
 private fun TrackListBackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
     IconButton(onClick = onBack, modifier = modifier.padding(4.dp)) {
@@ -1005,13 +1053,20 @@ private fun TrackListBackButton(onBack: () -> Unit, modifier: Modifier = Modifie
  *
  * [label]（类型：歌单 / 榜单 / 专辑 / 喜欢 / 已购）与 [title]（实际标题）**叠在同一格**交叉淡变：
  * 换字进度由 [reveal]（糊底退场进度，头部一滚走就是 1）重映射，两个 alpha 都读在 draw 阶段，
- * 滚动只重画不重组。长标题单行截断（`maxLines = 1` + Ellipsis）；文字左起让开浮层控件那一档。
+ * 滚动只重画不重组。长标题单行截断（`maxLines = 1` + Ellipsis）。
+ *
+ * 左右内缩由调用方给（[textStart] / [textEnd]）：浮层控件在哪一侧，文字就让开哪一侧 ——
+ * 壳路径的收起键在**右上角**，nav 路径的返回键在左上，同一条标题条两处反过来用。
  */
 @Composable
 private fun TrackListTitleBar(
     label: String,
     title: String,
     reveal: State<Float>,
+    /** 文字左内缩：让开左上角的浮层键（nav 路径），或直接对齐壳内内容（壳路径）。 */
+    textStart: Dp,
+    /** 文字右内缩：让开右上角的浮层键（壳路径），或直接对齐壳内内容（nav 路径）。 */
+    textEnd: Dp,
     modifier: Modifier = Modifier,
 ) {
     // 头部退到 35% 才开始换字、到 70% 换完：太早「歌单」一闪而过，太晚标题迟迟不出现。
@@ -1030,10 +1085,7 @@ private fun TrackListTitleBar(
     Box(
         modifier
             .fillMaxWidth()
-            .padding(
-                start = TrackListMetrics.TitleBarTextStart,
-                end = TrackListMetrics.SideInset,
-            ),
+            .padding(start = textStart, end = textEnd),
     ) {
         Text(
             text = label,

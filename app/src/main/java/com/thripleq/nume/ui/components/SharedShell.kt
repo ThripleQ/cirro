@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +60,9 @@ fun Modifier.shellSharedCover(
 /**
  * 容器变换的目标外壳：普通全屏面板（scrim + 底色 + 关闭键）。封面 morph 由内容里的
  * banner 封面自己挂 [shellSharedCover] 完成，本组件不参与形变。
+ *
+ * 关闭键在**右上角**（2026-10-03 从左上挪过来，与 [com.thripleq.nume.ui.components.ExpandableShell]
+ * 一致：内容标题在左上，键在左上就得逼标题让出一档内缩）。
  */
 @Composable
 fun ShellPanel(
@@ -89,8 +93,11 @@ fun ShellPanel(
         NumeCloseButton(
             onClick = onDismiss,
             modifier = Modifier
-                .align(Alignment.TopStart)
+                .align(Alignment.TopEnd)
                 .statusBarsPadding()
+                // 上提一档与内容标题条中线对齐（详见 [CloseButtonRaise]）——与自研壳一致，
+                // 两个壳的键不许长得不一样。
+                .offset(y = -CloseButtonRaise)
                 .padding(12.dp),
         )
     }
