@@ -116,18 +116,34 @@ import kotlinx.coroutines.flow.first
 /**
  * 歌单页版式令牌 —— 2026-10-03 按官方歌单页实机抄量（1080×2400@480dpi，px÷3 换成 dp）。
  *
- * 头部与面板内缩 20dp、曲目行封面距屏边 16dp（官方两处本来就不同，照抄），方封面 98dp、
- * 「播放全部」圆钮 38dp（取整 40dp）、曲目行封面 44dp。曲目行本身仍是 nume 的条目卡
+ * 内缩统一 16dp（头部 / 「播放全部」/ 曲目行封面同一根竖线，与探索、搜索两页齐平；官方原本
+ * 头部 20dp、曲目行 16dp 两档错位，未照抄那一处），方封面 98dp、「播放全部」圆钮 38dp
+ * （取整 40dp）、曲目行封面 44dp。曲目行本身仍是 nume 的条目卡
  * （见 [TrackListRow]）——官方那套紧挨的平铺行只借了封面尺寸与「歌手 - 专辑」这一行信息。
  *
  * [HeroCoverTop] 同时是 [com.thripleq.nume.ui.components.CoverExpandShell] 的 hero 终点
  * 预测值（封面相对内容顶的偏移）——两边必须同源，改一处就够。
  */
 object TrackListMetrics {
-    /** 头部 / 面板内缩。 */
-    val SideInset = 20.dp
+    /**
+     * 头部 / 面板内缩，也是本屏内容的**唯一**左右边距。
+     *
+     * 2026-10-03 从 20dp 收到 16dp（用户：「没改的改一下」—— 上一条让标题去看探索页 / 搜索页，
+     * 这条要求内容也跟上）。原先照抄官方歌单页「头部 20dp、曲目行 16dp」两档错位，可站内
+     * 探索页 / 搜索页的内容内缩**都是 16dp**，本屏夹在中间就那一处对不齐：头部封面与「播放全部」
+     * 圆钮比曲目行封面多缩 4dp，同一页里两套竖线。
+     *
+     * 收成 16dp 后本屏内部三处（头部、[PlayAllRow]、曲目行封面）与站内两页**齐平**，
+     * 也与 [RowInset] 同值 —— 两个常量语义不同（见下），只是当前恰好相等。
+     */
+    val SideInset = 16.dp
 
-    /** 曲目行封面距屏幕边：条目卡外缩（[NumeContainer.Inset]）+ 卡内缩，两者相加是这个值。 */
+    /**
+     * 曲目行**封面**距屏幕边：条目卡外缩（[NumeContainer.Inset]）+ 卡内缩，两者相加是这个值。
+     *
+     * 与 [SideInset] 当前同值但**不是同一个东西**：[SideInset] 是本屏自己加的 padding，
+     * 本值要减去卡片自带的内缩才是行内 padding（见 [TrackListRow]），卡片换外缩时必须各自改。
+     */
     val RowInset = 16.dp
 
     /** 头部方封面边长。 */
@@ -166,10 +182,11 @@ object TrackListMetrics {
      *
      * 2026-10-03 用户：「标题的内缩去看搜索页面和探索，和他们保持一致」——那两页的标题条都是
      * `padding(start = 24.dp)`（`HomeTopBar` / `SearchTitleBar`），歌单页壳路径原先走 [SideInset]
-     * 的 20dp，比它们少 4dp，三页并排看就是不齐。
+     * （当时 20dp），比它们少，三页并排看就是不齐。
      *
-     * 不复用 [SideInset]：那是**内容**内缩（「播放全部」行、曲目行、头部封面），动它会连带挪动
-     * 整页布局；标题条这一档只跟另外两个大标题有关，单独一个常量才不会误伤。
+     * **不复用 [SideInset]，两个值本来就不该相等**：探索页也是「标题 24dp / 内容 16dp」这组关系
+     * （[HomeTopBar] 的 24 与下方列表的 16）。大标题比内容多缩一档、压在内容竖线外一点，
+     * 是站内三页共用的排版关系；把标题拉到 16 反而会与探索页错开。
      */
     val TitleBarTextAligned = 24.dp
 
@@ -1385,7 +1402,7 @@ private fun TrackListSkeleton(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = TrackListMetrics.SideInset, end = 20.dp, top = 14.dp, bottom = 14.dp),
+                    .padding(start = TrackListMetrics.SideInset, end = 4.dp, top = 14.dp, bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SkeletonBox(Modifier.size(TrackListMetrics.DiscSize), CircleShape)

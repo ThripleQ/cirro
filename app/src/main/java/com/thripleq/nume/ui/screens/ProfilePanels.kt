@@ -82,7 +82,10 @@ internal fun ProfilePanelLegacy(
         // hero 带卡片同一份数据行：否则展开时 hero 盖掉卡片，数量消失、结尾再冒出（闪）。
         meta = target.meta,
         watermarkIcon = target.icon,
-        heroCoverInset = if (tracksPanel) TrackListMetrics.SideInset else 16.dp,
+        // hero 左内缩两条路径同值（曲目列表 16dp = [TrackListMetrics.SideInset]；歌单网格的
+        // banner 也是满宽 - 16dp）—— 2026-10-03 [SideInset] 从 20dp 收到 16dp 后不再分支，
+        // 统一引它一处，免得以后又分叉。相异的只是顶端与边长。
+        heroCoverInset = TrackListMetrics.SideInset,
         heroCoverTop = if (tracksPanel) TrackListMetrics.HeroCoverTop else 4.dp,
         heroCoverSide = TrackListMetrics.CoverSize.takeIf { tracksPanel },
     ) { onCoverReady ->
