@@ -74,8 +74,8 @@ object NumeFade {
     /** 进度条 / 滑块未填充轨道底的弱化。 */
     const val TRACK: Float = 0.12f
 
-    /** 进度槽（无曲目时的静态轨道）弱化。 */
-    const val PROGRESS_SLOT: Float = 0.25f
+    // PROGRESS_SLOT 已删（2026-10-03）：它只服务于播放页「歌手下边那条 1dp 分割线」，
+    // 用户要求删线，常量随之失去唯一用处。
 
     /** 无封面兜底里的音符图标弱化。 */
     const val ART_PLACEHOLDER: Float = 0.35f

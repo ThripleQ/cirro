@@ -25,22 +25,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -372,10 +371,45 @@ internal fun PlayerPage(
     }
 }
 
+/**
+ * 歌名右侧红心/评论的图标尺寸。
+ *
+ * 2026-10-03 用户：「红心和评论太小了……最终调成一样高」。原来是 `Icon` 的默认 24dp，
+ * 而全屏档歌名是 28sp —— 图标明显矮一头；现在歌名收到 24sp（见 `titleFont`）、
+ * 图标抬到 28dp，两者的**字面/图形高度**相当（中文字面高 ≈ 0.86em ≈ 21dp，
+ * Material 图标墨迹 ≈ 0.83×28 ≈ 23dp）。
+ *
+ * 触控盒仍是 40dp（见 [TitleActionRowWidth]）：图标只动图形，不动点按区域。
+ */
+private val TitleActionIcon = 28.dp
+
+/** 红心/评论的触控盒边长（图标只动图形，不动这个）。 */
+private val TitleActionButton = 40.dp
+
+/**
+ * 红心 + 评论那一行的宽度（也是展开时宽度动画的终点值）。
+ *
+ * = 2 × [TitleActionButton]。这个值必须与盒宽之和严格相等：小的那个会被裁
+ * （外层 `clipToBounds`），大的那个会凭空占走歌名的宽度。
+ */
+private val TitleActionRowWidth = TitleActionButton * 2
+
+/**
+ * 三键（切歌/播放）之下、底部功能胶囊行之上的间距。
+ *
+ * 原来是 24dp。这里额外多出 33dp —— 那是上半段**那条 1dp 分割线连同上下各 16dp 内缩**
+ * 让出来的量（用户：「歌手下边的分割线删掉」）。整块撤掉之后原样挪到这里，于是：
+ * - 整列总高**不变**（不会把胶囊行挤出屏幕，也不会挤压封面）；
+ * - 进度条与三键整体**上移 33dp**（用户：「进度条上移，下面的操作按钮也都上移」）——
+ *   因为这两者的绝对位置是在它们**之下**的内容高度决定的（块底贴着列底），
+ *   把分割线的高度挪到三键之下，就等于把这两者往上抬。
+ */
+private val TransportBottomGap = 24.dp + 33.dp
+
 /** 播放页主体：单一布局随 sc（0=卡片档，1=全屏）连续形变，卡片→全屏无割裂。
- *  骨架全程一致：封面 → 标题 → 歌手 →（弹性空白）→ 进度 → 控制；
- *  全屏专属的动作行/分割线/功能胶囊行以「高度+透明度」随 sc 长出，播放键由裸图标
- *  长成 primaryContainer 圆。卡片档（sc=0）即原紧凑布局。 */
+ *  骨架全程一致：封面 → 标题（含右侧红心/评论）→ 歌手 →（弹性空白）→ 进度 → 控制；
+ *  全屏专属的动作行/功能胶囊行以「高度+透明度」随 sc 长出，播放键**始终是裸图标**、
+ *  只从小到大（2026-10-03 撤掉了原先那层 primaryContainer 圆）。卡片档（sc=0）即原紧凑布局。 */
 @Composable
 internal fun PlayerPageContent(
     player: Player,
@@ -434,21 +468,22 @@ internal fun PlayerPageContent(
     val titleGap = androidx.compose.ui.unit.lerp(14.dp, 20.dp, sc)
     val ctrlGap = androidx.compose.ui.unit.lerp(10.dp, 18.dp, sc)
     val sideBtnDim = androidx.compose.ui.unit.lerp(26.dp, 34.dp, sc)
-    val titleFont = androidx.compose.ui.unit.lerp(21.sp, 28.sp, sc)
+    // 2026-10-03 用户：「标题字号太大」——全屏档 28sp → 24sp（卡片档 21sp 不动）。
+    // 与右侧红心/评论（[TitleActionIcon] = 28dp）一起收，两者最终高度相当。
+    val titleFont = androidx.compose.ui.unit.lerp(21.sp, 24.sp, sc)
     val artistFont = androidx.compose.ui.unit.lerp(14.sp, 16.sp, sc)
     val titleColor = lerp(
         MaterialTheme.colorScheme.onSurface,
         MaterialTheme.colorScheme.primary,
         sc,
     )
-    val playBox = androidx.compose.ui.unit.lerp(48.dp, 72.dp, sc)
-    val playIcon = androidx.compose.ui.unit.lerp(44.dp, 36.dp, sc)
-    val playTint = lerp(
-        MaterialTheme.colorScheme.onSurface,
-        MaterialTheme.colorScheme.onPrimaryContainer,
-        sc,
-    )
-    val playContainer = MaterialTheme.colorScheme.primaryContainer.copy(alpha = sc)
+    // 播放键：用户「不要这种有红色圆圈的」「更大」。
+    // 撤掉原来那层 primaryContainer 圆（原来随 sc 渐显），只剩裸图标；
+    // 盒子 48→64 只当触控区（图标变大后要留出余量），图标 44→48（**变大**而不是原来的变小）。
+    val playBox = androidx.compose.ui.unit.lerp(48.dp, 64.dp, sc)
+    val playIcon = androidx.compose.ui.unit.lerp(44.dp, 48.dp, sc)
+    // 没有容器色了，播放图标与切歌图标同色 —— 靠尺寸（48 vs 34）分主次。
+    val playTint = MaterialTheme.colorScheme.onSurface
 
     Column(
         modifier = modifier
@@ -503,68 +538,81 @@ internal fun PlayerPageContent(
 
         Spacer(Modifier.height(titleGap))
 
-        // Track / metadata + 红心/评论：参照网易云 —— 歌名/歌手左对齐上下叠放，
-        // 右侧红心+评论横向并排、与文字块垂直居中，贴近文字而非飘到最右。文字过长
-        // 横向跑马而不截断；右侧图标随全屏进度 sc 渐显（卡片档宽度收为 0）。
+        // Track / metadata + 红心/评论：参照网易云 —— 歌名/歌手左对齐上下叠放。
+        // 右侧红心+评论与**歌名那一行**同轴居中对齐（不是与「歌名+歌手」整块居中）：
+        // 原来是外层 Row 整块 CenterVertically，图标因此落在整块的中线上，比歌名低半个
+        // 歌手行 —— 用户：「红心，评论和标题对齐，齐平」。改成把图标放进歌名那一行之后，
+        // 行高 = max(歌名行高, 图标钮 40dp)，两者各按自己的中心对齐，自然齐平；
+        // 歌手另起一行、占满宽度（不受图标挤压）。
+        // 文字过长横向跑马而不截断；右侧图标随全屏进度 sc 渐显（卡片档宽度收为 0）。
         // 播放列表按钮按用户要求暂隐藏。
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+            horizontalAlignment = Alignment.Start,
         ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.Start,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 FadingMarqueeText(
                     text = state.title.ifEmpty { "暂无播放" },
                     style = MaterialTheme.typography.headlineSmall.copy(fontSize = titleFont),
                     color = titleColor,
+                    // 权重：图标行贴右端、歌名占剩下的宽度（跑马按容器宽判定）。
+                    modifier = Modifier.weight(1f),
                 )
-                // 歌手为空时整行折叠，不留空洞。
-                if (state.artist.isNotEmpty()) {
-                    Spacer(Modifier.height(4.dp))
-                    FadingMarqueeText(
-                        text = state.artist,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = artistFont),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Spacer(Modifier.width(8.dp * sc))
+                // 红心/评论：全屏专属，横向并排，随 sc 长出。
+                Row(
+                    modifier = Modifier
+                        .width(TitleActionRowWidth * sc)
+                        // 高度也跟着 sc 归零：否则卡片档这一行仍按 40dp 触控盒撑高，
+                        // 把标题块从 32+4+20 顶成 40+4+20（卡片档是逐像素调过的紧凑版式，
+                        // 不能因为一个 width=0 的隐藏行而整体长胖 8dp）。
+                        .height(TitleActionButton * sc)
+                        .clipToBounds()
+                        .graphicsLayer { alpha = sc },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onPlaceholderAction, modifier = Modifier.size(TitleActionButton)) {
+                        Icon(
+                            Icons.Filled.Favorite,
+                            "收藏",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(TitleActionIcon),
+                        )
+                    }
+                    IconButton(
+                        onClick = { onComments(commentRect) },
+                        modifier = Modifier
+                            .size(TitleActionButton)
+                            .onGloballyPositioned { commentRect = it.boundsInWindow() },
+                    ) {
+                        Icon(
+                            Icons.Filled.Chat,
+                            "评论",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(TitleActionIcon),
+                        )
+                    }
                 }
             }
-            Spacer(Modifier.width(8.dp * sc))
-            // 红心/评论：全屏专属，横向并排，随 sc 长出。
-            Row(
-                modifier = Modifier
-                    .width(80.dp * sc)
-                    .clipToBounds()
-                    .graphicsLayer { alpha = sc },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onPlaceholderAction, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Filled.Favorite, "收藏", tint = MaterialTheme.colorScheme.primary)
-                }
-                IconButton(
-                    onClick = { onComments(commentRect) },
-                    modifier = Modifier
-                        .size(40.dp)
-                        .onGloballyPositioned { commentRect = it.boundsInWindow() },
-                ) {
-                    Icon(Icons.Filled.Chat, "评论", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+            // 歌手为空时整行折叠，不留空洞。
+            if (state.artist.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                FadingMarqueeText(
+                    text = state.artist,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = artistFont),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
         Spacer(Modifier.weight(1f))
 
-        Spacer(Modifier.height(16.dp * sc))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(1.dp * sc)
-                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = NumeFade.PROGRESS_SLOT * sc)),
-        )
-        Spacer(Modifier.height(16.dp * sc))
-
-        // Seek bar + time labels（卡片/全屏同序：先条后时间）
+        // 进度条之上不再画东西：原来这里有一条 1dp 分割线（上下各 16dp 内缩，共占 33dp），
+        // 用户：「歌手下边的分割线删掉」。整块撤掉之后把这 33dp 原样挪到三键之下
+        // （见 [TransportBottomGap]）—— 进度条与三键因此整体上移 33dp，而整列总高不变。
         if (state.durationMs > 0) {
             Slider(
                 value = if (seekPending) dragMs.toFloat() else positionMs.toFloat(),
@@ -610,28 +658,30 @@ internal fun PlayerPageContent(
 
         Spacer(Modifier.height(ctrlGap))
 
-        // Transport controls：圆播放键由「裸图标」长成 primaryContainer 圆。
+        // Transport controls：三枚都是**裸图标**（用户：「播放按钮不要这种有红色圆圈的」）。
+        // 图标一律用 Rounded 变体（用户：「切歌，播放按钮都换成圆润一点的」）—— Filled 的
+        // 跳曲/播放是硬直边，Rounded 的圆角与整页的胶囊语言一致。
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(
-                androidx.compose.ui.unit.lerp(0.dp, 40.dp, sc),
+                // 40 → 32：撤掉圆播放键之后，盒子比图标大出来的那圈（(64-48)/2 = 8dp）
+                // 会让视觉间距凭空变宽，这里减回去，让三枚图标的**边缘**间距与改前一致。
+                androidx.compose.ui.unit.lerp(0.dp, 32.dp, sc),
                 Alignment.CenterHorizontally,
             ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = { PlayerHolder.skipPrevious(player) }) {
                 Icon(
-                    Icons.Filled.SkipPrevious,
+                    Icons.Rounded.SkipPrevious,
                     contentDescription = "上一首",
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(sideBtnDim),
                 )
             }
+            // 盒子只当触控区（图标变大后要留余量），本身不画任何底。
             Box(
-                modifier = Modifier
-                    .size(playBox)
-                    .clip(CircleShape)
-                    .background(playContainer),
+                modifier = Modifier.size(playBox),
                 contentAlignment = Alignment.Center,
             ) {
                 IconButton(
@@ -640,9 +690,9 @@ internal fun PlayerPageContent(
                 ) {
                     Icon(
                         imageVector = when {
-                            state.isBuffering -> Icons.Filled.MoreHoriz
-                            state.isPlaying -> Icons.Filled.Pause
-                            else -> Icons.Filled.PlayArrow
+                            state.isBuffering -> Icons.Rounded.MoreHoriz
+                            state.isPlaying -> Icons.Rounded.Pause
+                            else -> Icons.Rounded.PlayArrow
                         },
                         contentDescription = if (state.isPlaying) "暂停" else "播放",
                         tint = playTint,
@@ -652,7 +702,7 @@ internal fun PlayerPageContent(
             }
             IconButton(onClick = { PlayerHolder.skipNext(player) }) {
                 Icon(
-                    Icons.Filled.SkipNext,
+                    Icons.Rounded.SkipNext,
                     contentDescription = "下一首",
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(sideBtnDim),
@@ -661,7 +711,8 @@ internal fun PlayerPageContent(
         }
 
         // 全屏专属：功能胶囊行，高度与透明度随 sc 长出。
-        Spacer(Modifier.height(24.dp * sc))
+        // 间距从 24dp 变 [TransportBottomGap]（见该常量的说明：分割线让出的 33dp 挪到了这里）。
+        Spacer(Modifier.height(TransportBottomGap * sc))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
