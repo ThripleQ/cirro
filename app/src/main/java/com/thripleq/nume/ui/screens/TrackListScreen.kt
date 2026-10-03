@@ -46,6 +46,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -62,6 +63,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -69,11 +71,13 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.toDp
 import androidx.compose.ui.unit.toSize
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -138,13 +142,11 @@ object TrackListMetrics {
     /**
      * 面板首行（「播放全部」）吸顶停靠线 = 顶部标题条（`TrackListTitleBar`）的下沿。
      *
-     * 这条线是列表顶边（LazyColumn 的固定内缩），吸顶行停在这里就不再上移；它上面 [TopBarHeight]
-     * 那条是标题条 —— 类型标签（歌单 / 榜单 / …）与这个歌单的实际标题随滚动交叉淡变，再上面是状态栏。
+     * 2026-10-03 照抄搜索页后标题条**高度跟着文字走**（headlineSmall + 行高裁剪，不再
+     * 是固定 56dp），随用户字体缩放变化 —— 停靠线不再是常量：运行时由标题条
+     * `onSizeChanged` 测出（stickyTopPx），列表内缩与头部内缩共用该值；头部封面落点
+     * 仍是 [HeroCoverTop]，差额记在头部自己的上内缩里。
      */
-    val PanelStickyTop = TopBarHeight
-
-    /** 头部 item 自己的上内缩 = [HeroCoverTop]，但列表已从 [PanelStickyTop] 起算，故减去它。 */
-    val HeaderTopInset = HeroCoverTop - PanelStickyTop
 
     /**
      * 标题条文字的起始内缩：让开浮在左上的返回键 / 壳关闭键（48dp 触控盒 + 4dp 内缩）那一档，
@@ -272,20 +274,11 @@ fun TrackListScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        // 页底：封面糊底 + 主题蒙版，**跟着头部一起走**——头部滚出去多少，它就上移并淡出多少，
-        // 头部出屏那一帧正好淡尽。
+        // 糊底（封面柔焦层）2026-10-03 起挪进壳子：垫在列表之下，头部 item 是透明的，
+        // 封面色从头部区域透出；头部滚走糊底淡出，露出的就是纸面。原「糊底铺到屏幕顶 +
+        // 补回状态栏 offset」删除 —— 照抄搜索页后，顶部是标题条所在的容器色条，
+        // 「官方糊底一直铺到屏幕顶」的语义由这条容器色承担。
         //
-        // 它不能钉在屏幕上不动：头部（封面 / 标题 / 胶囊）滚走后，顶上那一带还杵着一块封面色，
-        // 看着就是「一块没跟着滚的东西」。官方那边封面色是头部的底、随头部离开，滚过之后
-        // 顶上只剩纯色面。
-        //
-        // 另一头：糊底属于**整块屏幕**，不属于内容——壳路径的壳已经把内容整体让开了状态栏
-        // （`ShellPanel` 的 `statusBarsPadding` / 自研壳的 `shellTopInset`），糊底若跟着让开，
-        // 它的上沿就缩到状态栏下沿 —— 那条里只剩放大溢出的一截，那是**没过蒙版的**原图色，
-        // 亮封面时就是屏幕顶上一条纯色带（官方糊底一直铺到屏幕顶，没有这条）。
-        // 让开多少就补回多少。nav 路径的糊底是让开层（`statusBarsPadding` 的 Column）的**兄弟**、
-        // 本来就铺到屏幕顶，补 0。
-        val backdropTop = if (showBackButton) 0.dp else rememberStatusBarTop()
         // 头部滚出进度 0..1：头部 item 一离开视口就是 1（那一帧糊底正好淡完）。读在 layout/draw
         // 阶段，滚动只重画不重组；`visibleItemsInfo` 还空的那一帧给 0，免得首帧先闪一下纯色。
         val washExit = remember {
@@ -302,16 +295,17 @@ fun TrackListScreen(
                 }
             }
         }
-        TrackListBackdrop(
-            coverUrl = previewCoverUrl ?: collection?.coverUrl,
-            exit = washExit,
-            modifier = Modifier.offset(y = -backdropTop),
-        )
         // nav 路径由本屏让开状态栏；壳路径的壳已经替内容让开了（shellTopInset），
         // 故两条路径的头部封面落在**同一屏上位置**（见 [TrackListMetrics.HeroCoverTop]）。
+        //
+        // 2026-10-03 照抄搜索页外壳（SearchScreen:89-148）：顶层铺 `surfaceContainer`
+        // 放标题条，内容是一张 `surface` 圆角纸 —— 与搜索页同一种关系（那边容器色条
+        // 放「搜索」大标题，这边放歌单标题条）。糊底/列表/骨架全部装进壳子，由壳子
+        // 统一裁角；「播放全部」吸顶行不再自己切圆角（角外露出的是容器色条）。
         Column(
             Modifier
                 .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surfaceContainer)
                 .then(if (showBackButton) Modifier.statusBarsPadding() else Modifier),
         ) {
             // 内容目标态：数据到达、壳动画结束**且大封面已就绪**后才切到列表；其余为骨架/空/错误。
@@ -339,152 +333,155 @@ fun TrackListScreen(
             // 骨架下的头部直接满不透明出现会像"闪现"，用它做出场淡入。
             val contentReveal = remember(skeletonAlpha) { derivedStateOf { 1f - skeletonAlpha.value } }
 
-            Box(Modifier.fillMaxSize()) {
-                // 内容圆角纸：从面板首行（「播放全部」）**上沿**起，一张 `surface` 纸铺到屏幕底，
-                // 顶角 [TrackListMetrics.SheetCorner] 圆角 —— 与探索 / 搜索页同一套「容器色条 +
-                // 圆角纸」关系（那边容器色条放标题，这边放状态栏那一带）。
-                //
-                // 上沿**跟着面板走**：没滚动时是面板的自然位置（头部仍压在纸上面、透出封面糊底），
-                // 滚到吸顶后是停靠线，两角于是把 [TrackListBackdrop] 里那条 `surfaceContainer`
-                // 露出来。位置读在 layout 阶段、透明度读在 draw 阶段，滚动只重排/重画不重组；
-                // 透明度还兼作「骨架↔真列表」的浮现（骨架期这张纸不该抢在骨架前面出现）。
-                //
-                // 做成**独立一层**而不是给每个 item 铺底：列表没铺满时（短歌单、滚到末尾）
-                // 下方空档也得是纸，不然会露出纸外的底色。
-                val density = LocalDensity.current
-                val panelStickyTopPx = with(density) { TrackListMetrics.PanelStickyTop.toPx() }
-                val paperTop = remember(panelStickyTopPx) {
-                    derivedStateOf {
-                        val visible = listState.layoutInfo.visibleItemsInfo
-                        val header = visible.firstOrNull { it.index == HeaderItemIndex }
-                        // 头部还在可见集里 = 面板还没顶到停靠线，纸上沿 = 面板自然位置；
-                        // 不在（已滚出）或首帧未量出，都按视口顶（= 停靠线）处理。
-                        val rowTop =
-                            if (visible.isEmpty() || header == null) 0f
-                            else (header.offset + header.size).toFloat()
-                        panelStickyTopPx + rowTop.coerceAtLeast(0f)
-                    }
-                }
-                val paperShape = remember {
-                    RoundedCornerShape(
-                        topStart = TrackListMetrics.SheetCorner,
-                        topEnd = TrackListMetrics.SheetCorner,
-                    )
-                }
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .offset { IntOffset(0, paperTop.value.roundToInt()) }
-                        // 圆角走 `Modifier.clip`（独立图层）而不是 `graphicsLayer { clip = true;
-                        // shape = … }`：后者在这套 Compose 上不剪背景，纸会画成直角。
-                        .clip(paperShape)
-                        .graphicsLayer { alpha = contentReveal.value }
-                        .background(MaterialTheme.colorScheme.surface),
+            val density = LocalDensity.current
+            // 吸顶停靠线 = 标题条实测下沿。2026-10-03 照抄搜索页后标题条高度跟着文字走
+            // （headlineSmall + 行高裁剪），随用户字体缩放变化 —— 不再是常量，运行时
+            // onSizeChanged 测出；列表内缩 / 头部内缩共用这一个值。首帧给 0，布局阶段
+            // 即上报修正（跳变发生在壳动画/骨架期，不可见）。
+            var stickyTopPx by remember { mutableIntStateOf(0) }
+            val stickyTopDp = with(density) { stickyTopPx.toDp() }
+            // 纸的顶角半径（原来给独立纸层，现在给壳子）。半径同源：SheetCorner = HomeSheetRadius，
+            // 与探索 / 搜索页三张纸一致。
+            val paperShape = remember {
+                RoundedCornerShape(
+                    topStart = TrackListMetrics.SheetCorner,
+                    topEnd = TrackListMetrics.SheetCorner,
                 )
-                // 顶部标题条：状态栏下一条 [TrackListMetrics.PanelStickyTop]，**透明**铺在容器色条上
-                // （底由 [TrackListBackdrop] 的 `surfaceContainer` 条给，圆角由下面那张纸给）——
-                // 与搜索页「搜索」大标题同一种做法，全屏只有「播放全部」那一处圆角顶。
-                // 条里的字**随滚动换**：未滚动时是类型标签（歌单 / 榜单 / …），头部滚走的过程中
-                // 交叉淡变成这个歌单的实际标题 —— 头部本来就在它下面写着同一个标题，滚上去正好
-                // 把这份「身份」交给顶盖。
-                TrackListTitleBar(label = src.label, title = title, reveal = washExit)
-                when (display) {
-                    is TrackCollection -> {
-                        val target = display
-                        LazyColumn(
-                            state = listState,
-                            // 顶部让开 [TrackListMetrics.PanelStickyTop]（= 标题条高度），做成
-                            // **固定内缩**、不走 contentPadding：吸顶的「播放全部」行就停在这一线上，
-                            // 而 contentPadding 会跟着内容滚走，撑不出稳定的停靠线。两条路径的内容
-                            // 都从状态栏下沿起算（nav 走 statusBarsPadding、壳走 shellTopInset），
-                            // 所以这条线是「状态栏下沿 + 标题条高度」。
-                            //
-                            // 头部封面仍在 [TrackListMetrics.HeroCoverTop]（68dp）：多出来那一档
-                            // 记在头部自己的上内缩里（[TrackListMetrics.HeaderTopInset]）。
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(top = TrackListMetrics.PanelStickyTop),
-                            contentPadding = PaddingValues(bottom = bottomPadding),
-                        ) {
-                            item(key = "header") {
-                                Box(Modifier.padding(top = TrackListMetrics.HeaderTopInset)) {
-                                    TrackListHeader(
-                                        target,
-                                        onCoverRect,
-                                        onCoverDrawn,
-                                        watermarkIcon,
-                                        textAlpha = contentReveal,
-                                        onPlaceholder = onPlaceholder,
-                                        // 骨架还在时共享元素挂骨架（见 skeletonGone），避免同 key 双宿主。
-                                        coverSharedModifier =
-                                            if (skeletonGone) coverSharedModifier else Modifier,
-                                    ) { actionsTop = it }
+            }
+            // 标题条区：搜索页同款（headlineSmall 粗体、高度跟文字走），导航键浮在同区
+            // （键盒右沿让出 TitleBarTextStart，见 TrackListMetrics）。
+            Box {
+                TrackListTitleBar(
+                    label = src.label,
+                    title = title,
+                    reveal = washExit,
+                    modifier = Modifier.onSizeChanged { stickyTopPx = it.height },
+                )
+                // 返回键压在最上层：不被列表滚走、不参与浮现淡入（骨架期也能退出）。
+                // 键必须常驻标题条区 —— 吸顶行会滚，键不能跟着滚走；壳路径的关闭键
+                // 同位（两者语言一致）。
+                if (showBackButton) {
+                    TrackListBackButton(onBack, Modifier.align(Alignment.TopStart))
+                }
+            }
+            // 壳子：搜索页同款「clip(顶角) + background(surface)」的纸。糊底 / 列表 /
+            // 骨架全部装在里面，由壳子统一裁角。
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+                    .clip(paperShape)
+                    .background(MaterialTheme.colorScheme.surface),
+            ) {
+                // 糊底垫底：头部 item 透明，封面色从头部区域透出；头部滚走淡出成纸面。
+                TrackListBackdrop(
+                    coverUrl = previewCoverUrl ?: collection?.coverUrl,
+                    exit = washExit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                    when (display) {
+                        is TrackCollection -> {
+                            val target = display
+                            LazyColumn(
+                                state = listState,
+                                // 顶部让开标题条实测下沿（stickyTopDp，高度跟文字走），做成
+                                // **固定内缩**、不走 contentPadding：吸顶的「播放全部」行就停在这一线上，
+                                // 而 contentPadding 会跟着内容滚走，撑不出稳定的停靠线。两条路径的内容
+                                // 都从状态栏下沿起算（nav 走 statusBarsPadding、壳走 shellTopInset），
+                                // 所以这条线是「状态栏下沿 + 标题条高度」。
+                                //
+                                // 头部封面仍在 [TrackListMetrics.HeroCoverTop]（68dp）：多出来那一档
+                                // 记在头部自己的上内缩里（HeroCoverTop - stickyTopDp）。
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(top = stickyTopDp),
+                                contentPadding = PaddingValues(bottom = bottomPadding),
+                            ) {
+                                item(key = "header") {
+                                    Box(Modifier.padding(top = TrackListMetrics.HeroCoverTop - stickyTopDp)) {
+                                        TrackListHeader(
+                                            target,
+                                            onCoverRect,
+                                            onCoverDrawn,
+                                            watermarkIcon,
+                                            textAlpha = contentReveal,
+                                            onPlaceholder = onPlaceholder,
+                                            // 骨架还在时共享元素挂骨架（见 skeletonGone），避免同 key 双宿主。
+                                            coverSharedModifier =
+                                                if (skeletonGone) coverSharedModifier else Modifier,
+                                        ) { actionsTop = it }
+                                    }
                                 }
-                            }
-                            // 面板：从「播放全部」行起，往下都是不透明面（糊底只在头部透出来）。
-                            // 行与行之间不留缝，所以不能用列表的 spacedBy——面板要连成一块。
-                            //
-                            // 这一行是**吸顶**的（抄官方歌单页）：滚到停靠线（标题条下沿）就停住，
-                            // 曲目行从它下面过；返回键 / 壳关闭键在标题条里，一直看得见也点得到
-                            // （停靠线已经让开了它们那一档，不必再互相让位）。
-                            // **这一行是圆角纸的顶盖**：顶角半径与纸同源
-                            // （[TrackListMetrics.SheetCorner]），吸顶时与纸的上沿严丝合缝、两角
-                            // 外露出同一条容器色。全屏只有这一个圆角顶 —— 标题条已不再自带圆角
-                            // （见 [TrackListTitleBar]），不再出现「两个圆角顶夹一道束腰」。
-                            stickyHeader(key = "playall") { _ ->
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .graphicsLayer { alpha = contentReveal.value }
-                                        // 这一行**必须自带不透明底**（与圆角纸同色、同圆角）：
-                                        // 吸顶行是画在曲目行**之上**的，没有底就盖不住从下面滚过的行。
-                                        .clip(
-                                            RoundedCornerShape(
-                                                topStart = TrackListMetrics.SheetCorner,
-                                                topEnd = TrackListMetrics.SheetCorner,
-                                            ),
+                                // 面板：从「播放全部」行起，往下都是不透明面（糊底只在头部透出来）。
+                                // 行与行之间不留缝，所以不能用列表的 spacedBy——面板要连成一块。
+                                //
+                                // 这一行是**吸顶**的（抄官方歌单页）：滚到停靠线（标题条下沿）就停住，
+                                // 曲目行从它下面过；返回键 / 壳关闭键在标题条里，一直看得见也点得到
+                                // （停靠线已经让开了它们那一档，不必再互相让位）。
+                                // **这一行是圆角纸的顶盖**：顶角半径与纸同源
+                                // （[TrackListMetrics.SheetCorner]），吸顶时与纸的上沿严丝合缝、两角
+                                // 外露出同一条容器色。全屏只有这一个圆角顶 —— 标题条已不再自带圆角
+                                // （见 [TrackListTitleBar]），不再出现「两个圆角顶夹一道束腰」。
+                                stickyHeader(key = "playall") { _ ->
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .graphicsLayer { alpha = contentReveal.value }
+                                            // 这一行**必须自带不透明底**（与圆角纸同色、同圆角）：
+                                            // 吸顶行是画在曲目行**之上**的，没有底就盖不住从下面滚过的行。
+                                            .background(MaterialTheme.colorScheme.surface),
+                                    ) {
+                                        PlayAllRow(
+                                            target,
+                                            onPlayAll = { vm.onPlayAll(target) },
+                                            onPlaceholder = onPlaceholder,
                                         )
-                                        .background(MaterialTheme.colorScheme.surface),
-                                ) {
-                                    PlayAllRow(
-                                        target,
-                                        onPlayAll = { vm.onPlayAll(target) },
-                                        onPlaceholder = onPlaceholder,
-                                    )
+                                    }
                                 }
-                            }
-                            itemsIndexed(
-                                target.tracks,
-                                key = { _, t -> t.id },
-                                contentType = { _, _ -> "track" },
-                            ) { index, track ->
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        // 行随内容浮现 / 收起退场淡入淡出（draw 阶段读，不重组）。
-                                        .graphicsLayer { alpha = contentReveal.value },
-                                ) {
-                                    TrackListRow(track, onClick = { vm.onTrackClick(target, index) })
+                                itemsIndexed(
+                                    target.tracks,
+                                    key = { _, t -> t.id },
+                                    contentType = { _, _ -> "track" },
+                                ) { index, track ->
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            // 行随内容浮现 / 收起退场淡入淡出（draw 阶段读，不重组）。
+                                            .graphicsLayer { alpha = contentReveal.value },
+                                    ) {
+                                        TrackListRow(track, onClick = { vm.onTrackClick(target, index) })
+                                    }
                                 }
-                            }
-                            item(key = "sheetTail") {
-                                // 只占底部留白（面板底由圆角纸铺满），不再自带底色。
-                                Box(Modifier.fillMaxWidth().height(bottomPadding))
+                                item(key = "sheetTail") {
+                                    // 只占底部留白（面板底由圆角纸铺满），不再自带底色。
+                                    Box(Modifier.fillMaxWidth().height(bottomPadding))
+                                }
                             }
                         }
+                        TrackListUiState.Empty -> NumeEmptyState(
+                            "暂无曲目",
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface),
+                        )
+                        // 错误必须给出路：文案本身可点重试（与播客/评论/歌手页同交互语言）。
+                        TrackListUiState.Error -> NumeErrorState(
+                            text = "曲目加载失败，点此重试",
+                            onRetry = vm::retry,
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface),
+                        )
                     }
-                    TrackListUiState.Empty -> NumeEmptyState(
-                        "暂无曲目",
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surface),
-                    )
-                    // 错误必须给出路：文案本身可点重试（与播客/评论/歌手页同交互语言）。
-                    TrackListUiState.Error -> NumeErrorState(
-                        text = "曲目加载失败，点此重试",
-                        onRetry = vm::retry,
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surface),
-                    )
-                }
-                // 用派生布尔（!skeletonGone）而非直接读 skeletonAlpha.value：后者每帧变化都会让
+                    // 用派生布尔（!skeletonGone）而非直接读 skeletonAlpha.value：后者每帧变化都会让
+                    // 整个 TrackListScreen 重组（含头部/列表），前者只在跨阈值时翻一次。
+                    if (!skeletonGone) {
+                        TrackListSkeleton(
+                            coverUrl = previewCoverUrl,
+                            title = title,
+                            onCoverRect = onCoverRect,
+                            onCoverReady = onCoverDrawn,
+                            coverSharedModifier = coverSharedModifier,
+                            // 叠在目标态之上淡出（draw 阶段读，不重组）。
+                            modifier = Modifier.graphicsLayer { alpha = skeletonAlpha.value },
+                        )
+                    }                // 用派生布尔（!skeletonGone）而非直接读 skeletonAlpha.value：后者每帧变化都会让
                 // 整个 TrackListScreen 重组（含头部/列表），前者只在跨阈值时翻一次。
                 if (!skeletonGone) {
                     TrackListSkeleton(
@@ -496,11 +493,6 @@ fun TrackListScreen(
                         // 叠在目标态之上淡出（draw 阶段读，不重组）。
                         modifier = Modifier.graphicsLayer { alpha = skeletonAlpha.value },
                     )
-                }
-                // 返回键压在最上层：不被列表滚走、也不参与浮现淡入（骨架期也能退出）。
-                // 它落在顶部标题条那一档里（停靠线已让开），面板顶上来也压不到它。
-                if (showBackButton) {
-                    TrackListBackButton(onBack, Modifier.align(Alignment.TopStart))
                 }
             }
         }
@@ -851,37 +843,50 @@ private fun TrackListBackButton(onBack: () -> Unit, modifier: Modifier = Modifie
  * 滚动只重画不重组。长标题单行截断（`maxLines = 1` + Ellipsis）；文字左起让开浮层控件那一档。
  */
 @Composable
-private fun TrackListTitleBar(label: String, title: String, reveal: State<Float>) {
+private fun TrackListTitleBar(
+    label: String,
+    title: String,
+    reveal: State<Float>,
+    modifier: Modifier = Modifier,
+) {
     // 头部退到 35% 才开始换字、到 70% 换完：太早「歌单」一闪而过，太晚标题迟迟不出现。
     val morph = remember(reveal) {
         derivedStateOf { ((reveal.value - 0.35f) / 0.35f).coerceIn(0f, 1f) }
     }
+    // 2026-10-03 照抄 SearchTitleBar 的写法：headlineSmall + 行高居中裁剪
+    // （LineHeightStyle Center / Trim.Both）+ 粗体，高度跟着文字走 —— 不再固定 56dp。
+    // 两条 Text 的 style 同源，交叉淡变时行盒不变、不跳。
+    val barStyle = MaterialTheme.typography.headlineSmall.copy(
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.Both,
+        ),
+    )
     Box(
-        Modifier
+        modifier
             .fillMaxWidth()
-            .height(TrackListMetrics.PanelStickyTop),
-    ) {
-        val line = Modifier
-            .align(Alignment.CenterStart)
             .padding(
                 start = TrackListMetrics.TitleBarTextStart,
                 end = TrackListMetrics.SideInset,
-            )
+            ),
+    ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            style = barStyle,
+            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = line.graphicsLayer { alpha = 1f - morph.value },
+            modifier = Modifier.graphicsLayer { alpha = 1f - morph.value },
         )
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            style = barStyle,
+            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = line.graphicsLayer { alpha = morph.value },
+            modifier = Modifier.graphicsLayer { alpha = morph.value },
         )
     }
 }
