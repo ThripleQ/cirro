@@ -381,11 +381,12 @@ fun TrackListScreen(
                         .graphicsLayer { alpha = contentReveal.value }
                         .background(MaterialTheme.colorScheme.surface),
                 )
-                // 顶部标题条：状态栏下一条 [TrackListMetrics.PanelStickyTop]，是圆角纸的「顶盖」，
-                // 顶角同半径、吸顶后两角把状态栏那条容器色露出来。条里的字**随滚动换**：未滚动时是
-                // 类型标签（歌单 / 榜单 / …），头部滚走的过程中交叉淡变成这个歌单的实际标题 ——
-                // 头部本来就在它下面写着同一个标题，滚上去正好把这份「身份」交给顶盖。
-                // 底色与糊底同节奏淡入（未滚动时全透，露的是封面糊底），文字不跟着淡。
+                // 顶部标题条：状态栏下一条 [TrackListMetrics.PanelStickyTop]，**透明**铺在容器色条上
+                // （底由 [TrackListBackdrop] 的 `surfaceContainer` 条给，圆角由下面那张纸给）——
+                // 与搜索页「搜索」大标题同一种做法，全屏只有「播放全部」那一处圆角顶。
+                // 条里的字**随滚动换**：未滚动时是类型标签（歌单 / 榜单 / …），头部滚走的过程中
+                // 交叉淡变成这个歌单的实际标题 —— 头部本来就在它下面写着同一个标题，滚上去正好
+                // 把这份「身份」交给顶盖。
                 TrackListTitleBar(label = src.label, title = title, reveal = washExit)
                 when (display) {
                     is TrackCollection -> {
@@ -426,8 +427,10 @@ fun TrackListScreen(
                             // 这一行是**吸顶**的（抄官方歌单页）：滚到停靠线（标题条下沿）就停住，
                             // 曲目行从它下面过；返回键 / 壳关闭键在标题条里，一直看得见也点得到
                             // （停靠线已经让开了它们那一档，不必再互相让位）。
-                            // 面板顶角保持圆角：吸顶时角外露出的也是同一张 `surface`（圆角纸），
-                            // 看不出缝，不用为吸顶另切一套直角。
+                            // **这一行是圆角纸的顶盖**：顶角半径与纸同源
+                            // （[TrackListMetrics.SheetCorner]），吸顶时与纸的上沿严丝合缝、两角
+                            // 外露出同一条容器色。全屏只有这一个圆角顶 —— 标题条已不再自带圆角
+                            // （见 [TrackListTitleBar]），不再出现「两个圆角顶夹一道束腰」。
                             stickyHeader(key = "playall") { _ ->
                                 Box(
                                     Modifier
@@ -835,7 +838,13 @@ private fun TrackListBackButton(onBack: () -> Unit, modifier: Modifier = Modifie
 /* ── 顶部标题条 ────────────────────────────────────────────────── */
 
 /**
- * 顶部标题条：圆角纸的顶盖（面板就停在它下沿，见 [TrackListMetrics.PanelStickyTop]）。
+ * 顶部标题条：**铺在容器色上的一条透明带**，不画底、不切圆角 —— 与搜索页「搜索」大标题
+ * 同一种做法（那边也是标题直接铺 `surfaceContainer`，圆角只由下面那张纸给）。
+ *
+ * 圆角纸的顶盖在**面板首行**（「播放全部」）那一档，不在这一条。早先这条也切了同半径的圆角、
+ * 还自带 `surface` 底，于是屏上同时立着两个圆角顶（标题条一个、纸一个），中间夹出一道束腰，
+ * 且这条的 `surface` 与圆角外露出的 `surfaceContainer` 还对不上色。现在底交给
+ * [TrackListBackdrop] 的容器色条、圆角交给纸，站内三张纸的「容器色条 + 圆角纸」才真正一致。
  *
  * [label]（类型：歌单 / 榜单 / 专辑 / 喜欢 / 已购）与 [title]（实际标题）**叠在同一格**交叉淡变：
  * 换字进度由 [reveal]（糊底退场进度，头部一滚走就是 1）重映射，两个 alpha 都读在 draw 阶段，
@@ -850,21 +859,8 @@ private fun TrackListTitleBar(label: String, title: String, reveal: State<Float>
     Box(
         Modifier
             .fillMaxWidth()
-            .height(TrackListMetrics.PanelStickyTop)
-            .clip(
-                RoundedCornerShape(
-                    topStart = TrackListMetrics.SheetCorner,
-                    topEnd = TrackListMetrics.SheetCorner,
-                ),
-            ),
+            .height(TrackListMetrics.PanelStickyTop),
     ) {
-        // 底色单独一层：它随糊底淡入（未滚动时全透，露的是封面糊底），两行字不跟着淡。
-        Box(
-            Modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = reveal.value }
-                .background(MaterialTheme.colorScheme.surface),
-        )
         val line = Modifier
             .align(Alignment.CenterStart)
             .padding(
