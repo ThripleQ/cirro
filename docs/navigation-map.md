@@ -28,14 +28,16 @@ ui/
 ├── profile/       # 我的（ProfileViewModel：登录态+区块数据；TrackListViewModel：统一"壳+列表"页状态）
 ├── playerbar/     # 播放（PlayerDock.kt：常驻 dock + 全屏播放页**合体**，一份 PlayerDockState；
 │                  #   rememberPlayerState/rememberPlayerPosition 是播放状态的唯一真相源；
-│                  #   CollectionActions 为列表头部三按钮，列表头与滚动操作行共用）
+│                  #   rememberPlayerState/rememberPlayerPosition 是播放状态的唯一真相源；
+│                  #   ActionNavRow 为滚动操作行（滑出头部按钮后出现），列表只负责上报）
 ├── components/    # 跨功能通用组件（ExpandableShell：胶囊→全屏通用伸展壳）
 └── screens/       # 布局主体（哑组件，跨功能）
     ├── HomeScreen.kt        # 探索 tab 的占位首页（纯展示）
     ├── LibraryScreen.kt
     ├── SearchScreen.kt      # 搜索 tab 占位（纯展示，待实现）
     ├── ProfileScreen.kt     # 我的：登录入口 + 喜欢/已购/歌单区块 + 登录对话框
-    ├── TrackListScreen.kt   # 统一详情页：榜单/歌单/专辑/喜欢/已购 = 壳（封面/标题/数据/操作按钮）+ 曲目列表
+    ├── TrackListScreen.kt   # 统一详情页：榜单/歌单/专辑/喜欢/已购 = 紧凑头部（封面+标题+作者+简介）+
+                             #   三胶囊 + 圆角面板（播放全部行 + 曲目行）；几何令牌在 TrackListMetrics
     └── WebLoginScreen.kt    # Web 登录（登录的单一入口）
 
 core/

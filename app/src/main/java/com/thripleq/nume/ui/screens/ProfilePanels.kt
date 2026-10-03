@@ -71,6 +71,9 @@ internal fun ProfilePanelLegacy(
     capsuleRect: Rect?,
     onDismiss: () -> Unit,
 ) {
+    // hero 终点几何随内容形态变：曲目列表是紧凑头部（98dp 方封面），歌单网格仍是满宽 banner。
+    // 预测值必须与内容里的真实排版一致，否则 hero 停在别处（见 [CoverExpandShell] 契约）。
+    val tracksPanel = target is ProfilePanel.Tracks
     CoverExpandShell(
         fromRect = capsuleRect,
         coverUrl = target.coverUrl,
@@ -79,6 +82,9 @@ internal fun ProfilePanelLegacy(
         // hero 带卡片同一份数据行：否则展开时 hero 盖掉卡片，数量消失、结尾再冒出（闪）。
         meta = target.meta,
         watermarkIcon = target.icon,
+        heroCoverInset = if (tracksPanel) TrackListMetrics.SideInset else 16.dp,
+        heroCoverTop = if (tracksPanel) TrackListMetrics.HeroCoverTop else 4.dp,
+        heroCoverSide = TrackListMetrics.CoverSize.takeIf { tracksPanel },
     ) { onCoverReady ->
         when (target) {
             is ProfilePanel.Tracks -> {
@@ -86,16 +92,14 @@ internal fun ProfilePanelLegacy(
                 TrackListScreen(
                     source = target.source,
                     id = src,
-                    title = target.title,
+                    title = target.title(),
                     onBack = onDismiss,
                     onOpenPlayer = onOpenPlayer,
-                    showTopBar = false,
+                    // 壳自带关闭键（与头部封面同位），本屏不再画返回键。
+                    showBackButton = false,
                     // 壳内容：返回键交回 ExpandableShell 处理（本屏不再注册 BackHandler），
                     // 否则本屏后注册的 BackHandler 会抢在壳之前触发 onBack、跳过壳的收起动画。
                     backHandlerEnabled = false,
-                    // 面板走「内容固定终态排版 + 壳裁剪露出」，封面内缩用常量，
-                    // 使列表 measure 在展开动画期间被跳过（封面形变交给 hero）。
-                    coverInsetFollowsShell = false,
                     onCoverReady = onCoverReady,
                     previewCoverUrl = target.coverUrl,
                     watermarkIcon = target.icon,
@@ -154,7 +158,7 @@ internal fun ProfileSharedPanelContent(
                     title = target.title,
                     onBack = onDismiss,
                     onOpenPlayer = onOpenPlayer,
-                    showTopBar = false,
+                    showBackButton = false,
                     previewCoverUrl = target.coverUrl,
                     watermarkIcon = target.icon,
                     bottomPadding = bottomPadding,
@@ -176,7 +180,7 @@ internal fun ProfileSharedPanelContent(
 }
 
 /** 歌单网格面板内容：首个 banner 封面 + 全屏懒加载网格，点格子进歌单曲目列表。
- *  banner 位于 16dp 内缩、状态栏下 4dp（[CoverExpandShell] 的 hero 终点契约）。 */
+ *  banner 满宽（左右 16dp 内缩、状态栏下 4dp）= [CoverExpandShell] 的默认 hero 终点契约。 */
 @Composable
 private fun PlaylistGridPanel(
     title: String,

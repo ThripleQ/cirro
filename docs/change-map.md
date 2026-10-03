@@ -41,7 +41,10 @@
 | 登录对话框（Cookie 粘贴 / 短信验证码） | `ui/screens/ProfileScreen.kt` 内 `LoginDialog` |
 | 账号 / 喜欢 / 已购 / 歌单的数据获取与解析 | `core/repo/ProfileRepository.kt` |
 | 曲目列表页（喜欢 / 已购 / 歌单 / 专辑） | `ui/screens/TrackListScreen.kt` + `ui/profile/TrackListViewModel.kt` |
-| 列表头部的收藏 / 播放 / 评论三按钮、滚动操作行 | `ui/playerbar/CollectionActions.kt` + `ui/screens/TrackListScreen.kt` |
+| 曲目列表页的版式与间距（头部 / 胶囊 / 面板 / 糊底 / 行） | `ui/screens/TrackListScreen.kt`：令牌在 `TrackListMetrics`，各区块是紧随其后的 private 组件 |
+| 曲目行 = nume 条目卡（8dp 外缩 + `surfaceContainer`） | `TrackListRow` 里用 `ui/components/Containers.kt` 的 `numeEntrySurface()`；面板底铺在整条 item 上，卡缝才不漏糊底 |
+| 底部滚动操作行（滑出头部按钮后出现的三按钮） | `ui/playerbar/PlayerDock.kt` 的 `ActionNavRow`（列表只上报是否滑出） |
+| 大卡 → 全屏列表时 hero 封面飞到哪里 | `ui/screens/{HomeExpandShell,ProfilePanels}.kt` 传的 `heroCover*`（必须与 `TrackListMetrics` 一致） |
 | 登录 / 验证码接口（JNI op 30/31、cookie 导入） | `app/src/main/cpp/libnetease_jni.c` + `core/net/NeteaseOp.kt` |
 
 ## 3. 播放：点歌、进度、后台、缓存

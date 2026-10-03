@@ -243,7 +243,7 @@ private fun HomePanelContent(
             title = target.title,
             onBack = onDismiss,
             onOpenPlayer = onOpenPlayer,
-            showTopBar = false,
+            showBackButton = false,
             previewCoverUrl = target.coverUrl,
             bottomPadding = bottomPadding,
             coverSharedModifier = Modifier.shellSharedCover(shared, avScope, target.shellKey()),

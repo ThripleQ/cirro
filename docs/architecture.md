@@ -109,8 +109,38 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
   （Material3 Emphasized 家族：展开用减速、收起用 Emphasized 保证末段停稳）。
   dock 的 spring 与浮层显隐时长也改为读此处；**dock 的细胞分裂几何刻意未动**——它在分裂点
   已有逐值连续性保证，无设备盲改风险高于收益。
-- **列表操作行**：`ui/playerbar/CollectionActions.kt` 提供收藏/播放/评论三按钮，列表头部与
-  滚动浮岛共用；`TrackListScreen` 上报三按钮是否滑出视口，供 dock 切换为操作行。
+- **列表操作行**：详情页头部的三枚胶囊（分享 / 评论 / 收藏数）已收回 `TrackListScreen`
+  自身（原 `ui/playerbar/CollectionActions.kt` 因此删除——它只剩列表头部一个调用方）；
+  底部滚动操作行仍是 `PlayerDock` 里的 `ActionNavRow`，由 `TrackListScreen` 上报操作行
+  是否滑出视口触发。
+
+### 详情页版式（抄自官方歌单页）
+
+榜单 / 歌单 / 专辑 / 喜欢 / 已购共用 `ui/screens/TrackListScreen.kt`，版式与几何令牌集中在该
+文件的 `TrackListMetrics`（2026-10-03 按官方 1080×2400@480dpi 实拍量得，px÷3 换成 dp）：
+
+- **页底**：封面柔焦放大 + `surface` 渐变蒙版（固定不滚）。头部那块透出封面色，面板往下是
+  不透明面——与「人物 hero」同一套解法（低清解码 + `blur` + 同色渐隐）。蒙版用 `surface`
+  而非固定黑，明暗两套都压得住，头部文字因此照常用主题墨色。放大**走布局**（格子比可视带大
+  一个倍数、上下各顶出去）而不是 `graphicsLayer` 的 `scale`：图层放大不改变布局边界，多出的
+  那截等于画到格子外，而蒙版只按格子铺——壳路径的内容整体让开了状态栏，溢出的上沿正好落在
+  状态栏里、成为一条没过蒙版的纯色带（亮封面时一眼可见）。同理，糊底自己是**页底**，壳让开
+  了多少就补回多少（`rememberStatusBarTop()`，读平台根 insets——壳路径里 Compose 的 insets
+  已被 `statusBarsPadding()` 消费成 0），让糊底两条路径都铺到屏幕顶。
+- **头部**：左 98dp 方封面 + 右侧标题（2 行）/ 作者 / 简介（1 行），内缩 20dp。
+- **面板**：顶角 16dp 圆角 + 上沿投影，从「播放全部」行开始；副标题是「N 首 · 播放量」，
+  曲目数与播放量在**同一段** AnnotatedString 里（两个并排 Text 会被中文断行拆成错位的两行），
+  尾部三枚图标用 40dp 触控盒而非 M3 `IconButton`（48dp 会把副标题挤到折行）。
+- **曲目行**：仍是 nume 的**条目卡**（`numeEntrySurface`，8dp 外缩 + `surfaceContainer`），
+  浮在面板底上；卡内封面 44dp、内缩 8dp，合计封面到屏边 16dp（= 官方的实测值）。面板底铺在
+  **整条 item** 上，卡片之间那几 dp 的缝才不会漏出糊底。
+- **顶部空档 68dp**：两条入口路径的头部封面必须落在同一屏上位置——nav 路径用
+  `statusBarsPadding()` 让开状态栏，壳路径由 `shellTopInset` 让开；这 68dp 让给浮在左上的
+  返回键 / 壳关闭键。**返回键不是占位高度的顶栏**，若交给它自算高度，封面会钻到它下面。
+- **hero 终点是参数**：自研壳 `CoverExpandShell` 不再假定「满宽方封面」，终点几何由调用方
+  用 `heroCoverInset / heroCoverTop / heroCoverSide` 声明（曲目列表给 `TrackListMetrics`
+  的值，歌单网格仍用默认满宽）。**预测值必须与内容里的真实排版一致**，否则 hero 停在别处；
+  参数化之前这套值硬编码在壳里，换版式必错。
 
 ## 七、持久化
 

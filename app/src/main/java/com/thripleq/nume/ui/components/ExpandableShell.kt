@@ -597,21 +597,26 @@ fun ExpandableShell(
 
 /**
  * 通用「大封面卡 → 全屏内容」伸展壳：把卡片（窗口坐标 [fromRect]）长成全屏，期间用 hero 封面
- * 从卡片位置插值到内容里的 banner 封面，首尾无缝；左上角浮一个随展开进度淡入的收起按钮。
+ * 从卡片位置插值到内容里的头部封面，首尾无缝；左上角浮一个随展开进度淡入的收起按钮。
  *
  * 探索页（歌单/榜单 → 曲目列表）与「我的」页（大卡 → 曲目列表/歌单网格）共用本组件。
  *
- * **对齐契约**：内容首项若是方形 banner 封面，必须位于「左右 16dp 内缩、状态栏下 4dp」处
- * （同 [TrackListScreen] 的 banner 头）；本组件按此**预测** hero 终点矩形，不再每帧测量回写。
+ * **对齐契约**：内容首项若是封面，其位置由调用方用 [heroCoverInset] / [heroCoverTop] /
+ * [heroCoverSide] 三个参数**声明**（本组件按此**预测** hero 终点矩形，不再每帧测量回写）；
+ * 调用方必须让内容里的封面真的落在该处——预测与真实排版脱钩就是「hero 停在别处」。
+ * 曲目列表页的真实值集中在 `TrackListMetrics`；歌单网格是满宽 banner，用默认值即可。
  *
  * @param coverUrl hero 封面 URL（应与起点卡片同源）；null 时 hero 用占位底
  * @param title    hero 封面上的名字
  * @param meta     hero 封面名字下方的元信息（起点卡片上那行，如「114 首」）。传入后在
  *                 p=0 时 hero 与卡片逐项一致——否则动画一开始卡片上的数量就被 hero 盖掉、
  *                 结尾再冒出来，像闪一下。已拿到的数据应全程可见，不该重放。
+ * @param heroCoverInset hero 终点封面距屏幕左边缘
+ * @param heroCoverTop   hero 终点封面顶边距**状态栏下沿**
+ * @param heroCoverSide  hero 终点封面边长；null = 满宽（左右各留 [heroCoverInset]）
  * @param watermarkIcon hero 的内容属性水印图标：与起点卡片、内容 banner 传同一个，
  *                 缺封面时三处都显示同一枚图标（否则 p=0 的 hero 与卡片对不上）
- * @param content  面板内容；参数 `onCoverReady` 在内容里的高清 banner 封面画出来后调用，
+ * @param content  面板内容；参数 `onCoverReady` 在内容里的高清封面画出来后调用，
  *                 触发 hero 交接淡出（数据/图片未到则 hero 一直顶着）
  */
 @Composable
@@ -624,18 +629,22 @@ fun CoverExpandShell(
     containerColor: Color = MaterialTheme.colorScheme.surface,
     shapeCornerDp: Dp = 16.dp,
     watermarkIcon: ImageVector? = null,
+    heroCoverInset: Dp = 16.dp,
+    heroCoverTop: Dp = 4.dp,
+    heroCoverSide: Dp? = null,
     content: @Composable (onCoverReady: () -> Unit) -> Unit,
 ) {
     val density = LocalDensity.current
     val statusBarTopPx = with(density) { WindowInsets.statusBars.getTop(density).toFloat() }
-    // hero 终态矩形用「预测值」：16dp 内缩、方形、内容顶（状态栏下 + 4dp 内边距）下方，
-    // 与内容里 banner 封面同位。不再每帧测量回写（省掉每帧 onGloballyPositioned）。
-    val coverSidePx = LocalConfiguration.current.screenWidthDp * density.density -
-        with(density) { 32.dp.toPx() }
-    val coverLeftPx = with(density) { 16.dp.toPx() }
-    val coverTopPx = statusBarTopPx + with(density) { 4.dp.toPx() }
+    // hero 终态矩形用「预测值」：参数化几何 + 方形，与内容里的头部封面同位。
+    // 不再每帧测量回写（省掉每帧 onGloballyPositioned）。
+    val coverSidePx = heroCoverSide?.let { with(density) { it.toPx() } }
+        ?: (LocalConfiguration.current.screenWidthDp * density.density -
+            with(density) { (heroCoverInset * 2).toPx() })
+    val coverLeftPx = with(density) { heroCoverInset.toPx() }
+    val coverTopPx = statusBarTopPx + with(density) { heroCoverTop.toPx() }
     // 按影响几何的输入做 key：配置/insets 变化（多窗口缩放、折叠展开、显示切换）时重算，
-    // 否则 hero 终点停在旧矩形、与真实 banner 错位。
+    // 否则 hero 终点停在旧矩形、与内容里声明的封面错位。
     val coverRect = remember(coverLeftPx, coverTopPx, coverSidePx) {
         mutableStateOf<Rect?>(
             Rect(coverLeftPx, coverTopPx, coverLeftPx + coverSidePx, coverTopPx + coverSidePx),
