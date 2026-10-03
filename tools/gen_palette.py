@@ -15,12 +15,13 @@ nume 调色板生成器 —— 单一 seed 推导全套 M3 角色色，并用 WC
 1. **不偷改品牌色**：浅色 primary 锚到 seed 本色，而不是 M3 惯例的 tone 40。
    实测白字压 #C92027 = 5.6:1，本来就达 AA；压到 tone 40(#8B000F) 是纯粹的去品牌化。
    只有当品牌色亮到白字不达标时，resolve_on 才会为了无障碍把它压暗——那是被迫，不是惯例。
-2. **不偷改明度**：暗色 surface 锚到现网实测档（#111214 ≈ tone 17 / #191A1C ≈ tone 22 →
-   取 20），而不是 M3 规范的 tone 6(#020000)。跟tone 6 会把整个 App 静默调暗一大截。
-   这次只把**色相**从冷蓝灰拧成品牌红调，明度基本不动。
-3. **层级不许被打平**：on_* 先试 M3 规范 tone（次要文字用 30/80 而非极端 10/90），
-   只有对比度不达标才向大反差方向修正。否则 on_surface_variant 会撞上 on_surface，
-   主次文字同色 —— 那也是一种「不协调」。
+2. **中性面不与品牌色同色相**：表面走独立的近无彩冷调（hue 260、彩度 0.006），
+   不跟着 seed 染。旧版把中性面按品牌红色相染色（彩度 0.014），低彩度暖调成片铺开
+   就读作「发粉、发脏」，暗色尤其是一整片暖褐底。冷暖对照同时让品牌红更跳。
+   明度上暗色 surface 锚 tone 19（#121417，接近 Spotify 的 121212），不套 M3 tone 6。
+3. **层级不许被打平**：on_* 先试规范 tone，只有对比度不达标才向大反差方向修正。
+   注意本脚本 tone = OKLab L，同号 tone 比 M3 的 HCT tone 暗不少 —— 故次要文字取
+   45/80 而非 30/80，否则 on_surface_variant 会撞上 on_surface，主次文字同色。
 
 ## 色空间
 OKLCH（感知均匀，L 直接当 M3 tone 用）。不是 Google 的 HCT/CAM16：那需要约 150 行
@@ -41,24 +42,30 @@ from pathlib import Path
 
 # ══ 设计输入：改这里即可整体换色 ═══════════════════════════════════
 SEED = "#C92027"            # 品牌红（沿用现有 primary，呼应网易云识别）
-TERTIARY_HUE_OFFSET = 70     # 第三色旋转角：拉开层次但不同调打架
-ERROR_HUE = 27               # 错误色固定色相（橙红），与品牌红可区分
-DARK_SURFACE_TONE = 20       # 见文件头原则 2：锚现网明度，不套 M3 tone 6
+SECONDARY_HUE = 258          # 次级色色相：冷蓝灰。**刻意不跟 primary 同色相** ——
+                             # 同色相的低彩度红灰（旧值）正是「整屏发粉、表面发脏」的根源。
+TERTIARY_HUE = 78            # 第三色色相：暖金。与红同属暖区但拉开 ~50°，作点睛不打架。
+NEUTRAL_HUE = 260            # 中性面色相：极轻冷调。热调中性（旧值 = 品牌红色相）在低彩度
+                             # 下会显脏；微冷让白更白、墨更净。彩度低到 0.006，肉眼只读到「干净」。
+ERROR_HUE = 32               # 错误色色相：偏橘的正红，与品牌红（crimson 25.8°）色相分开，
+                             # 报错文案不会跟品牌红混淆；再往橘（>40°）压到 tone 40 会发褐。
+DARK_SURFACE_TONE = 19       # 见文件头原则 2：锚近黑明度（#121417，约等于 Spotify 的 121212）
 CONTRAST_TARGET = 4.5         # WCAG AA 正文
 CONTRAST_TARGET_SECONDARY = 3.0   # 次要文字/图标（M3 onSurfaceVariant 语义）
 
-# 各音阶彩度（OKLCH C）。secondary / neutral 刻意压低：品牌感交给 primary/tertiary，
-# 表面与正文保持中性——这是「协调」的关键，否则整屏都在抢话。
+# 各音阶彩度（OKLCH C）。品牌感交给 primary/tertiary；secondary 只比中性色多一点点
+# 色相倾向（能看出是冷灰，不是灰），neutral 压到近乎无彩 ——「协调」的关键是
+# 只有一处大声说话，其余全部安静。
 CHROMA = {
-    "primary": 0.19,
-    "secondary": 0.045,
-    "tertiary": 0.115,
-    "neutral": 0.014,
-    "neutral_variant": 0.026,
-    "error": 0.17,
+    "primary": 0.20,
+    "secondary": 0.032,
+    "tertiary": 0.105,
+    "neutral": 0.006,
+    "neutral_variant": 0.011,
+    "error": 0.19,
 }
-TONES = [0, 4, 6, 10, 12, 17, 20, 22, 24, 30, 40, 50, 60,
-         70, 80, 87, 90, 92, 94, 95, 96, 98, 99, 100]
+TONES = [0, 4, 6, 10, 12, 13, 16, 17, 19, 20, 22, 23, 24, 26, 27, 29, 30, 31,
+         40, 45, 50, 60, 70, 80, 87, 89, 90, 92, 94, 95, 96, 97, 98, 99, 100]
 # ═══════════════════════════════════════════════════════════════════
 
 
@@ -169,47 +176,64 @@ def resolve_on(ramp: dict[int, str], bg: str, preferred: int, target: float):
 # 就近档曾把品牌红 #C92027 换成 tone 50 的 #B71921 —— 仍然偏暗、仍是改品牌色。
 # 白字压 #C92027 实测 5.6:1 达 AA，所以没有理由不动它。
 PRIMARY = "seed_color"
+# 暗色主色降到 tone 70（而不是 M3 惯例的 80）：tone 80 的红是 #FFA097 那种
+# 洗淡的粉，作强调色没力气；70 是 #FF645D 的珊瑚红，压在近黑面上既醒目又仍是红。
+# 暗色容器升到 tone 30/38（惯例 30）：tone 30 的红容器几乎融进暗面，播放页那颗
+# 「生长出来的播放键」会变成一团看不见的暗酒红；38 才有「品牌红圆」的存在感。
 BASE_ROLES: dict[str, tuple[str, object, object]] = {
-    "primary": ("primary", PRIMARY, 80),
-    "primary_container": ("primary", 90, 30),
+    "primary": ("primary", PRIMARY, 70),
+    "primary_container": ("primary", 90, 38),
     "secondary": ("secondary", 40, 80),
     "secondary_container": ("secondary", 90, 30),
     "tertiary": ("tertiary", 40, 80),
     "tertiary_container": ("tertiary", 90, 30),
     "error": ("error", 40, 80),
     "error_container": ("error", 90, 30),
-    # 表面全部取 neutral（彩度 0.014 的品牌底色）——这修掉了「dock/壳用的
-    # surfaceContainer* 根本没传、回落 M3 内置紫灰、与品牌红不同色相」这一大问题。
+    # 表面全部取 neutral（近无彩的微冷中性）。这修掉了两件事：
+    #   ① 早期 surfaceContainer* 没传、回落 M3 内置紫灰、与品牌红不同色相；
+    #   ② 旧版把中性面染成品牌红色相 + 彩度 0.014 的暖调 —— 低彩度暖调在成片
+    #      铺开时读作「发粉、发脏」，尤其暗色的暖褐底（#1C1413 一系）。
     # 暗色各档由 DARK_SURFACE_TONE 派生（越高越浮起 → 逐级提亮）。
     "surface": ("neutral", 98, DARK_SURFACE_TONE),
-    "surface_dim": ("neutral", 87, DARK_SURFACE_TONE),
-    "surface_bright": ("neutral", 98, DARK_SURFACE_TONE + 12),
+    "surface_dim": ("neutral", 88, DARK_SURFACE_TONE),
+    "surface_bright": ("neutral", 99, DARK_SURFACE_TONE + 12),
     "surface_container_lowest": ("neutral", 100, DARK_SURFACE_TONE - 6),
-    "surface_container_low": ("neutral", 96, DARK_SURFACE_TONE - 3),
-    "surface_container": ("neutral", 94, DARK_SURFACE_TONE + 2),
-    "surface_container_high": ("neutral", 92, DARK_SURFACE_TONE + 6),
-    "surface_container_highest": ("neutral", 90, DARK_SURFACE_TONE + 10),
-    "surface_variant": ("neutral_variant", 90, 30),
-    "outline": ("neutral_variant", 50, 60),
-    "outline_variant": ("neutral_variant", 80, 30),
+    "surface_container_low": ("neutral", 97, DARK_SURFACE_TONE - 3),
+    # 暗色「浮起」档差要比浅色大：近黑面上 2 个 tone 的差肉眼几乎看不出，
+    # dock 会糊进页面。+4/+7/+11 才有浅色那一档看得出的层次。
+    "surface_container": ("neutral", 94, DARK_SURFACE_TONE + 4),
+    "surface_container_high": ("neutral", 92, DARK_SURFACE_TONE + 7),
+    "surface_container_highest": ("neutral", 89, DARK_SURFACE_TONE + 11),
+    "surface_variant": ("neutral_variant", 90, 28),
+    "outline": ("neutral_variant", 50, 62),
+    "outline_variant": ("neutral_variant", 80, 32),
     "inverse_surface": ("neutral", 20, 90),
     "inverse_primary": ("primary", 80, 40),
-    "surface_tint": ("primary", PRIMARY, 80),
+    # surface_tint 必须与 primary 同值（M3 语义：它是 primary 的提亮版，用来给
+    # tonalElevation 的浮层染色）。暗色跟 primary 一样取 tone 70，别留在 80。
+    "surface_tint": ("primary", PRIMARY, 70),
 }
 
 # on_* : (压着的背景角色, 取哪条音阶, 首选 tone(浅,暗))
 # 次要文字首选 30/80 而非极端 10/90，才有主次层级。
 ON_ROLES = {
     "on_primary": ("primary", "primary", (100, 20)),
-    "on_primary_container": ("primary_container", "primary", (10, 90)),
+    # 浅色 on_*Container 从 tone 10 抬到 30：本脚本 tone = OKLab L，tone 10 的
+    # 彩色音阶几乎就是纯黑（primary 的 tone 10 = #0D0000）。于是所有浅色容器
+    # （登录 CTA 的粉底、选中胶囊的蓝底、VIP 徽章…）都是「粉底压纯黑字/纯黑图标」，
+    # 生硬且不像品牌色。tone 30 是深品牌色（primary → #5C0007 深绯），这才是 M3
+    # 「容器用浅色调、其上用深色调同色」的本意。对比度仍有 ~9:1。
+    "on_primary_container": ("primary_container", "primary", (30, 90)),
     "on_secondary": ("secondary", "secondary", (100, 20)),
-    "on_secondary_container": ("secondary_container", "secondary", (10, 90)),
+    "on_secondary_container": ("secondary_container", "secondary", (30, 90)),
     "on_tertiary": ("tertiary", "tertiary", (100, 20)),
-    "on_tertiary_container": ("tertiary_container", "tertiary", (10, 90)),
+    "on_tertiary_container": ("tertiary_container", "tertiary", (30, 90)),
     "on_error": ("error", "error", (100, 20)),
-    "on_error_container": ("error_container", "error", (10, 90)),
+    "on_error_container": ("error_container", "error", (30, 90)),
     "on_surface": ("surface", "neutral", (10, 90)),
-    "on_surface_variant": ("surface_variant", "neutral_variant", (30, 80)),
+    # 次要文字从 tone 30 抬到 45：同号 tone 比 M3 的 tone 30 暗得多，压在近黑标题旁
+    # 几乎分不出主次（全 app 43 处用它）。45 是标准中灰，层级一眼可辨，仍有 ~7:1。
+    "on_surface_variant": ("surface_variant", "neutral_variant", (45, 80)),
     "inverse_on_surface": ("inverse_surface", "neutral", (95, 20)),
 }
 
@@ -218,10 +242,10 @@ def generate():
     seed_l, seed_c, seed_h = hex_to_lch(SEED)
     hues = {
         "primary": seed_h,
-        "secondary": seed_h,
-        "tertiary": (seed_h + TERTIARY_HUE_OFFSET) % 360,
-        "neutral": seed_h,
-        "neutral_variant": seed_h,
+        "secondary": SECONDARY_HUE,
+        "tertiary": TERTIARY_HUE,
+        "neutral": NEUTRAL_HUE,
+        "neutral_variant": NEUTRAL_HUE,
         "error": ERROR_HUE,
     }
     ramps = {k: build_ramp(h, CHROMA[k]) for k, h in hues.items()}
@@ -314,7 +338,9 @@ import androidx.compose.ui.graphics.Color
  * **机器生成，请勿手改** —— 由 `tools/gen_palette.py` 从单一 seed 推导。
  * 换品牌色：改脚本里 `SEED` 一行 + 重跑，本文件与所有调用方零改动。
  *
- * seed = {seed}（品牌红）｜tertiary 色相 = seed + {tert_off}°｜暗色 surface 锚 tone {dst}
+ * seed = {seed}（品牌红，浅色 primary 逐位用它本色）
+ * ｜secondary = 冷蓝灰 {sec_hue}°｜tertiary = 暖金 {tert_hue}°｜中性面 = 微冷 {neu_hue}°
+ * ｜暗色 surface 锚 tone {dst}
  *
  * 色相与明度音阶取自 OKLCH（感知均匀，tone = L×100）；与 Material Theme Builder 的
  * HCT 产出不逐位相同，但**所有 on_* 正文色对都按 WCAG 相对亮度验证过 ≥4.5:1**
@@ -323,7 +349,8 @@ import androidx.compose.ui.graphics.Color
  * 三条刻意的设计选择（详见脚本文件头）：
  * 1. 浅色 primary 用品牌本色而非 M3 惯例 tone 40 —— 白字压品牌红实测 {seed_white_ratio}:1，
  *    本就达 AA，压暗反而是去品牌化。
- * 2. 暗色 surface 锚现网明度（tone {dst}）而非 M3 的 tone 6，只把色相从冷蓝灰拧到品牌红调。
+ * 2. 中性面**不与品牌红同色相**：改成近乎无彩的微冷灰（彩度 0.006）。旧版把表面染成
+ *    品牌红色相的暖调，成片铺开时读作「发粉、发脏」（暗色尤甚）；冷暖对照也让品牌红更跳。
  * 3. on_* 先试 M3 规范 tone，不达标才修正 —— 保证次要文字不与主文字同色。
  *
  * 音阶留档（tone: RRGGBB）：
@@ -406,7 +433,8 @@ def main() -> int:
             print("校验未通过，拒绝写入 Palette.kt")
             return 1
         body = KOTLIN.format(
-            seed=SEED, tert_off=TERTIARY_HUE_OFFSET, dst=DARK_SURFACE_TONE,
+            seed=SEED, sec_hue=SECONDARY_HUE, tert_hue=TERTIARY_HUE,
+            neu_hue=NEUTRAL_HUE, dst=DARK_SURFACE_TONE,
             seed_white_ratio=f"{contrast('FFFFFF', SEED):.1f}",
             ramp_doc=emit_ramp_doc(ramps),
             light=emit_roles(schemes["light"]),

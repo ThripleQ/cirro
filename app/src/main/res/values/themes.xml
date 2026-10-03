@@ -5,7 +5,12 @@
          Light-only: a forced-light theme keeps the app light even when the
          system is in dark mode, so text never switches to the light-on-dark
          colors. DayNight follows the system. -->
-    <style name="Theme.Nume" parent="android:Theme.Material.NoActionBar" />
+    <style name="Theme.Nume" parent="android:Theme.Material.NoActionBar">
+        <!-- 窗口底色锚到 Compose 的 surface（浅色 / 深色各一份，深色见 values-night）。
+             不定死的话，父主题用的是平台深色 Material 的默认底 —— 浅色模式下启动、
+             旋转、从多任务切回时会露一帧深灰。 -->
+        <item name="android:windowBackground">@color/nume_window_background</item>
+    </style>
 
     <!-- Launch theme: shows the system splash (back-ported to API 26) until the
          first Compose frame, then switches to Theme.Nume. -->

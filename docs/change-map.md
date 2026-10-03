@@ -14,7 +14,8 @@
 | 改迷你条 / 播放页（含手势、两段式展开） | `ui/playerbar/PlayerDock.kt` | dock + 全屏播放页合体，同一文件 |
 | 改「胶囊→全屏」通用伸展壳的动画 / 尾帧 | `ui/components/ExpandableShell.kt` | 我的页喜欢的音乐等复用；单一时间基，宽高/圆角/hero 全由同一个 t 派生 |
 | 改动画**时长 / 曲线 / 圆角节奏**（壳与 dock 共用） | `ui/theme/Motion.kt` | 动效令牌唯一来源；两处手感不一致或想整体调快调慢，只改这里 |
-| 改品牌色 / 整套配色（明暗一起变） | `tools/gen_palette.py` 的 `SEED` → 重跑生成 | **别手改 `Palette.kt`**（机器生成）；`gen_palette.py --write` 会先验 WCAG 再落盘 |
+| 改品牌色 / 整套配色（明暗一起变） | `tools/gen_palette.py` 顶部配置块 → 重跑生成 | `SEED` 换品牌色；`SECONDARY_HUE` / `TERTIARY_HUE` / `NEUTRAL_HUE` / `CHROMA` 换色相分工；`DARK_SURFACE_TONE` 换暗色黑度。**别手改 `Palette.kt`**（机器生成）；`--write` 会先验 WCAG 与层级再落盘，不通过拒绝写入 |
+| 改启动图 / 窗口底色（与主题同步的两处平台色） | `res/values/colors.xml` + `res/values-night/colors.xml` + `res/values/themes.xml` | 都锚 Compose 的 `surface`；不同步会在启动/旋转时闪一帧反差色 |
 | 改 M3 角色 → `ColorScheme` 的映射 | `ui/theme/Theme.kt` | 角色必须逐个显式传，漏传会回落 M3 内置紫灰 |
 | 改图上文字/水印/遮罩等浮层墨色 | `ui/theme/Color.kt`（`NumeInk` / `NumeFade`） | 与 colorScheme 解耦，明暗共用 |
 | 改字号、字重、字体 | `ui/theme/Type.kt` | |

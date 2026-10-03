@@ -6,7 +6,9 @@ import androidx.compose.ui.graphics.Color
  * **机器生成，请勿手改** —— 由 `tools/gen_palette.py` 从单一 seed 推导。
  * 换品牌色：改脚本里 `SEED` 一行 + 重跑，本文件与所有调用方零改动。
  *
- * seed = #C92027（品牌红）｜tertiary 色相 = seed + 70°｜暗色 surface 锚 tone 20
+ * seed = #C92027（品牌红，浅色 primary 逐位用它本色）
+ * ｜secondary = 冷蓝灰 258°｜tertiary = 暖金 78°｜中性面 = 微冷 260°
+ * ｜暗色 surface 锚 tone 19
  *
  * 色相与明度音阶取自 OKLCH（感知均匀，tone = L×100）；与 Material Theme Builder 的
  * HCT 产出不逐位相同，但**所有 on_* 正文色对都按 WCAG 相对亮度验证过 ≥4.5:1**
@@ -15,16 +17,17 @@ import androidx.compose.ui.graphics.Color
  * 三条刻意的设计选择（详见脚本文件头）：
  * 1. 浅色 primary 用品牌本色而非 M3 惯例 tone 40 —— 白字压品牌红实测 5.6:1，
  *    本就达 AA，压暗反而是去品牌化。
- * 2. 暗色 surface 锚现网明度（tone 20）而非 M3 的 tone 6，只把色相从冷蓝灰拧到品牌红调。
+ * 2. 中性面**不与品牌红同色相**：改成近乎无彩的微冷灰（彩度 0.006）。旧版把表面染成
+ *    品牌红色相的暖调，成片铺开时读作「发粉、发脏」（暗色尤甚）；冷暖对照也让品牌红更跳。
  * 3. on_* 先试 M3 规范 tone，不达标才修正 —— 保证次要文字不与主文字同色。
  *
  * 音阶留档（tone: RRGGBB）：
- *   primary          10:0D0000 20:320002 30:5C0007 40:8B000F 50:B71921 60:DB423F 70:FF645D 80:FFA097 90:FFD2CC 99:FFFBFA
- *   secondary        10:0D0000 20:270D0B 30:422522 40:5E3E3B 50:7B5A56 60:9A7672 70:B99490 80:D9B3AF 90:FBD3CF 99:FFFBFA
- *   tertiary         10:050300 20:1C1600 30:372D00 40:554700 50:756200 60:957F1B 70:B49E41 80:D4BD62 90:F5DE82 99:FFFCEF
- *   neutral          10:060202 20:1C1413 30:352B2A 40:4F4544 50:6B605F 60:887D7C 70:A79B9A 80:C7BAB9 90:E7DBD9 99:FFFBFA
- *   neutral_variant  10:090101 20:211110 30:3A2927 40:554340 50:725E5C 60:8F7B78 70:AE9996 80:CEB8B5 90:EFD8D5 99:FFFBFA
- *   error            10:0D0000 20:320001 30:5D0004 40:8B000B 50:B02B27 60:D24D45 70:F66D62 80:FFA196 90:FFD2CC 99:FFFBFA
+ *   primary          10:0D0000 20:320002 30:5C0007 40:8B000F 50:BB071B 60:DE3C3B 70:FF645D 80:FFA097 90:FFD2CC 99:FFFBFA
+ *   secondary        10:00030D 20:0D1624 30:242E3E 40:3D4859 50:586476 60:758194 70:929FB3 80:B1BFD3 90:D1DFF4 99:FAFCFF
+ *   tertiary         10:060300 20:201300 30:3F2900 40:604100 50:835A00 60:A2782D 70:C2964D 80:E3B56D 90:FFD79A 99:FFFBF6
+ *   neutral          10:030305 20:141619 30:2C2E31 40:46484B 50:616367 60:7E8084 70:9C9EA2 80:BBBEC2 90:DCDEE2 99:FAFCFF
+ *   neutral_variant  10:020306 20:13161B 30:2B2E33 40:44484E 50:60636A 60:7C8087 70:9A9FA5 80:BABEC5 90:DADEE5 99:FAFCFF
+ *   error            10:0C0000 20:300300 30:5A0900 40:871300 50:B61E00 60:DA452C 70:FE674C 80:FFA18F 90:FFD2C9 99:FFFBFA
  */
 
 /** 一整套 M3 颜色角色；浅色 / 深色各一份实例，由 [NumeTheme] 映射进 colorScheme。 */
@@ -53,71 +56,71 @@ val NumeLightColors = NumeColorRoles(
     primary = Color(0xFFC92027),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFD2CC),
-    onPrimaryContainer = Color(0xFF0D0000),
-    secondary = Color(0xFF5E3E3B),
+    onPrimaryContainer = Color(0xFF5C0007),
+    secondary = Color(0xFF3D4859),
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFFBD3CF),
-    onSecondaryContainer = Color(0xFF0D0000),
-    tertiary = Color(0xFF554700),
+    secondaryContainer = Color(0xFFD1DFF4),
+    onSecondaryContainer = Color(0xFF242E3E),
+    tertiary = Color(0xFF604100),
     onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFF5DE82),
-    onTertiaryContainer = Color(0xFF050300),
-    error = Color(0xFF8B000B),
+    tertiaryContainer = Color(0xFFFFD79A),
+    onTertiaryContainer = Color(0xFF3F2900),
+    error = Color(0xFF871300),
     onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFFFD2CC),
-    onErrorContainer = Color(0xFF0D0000),
-    surface = Color(0xFFFFF6F5),
-    onSurface = Color(0xFF060202),
-    surfaceDim = Color(0xFFDDD1CF),
-    surfaceBright = Color(0xFFFFF6F5),
+    errorContainer = Color(0xFFFFD2C9),
+    onErrorContainer = Color(0xFF5A0900),
+    surface = Color(0xFFF6F9FD),
+    onSurface = Color(0xFF030305),
+    surfaceDim = Color(0xFFD2D4D8),
+    surfaceBright = Color(0xFFFAFCFF),
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFFBEEED),
-    surfaceContainer = Color(0xFFF4E8E6),
-    surfaceContainerHigh = Color(0xFFEEE1E0),
-    surfaceContainerHighest = Color(0xFFE7DBD9),
-    surfaceVariant = Color(0xFFEFD8D5),
-    onSurfaceVariant = Color(0xFF3A2927),
-    outline = Color(0xFF725E5C),
-    outlineVariant = Color(0xFFCEB8B5),
-    inverseSurface = Color(0xFF1C1413),
-    inverseOnSurface = Color(0xFFF8EBEA),
+    surfaceContainerLow = Color(0xFFF3F5F9),
+    surfaceContainer = Color(0xFFE9EBEF),
+    surfaceContainerHigh = Color(0xFFE2E5E9),
+    surfaceContainerHighest = Color(0xFFD8DBDF),
+    surfaceVariant = Color(0xFFDADEE5),
+    onSurfaceVariant = Color(0xFF52555C),
+    outline = Color(0xFF60636A),
+    outlineVariant = Color(0xFFBABEC5),
+    inverseSurface = Color(0xFF141619),
+    inverseOnSurface = Color(0xFFECEFF3),
     inversePrimary = Color(0xFFFFA097),
     surfaceTint = Color(0xFFC92027),
 )
 
 // ── 深色 ────────────────────────────────────────────────────────
 val NumeDarkColors = NumeColorRoles(
-    primary = Color(0xFFFFA097),
+    primary = Color(0xFFFF645D),
     onPrimary = Color(0xFF320002),
-    primaryContainer = Color(0xFF5C0007),
+    primaryContainer = Color(0xFF8B000F),
     onPrimaryContainer = Color(0xFFFFD2CC),
-    secondary = Color(0xFFD9B3AF),
-    onSecondary = Color(0xFF270D0B),
-    secondaryContainer = Color(0xFF422522),
-    onSecondaryContainer = Color(0xFFFBD3CF),
-    tertiary = Color(0xFFD4BD62),
-    onTertiary = Color(0xFF1C1600),
-    tertiaryContainer = Color(0xFF372D00),
-    onTertiaryContainer = Color(0xFFF5DE82),
-    error = Color(0xFFFFA196),
-    onError = Color(0xFF320001),
-    errorContainer = Color(0xFF5D0004),
-    onErrorContainer = Color(0xFFFFD2CC),
-    surface = Color(0xFF1C1413),
-    onSurface = Color(0xFFE7DBD9),
-    surfaceDim = Color(0xFF1C1413),
-    surfaceBright = Color(0xFF352B2A),
-    surfaceContainerLowest = Color(0xFF0A0404),
-    surfaceContainerLow = Color(0xFF150D0C),
-    surfaceContainer = Color(0xFF211817),
-    surfaceContainerHigh = Color(0xFF261D1C),
-    surfaceContainerHighest = Color(0xFF352B2A),
-    surfaceVariant = Color(0xFF3A2927),
-    onSurfaceVariant = Color(0xFFCEB8B5),
-    outline = Color(0xFF8F7B78),
-    outlineVariant = Color(0xFF3A2927),
-    inverseSurface = Color(0xFFE7DBD9),
-    inverseOnSurface = Color(0xFF1C1413),
+    secondary = Color(0xFFB1BFD3),
+    onSecondary = Color(0xFF0D1624),
+    secondaryContainer = Color(0xFF242E3E),
+    onSecondaryContainer = Color(0xFFD1DFF4),
+    tertiary = Color(0xFFE3B56D),
+    onTertiary = Color(0xFF201300),
+    tertiaryContainer = Color(0xFF3F2900),
+    onTertiaryContainer = Color(0xFFFFD79A),
+    error = Color(0xFFFFA18F),
+    onError = Color(0xFF300300),
+    errorContainer = Color(0xFF5A0900),
+    onErrorContainer = Color(0xFFFFD2C9),
+    surface = Color(0xFF121417),
+    onSurface = Color(0xFFDCDEE2),
+    surfaceDim = Color(0xFF121417),
+    surfaceBright = Color(0xFF2F3033),
+    surfaceContainerLowest = Color(0xFF06070A),
+    surfaceContainerLow = Color(0xFF0C0D10),
+    surfaceContainer = Color(0xFF1B1D20),
+    surfaceContainerHigh = Color(0xFF222427),
+    surfaceContainerHighest = Color(0xFF2C2E31),
+    surfaceVariant = Color(0xFF23272C),
+    onSurfaceVariant = Color(0xFFBABEC5),
+    outline = Color(0xFF7C8087),
+    outlineVariant = Color(0xFF2D3036),
+    inverseSurface = Color(0xFFDCDEE2),
+    inverseOnSurface = Color(0xFF141619),
     inversePrimary = Color(0xFF8B000F),
-    surfaceTint = Color(0xFFFFA097),
+    surfaceTint = Color(0xFFFF645D),
 )

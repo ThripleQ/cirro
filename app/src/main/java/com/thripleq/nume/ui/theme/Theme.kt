@@ -79,12 +79,13 @@ private fun NumeColorRoles.toDarkColorScheme(): ColorScheme = darkColorScheme(
 fun NumeTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     /**
-     * 动态取色（Material You）。
+     * 动态取色（Material You / 壁纸取色），Android 12+ 生效。
      *
-     * **注意**：置为 true 时 Android 12+ 会用壁纸取色**整套替换**我们的品牌调色板
-     * （[Palette.kt] 与 [NumeInk] 全部失效）。当前 `MainActivity` 显式传 false，
-     * 一是保住品牌红，二是因为动态色在部分机型派生出偏深的 `onBackground`、
-     * 深色主题下文字看不清（那次修复的注释还在）。要重新启用前先回归这两点。
+     * 置 true 会用壁纸生成的整套色**顶掉** [Palette.kt]：品牌红没了，[NumeInk] /
+     * [NumeFade] 这些刻意的常量也失去意义，界面长相变成「用户壁纸的函数」。
+     * 所以 `MainActivity` 显式传 false —— 这是有意的取舍，不是没接。
+     * 想换成跟随壁纸：把那一行改成 `dynamicColor = true` 即可（深色下若出现
+     * `onBackground` 偏深看不清的情况，优先怀疑这里）。
      */
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit,

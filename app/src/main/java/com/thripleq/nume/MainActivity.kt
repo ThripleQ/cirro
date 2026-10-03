@@ -47,9 +47,10 @@ class MainActivity : ComponentActivity() {
         installJankStats()
         requestNotificationPermissionIfNeeded()
         setContent {
-            // 禁用 Material You 动态取色: 在某些设备/壁纸下 dynamicDarkColorScheme
-            // 派生的 onBackground/onSurface 偏深, 导致未指定 color 的 Text 在深色主题
-            // 下显示成接近背景的深色, 看不见. 用我们验证过的 DarkColorScheme.
+            // 不走 Material You 动态取色（壁纸取色）: 那会用壁纸色整套顶掉 Palette.kt,
+            // 品牌红消失; 且部分机型/壁纸下 dynamicDarkColorScheme 派生的 onSurface 偏深,
+            // 深色下未指定 color 的 Text 会看不见. 改用我们逐对验证过对比度的调色板.
+            // 想跟随壁纸就把这里改成 dynamicColor = true.
             NumeTheme(dynamicColor = false) {
                 NumeApp()
             }

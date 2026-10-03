@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -177,11 +178,15 @@ private fun ProfileBodyUi(
     avScope: AnimatedVisibilityScope?,
     bottomPadding: Dp,
 ) {
-    // 避让必须放在滚动内容内部（同 TrackListScreen 的 contentPadding 做法）：
+    // 底部避让必须放在滚动内容内部（同 TrackListScreen 的 contentPadding 做法）：
     // 放在外层 padding 会在岛背后留一条永久空白带，卡片进不去、岛像贴在画布上。
+    // 顶部反过来：状态栏让位放在**滚动之外**，因为本页没有钉顶标题条（探索页/搜索页
+    // 有大标题条兜住），内容直接从最上方起 —— 不裁掉状态栏那一条，第一张卡（登录卡）
+    // 会被状态栏和挖孔压住，滚动时也会一直钻到时钟底下。
     Column(
         Modifier
             .fillMaxSize()
+            .statusBarsPadding()
             .verticalScroll(scrollState)
             .padding(start = 16.dp, end = 16.dp, bottom = bottomPadding),
     ) {

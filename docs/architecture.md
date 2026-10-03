@@ -155,10 +155,17 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 ### 三条不可动摇的原则
 1. **不偷改品牌色**：浅色 `primary` 用 SEED 本色，不套 M3 惯例 tone 40（那会把
    `#C92027` 压成 `#8B000F`）。白字压品牌红实测 5.6:1 达 AA，没有理由压暗。
-2. **不偷改明度**：暗色 `surface` 锚现网实测档（`#111214`≈tone 17 → 取 20），不用 M3 的
-   tone 6（`#020000`）——后者会把整个 App 静默调暗。这次只把**色相**从冷蓝灰拧到品牌红调。
-3. **层级不许被打平**：`on_*` 先试 M3 规范 tone（次要文字 30/80，而非极端 10/90），
-   只有对比度不达标才向大反差修正。否则 `onSurfaceVariant` 撞上 `onSurface`，主次文字同色。
+2. **中性面不与品牌色同色相**：表面走独立的近无彩冷调（hue 260、彩度 0.006），不跟着
+   seed 染色。曾把中性面按品牌红色相染（彩度 0.014），低彩度暖调成片铺开就读作
+   「发粉、发脏」，暗色尤其是一整片暖褐底（`#1C1413` 一系）。明度上暗色 `surface` 锚
+   tone 19（`#121417`），不用 M3 的 tone 6（`#020000`，会把整个 App 静默调暗一大截）。
+3. **层级不许被打平**：`on_*` 先试规范 tone，只有对比度不达标才向大反差修正。注意本脚本
+   tone = OKLab L，同号 tone 比 M3 的 HCT tone 暗不少——故次要文字取 **45/80**（不是 30/80），
+   否则 `onSurfaceVariant` 会撞上 `onSurface`，主次文字同色。
+
+与之配套的色相分工：`primary` 品牌红（唯一大声说话的）、`secondary` 冷蓝灰 258°（选中胶囊、
+缺封面占位等「安静的容器」）、`tertiary` 暖金 78°（点睛）、`error` 偏橘 32°（与品牌红分开，
+报错文案不被当成品牌色）。
 
 脚本 `verify()` 会逐对打印 PASS/FAIL 并额外检查「主次容器可区分」「主次文字可区分」
 「容器明度单调」，**不通过就拒绝写入**。
@@ -168,10 +175,19 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 所以 `NumeInk.*`（图上文字/水印）在明暗主题下是同一组白色。若改用 `onSurface`，浅色主题
 下深字压中亮度封面直接看不清。`NumeFade.*` 收纳必须"主题色 × 透明度"的散落的魔数。
 
+### 明暗跟随系统
+`NumeTheme(darkTheme = isSystemInDarkTheme())` 默认跟随系统的深色开关（含 Android 的
+「自动/按时间切换」）。平台侧另有两个「Compose 第一帧之前」的底色必须与主题同步：
+`values/colors.xml` 与 `values-night/colors.xml` 里的 `nume_splash_background` /
+`nume_window_background`（都锚 `surface`），以及 `themes.xml` 里 `Theme.Nume` 的
+`android:windowBackground`。值不同步就会在启动/旋转时闪一帧反差色。
+
 ### 动态取色（Material You）
-`dynamicColor = true` 时 Android 12+ 会**整套替换**本调色板（`Palette.kt` 与 `NumeInk` 全失效）。
-`MainActivity` 当前显式传 false：一是保住品牌红，二是动态色在部分机型派生偏深的
-`onBackground`、暗色主题下文字看不清（那次修复的注释还在）。要重启先回归这两点。
+`dynamicColor = true` 时 Android 12+ 会用壁纸色**整套替换**本调色板（`Palette.kt` 与
+`NumeInk` 全失效），界面长相变成「用户壁纸的函数」。`MainActivity` 当前显式传 false 是
+**有意的取舍**（保住品牌红），不是没接；另一个历史原因是部分机型派生偏深的 `onBackground`
+会让暗色下未指定 color 的 `Text` 看不见。想跟随壁纸就把 `MainActivity` 那一行改成 true
+（`NumeTheme` 的默认值本来就是 true）。
 
 ## 十、路线图 / 当前状态
 
