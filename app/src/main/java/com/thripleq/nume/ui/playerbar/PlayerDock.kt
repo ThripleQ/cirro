@@ -378,18 +378,23 @@ internal fun PlayerBar(
             // 官方 anchoredDraggable：竖向把播放面拉起来（内部处理 slop 仲裁 / 松手吸附 / 甩动）。
             // reverseDirection=true：上滑（y 减小）→ offset 增大 → 展开；下滑 → 收起。
             // 迷你条在 dock 里、dock 被播放面盖住时（全屏）不可点，天然不冲突。
+            // 点按展开期间禁用：那段时间 progress 读的是点按时间轴（entry），此时若手动拖动改了
+            // offset，两个数据源会打架（手指在动、画面不动）。420ms 后自动交回。
             .anchoredDraggable(
                 state.sheetState,
                 flingBehavior = state.flingBehavior,
+                enabled = !state.tapExpand,
                 reverseDirection = true,
                 orientation = Orientation.Vertical,
             )
-            // 点击 → 胶囊原位展开到全屏（经过卡片矩形，一气呵成）。
+            // 点击 → 展开播放页。两条路，由 PlayerDockState.openByTap 自己分派：
+            // 壳还收在迷你条原位 → 点按专用时间轴（跳过分裂那一拍，内容全程参与运镜）；
+            // 壳已在卡片档再点 → 走 open(toFull=true)，spring 从当前 offset 直达全屏。
             // 若拖动被 anchoredDraggable 消费，点击不会触发。
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-            ) { state.open(toFull = true) }
+            ) { state.openByTap() }
             // 横滑切歌：独立 detector；与竖向 anchoredDraggable 方向正交，互不干扰。
             .pointerInput(player) {
                 var accumulated = 0f

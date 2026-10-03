@@ -266,6 +266,19 @@ object Motion {
     )
 
     /**
+     * 点按展开（点迷你条 → 全屏）的时长，配 [EmphasizedDecelerate]。
+     *
+     * 与 [SheetExpand] 的分工：那条是把 offset 从当前位置弹到某个锚点的落档曲线（spring），
+     * 行程不定、尾段收敛慢；点按走的是一条**固定行程的专用时间轴**
+     * （见 `PlayerDockState.openByTap`）—— tween 才能让全程可控、落位干净。
+     * spring 跑长距离那条指数尾巴，正是此前「点一下要等它慢慢蹭到位」的来源。
+     *
+     * 420ms：略短于手势落档区间（[SheetFullMinMs]–[SheetFullMaxMs]）—— 点按是「我要看播放页」
+     * 的明确指令，起手要快；[EmphasizedDecelerate] 前段走掉大半行程，观感上更快。
+     */
+    const val TapExpandMs = 420
+
+    /**
      * 圆角收敛系数：`1` = 保持父级真圆角，`0` = 完全收敛。
      *
      * 前 [hold] 段恒为 1，之后以 smoothstep 落到 0——保证 p=0 与父级卡片像素级吻合，

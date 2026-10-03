@@ -132,6 +132,23 @@ internal fun PlayerPage(
     val dockCornerPx = with(density) { 26.dp.toPx() }
     val statusBarTopPx = with(density) { WindowInsets.statusBars.getTop(density).toFloat() }
 
+    // ── 点按展开的形态改派（来源见 PlayerDockState.openByTap）──────────────────────
+    // 点迷你条走的是一条**独立时间轴**：它与手势共用一个 progress 量纲（0..2），但形态上要
+    // 跳过「分裂」那一拍（挤腰/断缝/内收是「从迷你条往上拖」的探索语言，点按只是白走路程），
+    // 并把「盖满全屏」铺开到后半段 —— 拖动路径里它挤在最后 17%，点按要的是全程都在变。
+    // 两处改派都只在点按期间生效，手势拖动一字不改。
+    val tapExpand = state.tapExpand
+
+    /** 「盖满全屏」的起点（点按路径）：从这里开始把壳推满，而不是像拖动路径那样挤在最后 17%。 */
+    val tapFillStart = 0.45f
+
+    /** 点按行程的「盖满全屏」权重：输入是行程比 t0（0..1）。 */
+    fun tapFillT(t0: Float) = ((t0 - tapFillStart) / (1f - tapFillStart)).coerceIn(0f, 1f)
+
+    /** 点按路径里内容淡入 / 收起键浮现所占的行程比（见下面的 contentAlpha / headerAlpha）。 */
+    val tapContentIn = 0.25f
+    val tapHeaderIn = 0.15f
+
     fun lerpRect(a: Rect, b: Rect, t: Float) = Rect(
         a.left + (b.left - a.left) * t,
         a.top + (b.top - a.top) * t,
@@ -154,13 +171,25 @@ internal fun PlayerPage(
         val dockTopPx = fullHeightPx - dockHeightPx
         val full = Rect(0f, 0f, fullWidthPx, fullHeightPx)
         val t0 = p.coerceIn(0f, 1f)
+        // 点按行程比。**不能用 t0** —— t0 是「分裂是否走完」的归一化量，在 p>1 时恒为 1；
+        // 拿它当行程比，会让「盖满全屏」和内容运镜在行程一半就全部做完、后半段只剩壳在收尾
+        // （与拖动路径"只动最后 17%"是同一类偏差，只是反了过来）。
+        val tapT = (p / 2f).coerceIn(0f, 1f)
         // 卡片→全屏的插值在 [HALF_ANCHOR_P, 2] 段内进行：卡片档先稳定停留到 1.66，
         // 再继续拉才贴满屏（此前 p>1 就开始盖满，卡片档形同虚设、高度只有半屏）。
-        val t1 = ((p - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
+        // 点按路径不走这套：它没有「卡片档」这个概念，直接从 45% 行程起把壳推满（见 tapFillT）。
+        val t1 = if (tapExpand) tapFillT(tapT)
+                 else ((p - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
         val extT = (t0 / SPLIT).coerceIn(0f, 1f)
-        val splitT = ((t0 - SPLIT) / (1f - SPLIT)).coerceIn(0f, 1f)
+        // 分裂形态量：点按期间整段归零 —— 不挤腰（腰是 `waistT` 从它派生的）、
+        // 左右不收（`inset` 由它线性给出）、dock 顶角不回涨（下面的 dockCornerCur）。
+        // 于是气泡一路贴着屏边充气，形态上只剩「长大」这一件事。
+        val splitT = if (tapExpand) 0f
+                     else ((t0 - SPLIT) / (1f - SPLIT)).coerceIn(0f, 1f)
         val squeezeT = splitSqueezeT(splitT)
-        val breakT = splitBreakT(splitT)
+        // 断缝改用 t1：点按路径里「缝打开」与「壳底推向屏底」本来就是同一件事（都在落位阶段），
+        // 且这样终点与拖动路径严格一致（p=2 时 breakT 都是 1 → 底角 26dp、颜色最亮档）。
+        val breakT = if (tapExpand) t1 else splitBreakT(splitT)
         val waistT = splitWaistCurve(splitT)
         // dock 当前顶角半径：扩展段 26→0 收平，分裂段随 splitT 长回 26dp 并叠挤腰鼓包
         // （splitT=0.5 峰值 36dp，断开后落回 26dp）。
@@ -175,12 +204,14 @@ internal fun PlayerPage(
         // 不再让分裂段把顶"钉在状态栏不动"——那正是之前感觉不跟手的根因：拖一截壳顶却不升。
         // 细胞分裂的形态（左右内收/底缝/圆角、dock 角联动）全部保留，叠加在上升之上。
         val top = dockTopPx * (1f - p / 2f)
-        val bottom = if (t0 < SPLIT) {
+        val bottom = if (t0 < SPLIT && !tapExpand) {
             // 扩展段：底边从背后包住 dock 当前圆角（圆角收平到 0 时恰为 dockTop）。
             dockTopPx + dockCornerCur
         } else {
             // 分裂段：挤腰时底边钉在 dockTop（两侧圆角涨大内收成腰、位置不动）；
             // 断开后缝从 0 连续打开（→ dockTop-gapPx）。
+            // 点按路径走同一支：它的 breakT = t1 在行程前半恒为 0，底边正好钉在 dockTop，
+            // 与上一支在 SPLIT 处的极限（dockCornerCur → 0）逐值相接，不会跳。
             dockTopPx - gapPx * breakT
         }
         val inset = edgePx * splitT
@@ -199,15 +230,21 @@ internal fun PlayerPage(
     val p = state.progress
     val rect = shellRect(p)
     val t0 = p.coerceIn(0f, 1f)
-    val t1 = ((p - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
-    val splitT = ((t0 - SPLIT) / (1f - SPLIT)).coerceIn(0f, 1f)
+    // 点按行程比（0..1）：理由见 shellRect 内同名量 —— 不能用被钳位的 t0。
+    val tapT = if (tapExpand) (p / 2f).coerceIn(0f, 1f) else 0f
+    val t1 = if (tapExpand) tapFillT(tapT)
+             else ((p - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
+    // 与 shellRect 内同一套改派（同一个 tapFillT）：两处必须一致，否则壳与圆角/颜色错拍。
+    val splitT = if (tapExpand) 0f
+                 else ((t0 - SPLIT) / (1f - SPLIT)).coerceIn(0f, 1f)
     // 圆角统一（修复 18/26/19.5 混用）：壳四角与 dock 同族、全部落在 26dp——
     // 顶角全程 26dp（与 dock 同形，不收平、不换尺寸）；
     // 底角：扩展段方角（与 dock 一体）；分裂段「挤腰」时涨到 36dp 让两侧内收成腰，
     // 「断开」后落回 26dp（与 dock 顶角同半径）——不是两块平板对切。
     val waistCornerPx = with(density) { WAIST_CORNER_DP.dp.toPx() }
     val squeezeT = splitSqueezeT(splitT)
-    val breakT = splitBreakT(splitT)
+    // 断缝量：拖动路径由分裂段给出（断开后缝打开）；点按路径改用 t1 —— 理由见 shellRect 内同名处。
+    val breakT = if (tapExpand) t1 else splitBreakT(splitT)
     val topCornerPx = dockCornerPx
     val bottomCornerPx =
         waistCornerPx * squeezeT * (1f - breakT) + dockCornerPx * breakT
@@ -230,17 +267,25 @@ internal fun PlayerPage(
         MaterialTheme.colorScheme.surfaceContainerHighest,
         t1,
     )
-    // 内容淡入：扩展段气泡长起来时内容浮现，分裂完成（p=1）已基本可见（≈60%），
-    // 壳长到卡片档（p=HALF_ANCHOR_P）才全亮——避免「壳还矮、内容已全亮」的挤压感。
-    val contentAlpha = (p / HALF_ANCHOR_P).coerceIn(0f, 1f)
-    // 顶部拉手/收起：分裂成卡后才浮现。
-    val headerAlpha = splitT
+    // 内容淡入：拖动路径按「气泡长起来」的节奏渐显（壳长到卡片档才全亮，避免壳还矮、内容
+    // 已全亮的挤压感）；点按路径快得多 —— 它全程只有 420ms，慢慢浮现会读成"糊"，前 25%
+    // 行程（约 100ms）就该让内容立起来，剩下三帧都在做运镜。
+    val contentAlpha = if (tapExpand) (tapT / tapContentIn).coerceIn(0f, 1f)
+                       else (p / HALF_ANCHOR_P).coerceIn(0f, 1f)
+    // 顶部拉手/收起：拖动路径分裂成卡后才浮现；点按路径要**立刻**出现 —— 否则 420ms 的展开里
+    // 前段根本没有收起键，用户点进去想退却发现按钮还没长出来。
+    val headerAlpha = if (tapExpand) (tapT / tapHeaderIn).coerceIn(0f, 1f) else splitT
     // 胶囊→卡片段：内容固定为卡片档尺寸，由壳裁剪揭示（封面不随气泡长大）；
     // 过卡片锚点后才切换成逐帧连续过渡到全屏，避免半档处布局跳变。
+    // 点按路径没有这层冻结：内容档位随行程全程 0→1，壳长大与内容运镜同时发生 ——
+    // 「展开感」正来自这里（拖动路径下这一步全挤在最后 17%，点上去就成了"先卡片再全屏"）。
     val pastCard = p > HALF_ANCHOR_P
     val cardRect = shellRect(HALF_ANCHOR_P)
-    val contentProgress = if (pastCard) p else HALF_ANCHOR_P
-    val contentRect = if (pastCard) rect else cardRect
+    val contentProgress = if (tapExpand) HALF_ANCHOR_P + (2f - HALF_ANCHOR_P) * tapT
+                          else if (pastCard) p else HALF_ANCHOR_P
+    // 点按路径的壳矩形始终交给内容：内容跟着壳一起长（不做"按全屏版式排好再被揭示"，
+    // 那样壳还矮时内容会被裁掉大半）。
+    val contentRect = if (tapExpand || pastCard) rect else cardRect
 
     // 沉浸：只在接近全屏时隐藏系统导航栏（半高时保持显示，dock 的 navigationBarsPadding
     // 布局稳定）；收起/回落到半高时恢复。用 snapshotFlow 轮询 progress，不引重组。
@@ -305,9 +350,12 @@ internal fun PlayerPage(
                 // 官方 anchoredDraggable：卡内上滑续开到全屏、下拉回 dock/收起。
                 // 松手吸附/甩动由 flingBehavior 处理：全屏那一段用缓入缓出 S 曲线（先加速后减速），
                 // 卡片/收起保持弹簧。reverseDirection=true：上滑（y 减小）→ offset 增大 → 展开。
+                // 点按展开期间禁用：那段时间 progress 读的是点按时间轴（entry），此时若手动拖动
+                // 改了 offset，两个数据源会打架（手指在动、画面不动）。落位后自动交回。
                 .anchoredDraggable(
                     state.sheetState,
                     flingBehavior = state.flingBehavior,
+                    enabled = !tapExpand,
                     reverseDirection = true,
                     orientation = Orientation.Vertical,
                 ),

@@ -1,11 +1,14 @@
 package com.thripleq.nume.ui.playerbar
 
 import com.thripleq.nume.ui.theme.Motion
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.DraggableAnchors
 import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
+import androidx.compose.foundation.gestures.snapTo
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,7 +35,14 @@ import kotlinx.coroutines.launch
 
 /** 播放页「打开程度」：0 = 完全收起在迷你条胶囊，2 = 盖满全屏。
  *  两段式：p∈[0,1] 胶囊原位展开成悬浮卡（dock 保持可见）；
- *  p∈[1,2] 卡片放大盖满全屏（dock 淡出）。 */
+ *  p∈[1,2] 卡片放大盖满全屏（dock 淡出）。
+ *
+ *  这是**拖动路径**的形状。点迷你条的展开走 [PlayerDockState.openByTap]，它共用同一个 0..2
+ *  量纲但形态另有改派：跳过「分裂」那一拍（不挤腰/不断缝/不内收），「盖满全屏」铺开到后半段，
+ *  内容档位随行程全程 0→1。具体在 [PlayerPage] 的 shellRect/圆角/颜色/内容档位处按
+ *  [PlayerDockState.tapExpand] 分派。
+ *  这套改派只在「壳还收在迷你条原位」时走；壳已在卡片档再点播放条，[openByTap] 会交回
+ *  [PlayerDockState.open]`(toFull = true)`，即拖动路径的形状 + spring 直达全屏。 */
 
 /** 第一档（胶囊→卡片）的分裂点：progress ∈ [0,SPLIT] 是「扩展」，[SPLIT,1] 是「分裂」。 */
 internal const val SPLIT = 0.5f
@@ -56,7 +66,8 @@ internal val WAIST_CORNER_DP = 36f
  * 同源于 [Motion]。刻意不改弹性数值——细胞分裂的吸附手感已在真机调过，盲改风险高于收益。
  */
 internal val SPRING_CLOSE = Motion.SheetSettle
-/** 点击整页展开：低阻尼带一点弹性过冲 + 中低刚度，既有生长过程可见、又跟手不闷。 */
+/** 点「播放全部」直达全屏：低阻尼带一点弹性过冲 + 中低刚度，既有生长过程可见、又跟手不闷。
+ *  （点迷你条走的不是这条 —— 那条是 [PlayerDockState.openByTap] 的专用时间轴。） */
 internal val SPRING_FULL = Motion.SheetExpand
 
 /** 分裂段进度 [0,1] 拆成两拍：挤腰 ([0,SPLIT_SQUEEZE]) 与 断开 ([SPLIT_SQUEEZE,1])。 */
@@ -114,10 +125,32 @@ class PlayerDockState internal constructor(
     var anchorsReady by mutableStateOf(false)
         internal set
 
-    /** 胶囊展开进度 0..2（[0,1]=胶囊→卡片，[1,2]=卡片→全屏），由 [AnchoredDraggableState.offset] 归一化。
-     *  只应在 draw 阶段（graphicsLayer）读，勿在组合读。 */
+    /** 胶囊展开进度 0..2（[0,1]=胶囊→卡片，[1,2]=卡片→全屏）。
+     *
+     *  **两个数据源**：手势/吸附走 [sheetState.offset]（拖动路径，细胞分裂那套形态语言）；
+     *  点迷你条的展开走 [entry]（点按专用时间轴，跳过分裂、内容全程参与运镜）。
+     *  选哪一个由 [tapExpand] 决定 —— 两套都归一到同一个 0..2 量纲，所以所有读取方
+     *  （壳几何、dock 淡出、系统栏隐藏、内容档位）不必知道自己在哪套里。
+     *
+     *  拖动中读 offset 是"跟手"的前提，点按时要读一条**形态不同**的路径，这才需要一个独立源；
+     *  若强行让点按也走 offset，就只能靠 `animateTo` 一条曲线跑完，形态仍是拖动那套。
+     *
+     *  读取方既有组合阶段的（PlayerPage 的壳几何、圆角、颜色），也有绘制阶段的（dock 的
+     *  graphicsLayer、系统栏显隐）—— 都走这一个口子，所以换数据源时它们全都跟着切。 */
     val progress: Float
-        get() = (sheetState.offset / travelPx).coerceIn(0f, 2f)
+        get() = if (tapExpand) entry.value * 2f
+                else (sheetState.offset / travelPx).coerceIn(0f, 2f)
+
+    /**
+     * 点按展开的等效行程：0 = 收起在迷你条，1 = 盖满全屏。
+     *
+     * 与 [sheetState] **完全独立** —— 手势拖动不碰它，它只在 [openByTap] 期间驱动 [progress]。
+     */
+    val entry = Animatable(0f)
+
+    /** 点按展开是否在跑。[progress] 据此选数据源；手势据此让路（见 [openByTap]）。 */
+    var tapExpand by mutableStateOf(false)
+        internal set
 
     /**
      * 迷你条胶囊的窗口坐标 Rect（**遗留字段：当前无任何读取方**）。
@@ -136,9 +169,9 @@ class PlayerDockState internal constructor(
 
     private var animJob: Job? = null
 
-    /** 点击迷你条/列表项/我的：整页动画弹出。
+    /** 点击迷你条：整页动画弹出。
      *  [toFull] = false 时两段式先弹到卡片（Half），可继续上滑看全屏；
-     *  true 时直接盖满全屏（列表项点歌/点击迷你条用）。 */
+     *  true 时直接盖满全屏（「播放全部」用）。 */
     fun open(toFull: Boolean = false) {
         animJob?.cancel()
         animJob = scope.launch {
@@ -156,10 +189,81 @@ class PlayerDockState internal constructor(
         }
     }
 
+    /**
+     * **点迷你条专用**：从播放条位置直接展开到全屏（点按动画）。
+     *
+     * ## 为什么不复用 [open] 的 `toFull = true`
+     * `open` 是让 `p` 从 0 跑到 2 —— 这条路径**是给手势拖动准备的**：它沿途会走
+     * 「气泡充气 → 挤腰 → 断缝成悬浮卡 → 再盖满全屏」四拍。点按并不需要「分裂」这一拍
+     * （那是从迷你条往上拖的探索语言），更糟的是 [PlayerPage] 里内容档位被钉在
+     * `HALF_ANCHOR_P`：`p ≤ 1.66` 期间 `sc` 恒为 0，**83% 的行程里内容形态一动不动**，
+     * 真正的运镜全挤在最后 17%，再叠上 [SPRING_FULL]（低刚度 spring 跑长距离）的长尾
+     * 减速 —— 观感就是「先变出一个卡片，再慢吞吞扩到全屏」。用户 2026-10-03：
+     * 「现在是先到卡片状态再扩展到全屏，太拖沓」。
+     *
+     * ## 这条时间轴做了什么
+     * 1. 形态上跳过分裂：不挤腰、不断缝、左右不收，一路贴着屏边充气（[PlayerPage] 的
+     *    `shellRect`/`shellShape` 在 [tapExpand] 期间把分裂的形态量改派）。
+     * 2. 让「盖满全屏」铺开到后半段，而不是最后 17% 做一次突袭。
+     * 3. 内容档位 `sc` 随行程**全程** 0→1：壳长大与内容运镜同时发生 —— 展开感来自这里。
+     *
+     * ## 与拖动路径的交接
+     * 跑完时把 [sheetState] 直接 `snapTo(Full)`，再撤 [tapExpand] —— 此刻两侧都等于
+     * `p = 2`，切换数据源无跳变，之后上滑/下拉/收起一切照旧。
+     * 动画期间 [PlayerPage] 会禁用手势（见那里的 `anchoredDraggable(enabled = …)`），
+     * 否则手动拖动会改 offset、而 [progress] 仍在读 [entry]，两者状态不一致。
+     *
+     * ## 只负责「从迷你条原位起跳」：已在卡片档再点走回 [open]
+     * 上面这套形态改派全部按 `entry: 0→1` 这段独立行程标定 —— 它成立的前提是**壳此刻还
+     * 收在迷你条原位**。壳已经在卡片上时再点一次，若还从 `entry = 0` 跑，画面会先掉回迷你条
+     * 再重新长一遍（`progress` 从 1.66 瞬跳到 0）。卡片→全屏本来就只剩一段贴边/收角/dock 淡出
+     * 的形变，用 [open] 的 `toFull = true`（[SPRING_FULL] 那条低刚度 spring）从当前 offset
+     * 弹上去即可 —— 那也正是点按时间轴出现之前的行为，用户 2026-10-03 明确要保留：
+     * 「我在卡片状态再点播放条应该用曾经的那个方式」。
+     */
+    fun openByTap() {
+        // 点按时间轴正在跑（420ms 窗口）：重复点击忽略 —— 这段时间 [progress] 读的是 [entry]，
+        // 中途切回 offset 会让壳跳回迷你条。
+        if (tapExpand) return
+        // 壳已离开迷你条原位（卡片档、或拖到半路）：交回 [open]，从当前 offset 直达全屏。
+        // 阈值取 offset > 0 而非「== 卡片锚点」，是为了连「上滑松手后还在回弹的半路」也算进去——
+        // 那种位置再点，用户期望的也是继续往上走，而不是塌回迷你条。
+        if (sheetState.offset > 0f) {
+            open(toFull = true)
+            return
+        }
+        animJob?.cancel()
+        animJob = scope.launch {
+            if (!open) {
+                open = true
+                // 同上：等壳组合就位，第一帧就是迷你条本身。
+                withFrameNanos { }
+            }
+            // 先 snap 到 0 再开门：若上一次点按动画被中途取消，entry 可能停在半路，
+            // 直接开 tapExpand 会让第一帧从半路起跳。
+            entry.snapTo(0f)
+            tapExpand = true
+            entry.animateTo(1f, tween(Motion.TapExpandMs, easing = Motion.EmphasizedDecelerate))
+            snapshotFlow { anchorsReady }.first { it }
+            sheetState.snapTo(PlayerSheet.Full)
+            tapExpand = false
+        }
+    }
+
     /** 收起箭头/返回键：无论当前在哪个档位，都缩回迷你条。 */
     fun close() {
         animJob?.cancel()
-        animJob = scope.launch { runClose() }
+        animJob = scope.launch {
+            // 点按展开还没落位就点了收起（窗口极短：收起键在点按行程 15% 之后才可见）：
+            // 先把行程交接给锚点状态再照常收起。不交接的话 [progress] 会从 entry 切回
+            // `offset`（此刻仍是 Closed），壳**瞬间跳回迷你条**。
+            if (tapExpand) {
+                snapshotFlow { anchorsReady }.first { it }
+                sheetState.snapTo(PlayerSheet.Full)
+                tapExpand = false
+            }
+            runClose()
+        }
     }
 
     private suspend fun runClose() {
@@ -171,7 +275,8 @@ class PlayerDockState internal constructor(
     }
 }
 
-/** 在 [PlayerDock] 外部持有同一状态（NumeApp 需要列表项/我的点歌弹开播放页）。 */
+/** 在 [PlayerDock] 外部持有同一状态（NumeApp 需要让歌单页的「播放全部」弹开播放页；
+ *  点迷你条的展开由 [PlayerDock] 内部自己发起）。 */
 @Composable
 fun rememberPlayerDockState(): PlayerDockState {
     val scope = rememberCoroutineScope()
