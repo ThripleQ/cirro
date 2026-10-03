@@ -59,7 +59,6 @@ import com.thripleq.nume.ui.search.SearchViewModel
  */
 @Composable
 fun SearchScreen(
-    onOpenPlayer: () -> Unit,
     onOpenTracks: (source: String, id: String, title: String, origin: Rect) -> Unit,
     onOpenArtist: (id: String, name: String, avatarUrl: String, origin: Rect) -> Unit,
     onOpenRadio: (id: String, name: String, origin: Rect) -> Unit,
@@ -72,7 +71,6 @@ fun SearchScreen(
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
-    LaunchedEffect(Unit) { vm.openPlayer.collect { onOpenPlayer() } }
 
     // 结果态下返回键先退回落地页，而不是退出 app。
     BackHandler(enabled = state.active != null) { vm.onBack() }

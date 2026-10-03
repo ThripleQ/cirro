@@ -13,11 +13,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -35,7 +32,7 @@ sealed interface ArtistUiState {
 
 /**
  * 歌手主页 ViewModel：并发拉取资料/热门单曲（artist detail）与专辑列表
- * （artist albums）。点歌以 hotSongs 为队列整单起播并弹出播放页。
+ * （artist albums）。点歌以 hotSongs 为队列整单起播（**不进播放页**，2026-10-03 起）。
  */
 @HiltViewModel
 class ArtistViewModel @Inject constructor(
@@ -46,9 +43,6 @@ class ArtistViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<ArtistUiState>(ArtistUiState.Loading)
     val uiState: StateFlow<ArtistUiState> = _uiState.asStateFlow()
-
-    private val _openPlayer = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
-    val openPlayer: SharedFlow<Unit> = _openPlayer.asSharedFlow()
 
     private var loadedId: String? = null
 
@@ -83,12 +77,13 @@ class ArtistViewModel @Inject constructor(
         load(id)
     }
 
+    /** 热歌行：点了直接播 —— **不弹播放页**（2026-10-03 用户：「点一首歌进行播放不要进入
+     *  播放页，就单纯开始播放就行」）。 */
     fun onPlayTrack(index: Int) {
         val ready = _uiState.value as? ArtistUiState.Ready ?: return
         if (index !in ready.hotSongs.indices) return
         viewModelScope.launch {
             playback.play(context, ready.hotSongs, index)
-            _openPlayer.tryEmit(Unit)
         }
     }
 }

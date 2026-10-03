@@ -12,11 +12,8 @@ import com.thripleq.nume.core.repo.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -50,9 +47,6 @@ class HomeViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
-
-    private val _openPlayer = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
-    val openPlayer: SharedFlow<Unit> = _openPlayer.asSharedFlow()
 
     init {
         load()
@@ -103,11 +97,11 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /** 小封面单曲行：点了直接播 + 弹出播放页（无展开动效）。 */
+    /** 小封面单曲行：点了直接播 —— **不弹播放页**（2026-10-03 用户：「点一首歌进行播放不要
+     *  进入播放页，就单纯开始播放就行」）。展开播放页的入口只有底部迷你条本身。 */
     fun onPlayTrack(tracks: List<Track>, index: Int) {
         viewModelScope.launch {
             playback.play(context, tracks, index)
-            _openPlayer.tryEmit(Unit)
         }
     }
 }

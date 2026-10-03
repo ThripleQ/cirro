@@ -68,19 +68,17 @@ import java.util.Locale
 
 /**
  * 播客/电台详情：电台资料 + 节目列表（触底翻页）。
- * 点节目以可播放节目为队列整单起播并弹出播放页。
+ * 点节目以可播放节目为队列整单起播（**不进播放页**，2026-10-03 起）。
  */
 @Composable
 fun PodcastScreen(
     id: String,
     onBack: () -> Unit,
-    onOpenPlayer: () -> Unit,
     islandHeight: Float = 0f,
     vm: PodcastViewModel = hiltViewModel(),
 ) {
     BackHandler { onBack() }
     LaunchedEffect(id) { vm.load(id) }
-    LaunchedEffect(Unit) { vm.openPlayer.collect { onOpenPlayer() } }
     val state by vm.uiState.collectAsStateWithLifecycle()
     val bottomPadding = (islandHeight + 16f).dp
 

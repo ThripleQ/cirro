@@ -97,14 +97,17 @@ class TrackListViewModel @Inject constructor(
         load(source, id, title)
     }
 
+    /** 列表里点某一首：播它 —— **不弹播放页**（2026-10-03 用户：「点一首歌进行播放不要
+     *  进入播放页，就单纯开始播放就行」）。[onPlayAll] 是另一回事，仍会弹出播放页。 */
     fun onTrackClick(collection: TrackCollection, index: Int) {
         viewModelScope.launch {
             playback.play(context, collection.tracks, index)
-            _openPlayer.tryEmit(Unit)
         }
     }
 
-    /** 头部「播放」按钮：从第一首开始整单播放。 */
+    /** 头部「播放」按钮：从第一首开始整单播放。**仍然弹出播放页** —— 用户那条「点了不要
+     *  进播放页」说的是列表里点某一首（[onTrackClick]）；「播放全部」是整单播放的入口，
+     *  官方也是弹播放页的。若这条也要去掉，删下面那行 emit 即可（本类是该 flow 的唯一生产者）。 */
     fun onPlayAll(collection: TrackCollection) {
         viewModelScope.launch {
             playback.play(context, collection.tracks, 0)

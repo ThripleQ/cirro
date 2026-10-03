@@ -224,10 +224,14 @@ fun NumeApp() {
     }
 
     // 播放页状态：常驻 dock 与全屏播放页合体（同一组件/同一份 progress）。
-    // 点击迷你条/列表项 → state.open() 整页弹出；迷你条上滑 1:1 跟手由组件内手势驱动。
+    // **展开播放页只剩两个入口**（2026-10-03 起）：
+    //   1. 点底部迷你条本身 —— 由 PlayerDock 内部直接调 state.open()，走点按专用动画；
+    //   2. 歌单/专辑页头部的「播放全部」—— 经 TrackListScreen 的 onOpenPlayer 到这里。
+    // 列表里点某一首、搜索结果点某一首、歌手热歌、播客节目都**不再弹播放页**，只开始播放
+    // （用户：「点一首歌进行播放不要进入播放页，就单纯开始播放就行」）。
     val dockState = rememberPlayerDockState()
     fun openPlayer() {
-        // 列表项点歌：直接盖满全屏（两段式的第二段）。
+        // 「播放全部」：直接盖满全屏。
         dockState.open(toFull = true)
     }
 
@@ -339,7 +343,6 @@ fun NumeApp() {
                 }
                 composable<Search> {
                     SearchScreen(
-                        onOpenPlayer = ::openPlayer,
                         onOpenTracks = { source, id, title, origin ->
                             openWithOrigin(origin) {
                                 navController.navigate(TrackListDestination(source, id, title))
@@ -432,7 +435,6 @@ fun NumeApp() {
                         name = args.name,
                         avatarUrl = args.avatarUrl,
                         onBack = { goBack() },
-                        onOpenPlayer = ::openPlayer,
                         onOpenAlbum = { albumId, title, rect ->
                             openWithOrigin(rect) {
                                 navController.navigate(TrackListDestination("album", albumId, title))
@@ -456,7 +458,6 @@ fun NumeApp() {
                     PodcastScreen(
                         id = args.id,
                         onBack = { goBack() },
-                        onOpenPlayer = ::openPlayer,
                         islandHeight = islandHeightDp,
                     )
                     }

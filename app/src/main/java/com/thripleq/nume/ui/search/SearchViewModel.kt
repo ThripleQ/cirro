@@ -13,11 +13,8 @@ import com.thripleq.nume.core.repo.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -58,9 +55,6 @@ class SearchViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
-
-    private val _openPlayer = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
-    val openPlayer: SharedFlow<Unit> = _openPlayer.asSharedFlow()
 
     // 最近搜索：换行分隔的字符串（保留顺序，Set 会乱序）。
     private val historyPrefs =
@@ -161,13 +155,13 @@ class SearchViewModel @Inject constructor(
         if (_uiState.value.active != null) onClear()
     }
 
-    /** 单曲行点击：整张「单曲」结果作为队列，从该首开始播并弹出播放页。 */
+    /** 单曲行点击：整张「单曲」结果作为队列，从该首开始播 —— **不弹播放页**
+     *  （2026-10-03 用户：「点一首歌进行播放不要进入播放页，就单纯开始播放就行」）。 */
     fun onPlayTrack(index: Int) {
         val tracks = _uiState.value.songs
         if (tracks.isEmpty()) return
         viewModelScope.launch {
             playback.play(context, tracks, index)
-            _openPlayer.tryEmit(Unit)
         }
     }
 

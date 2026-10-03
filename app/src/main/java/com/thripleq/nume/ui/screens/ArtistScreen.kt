@@ -78,7 +78,7 @@ import java.util.Locale
 
 /**
  * 歌手主页：头像/别名/简介 + 专辑横滑 + 热门歌曲列表。
- * 点歌整单起播并弹出播放页；点专辑进入既有专辑详情（TrackListScreen）。
+ * 点热歌整单起播（**不进播放页**，2026-10-03 起）；点专辑进入既有专辑详情（TrackListScreen）。
  *
  * ## 为什么头部头像只在一处渲染（共享元素宿主稳定）
  * 共享元素要求目标端元素**在整段转场期间持续存在**。此前 Loading / Ready 各自渲染一份
@@ -95,7 +95,6 @@ fun ArtistScreen(
     name: String = "",
     avatarUrl: String = "",
     onBack: () -> Unit,
-    onOpenPlayer: () -> Unit,
     onOpenAlbum: (id: String, title: String, origin: Rect) -> Unit,
     islandHeight: Float = 0f,
     // 共享元素试验：头部头像与「搜索结果里的歌手行头像」共享（键见 [SharedKeys]）。
@@ -105,7 +104,6 @@ fun ArtistScreen(
 ) {
     BackHandler { onBack() }
     LaunchedEffect(id) { vm.load(id) }
-    LaunchedEffect(Unit) { vm.openPlayer.collect { onOpenPlayer() } }
     val state by vm.uiState.collectAsStateWithLifecycle()
     val bottomPadding = (islandHeight + 16f).dp
 

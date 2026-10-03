@@ -47,7 +47,10 @@ import com.thripleq.nume.ui.theme.Motion
 
 /** 探索 tab：每日推荐歌曲 / 推荐歌单 / 排行榜 / 最近播放。
  *  大封面 = 歌单/榜单（横滑卡片，点开走胶囊伸展壳进全屏列表）；
- *  小封面 = 单曲（内联行，点了直接播，无展开动效）。 */
+ *  小封面 = 单曲（内联行，点了直接播，无展开动效，也不弹播放页）。
+ *
+ *  [onOpenPlayer] 只服务于**面板里的列表**（[HomePanelContent] / [HomeExpandShell] → TrackListScreen
+ *  的「播放全部」）；小封面单曲行的点播不再需要它（2026-10-03 起点了只播、不进播放页）。 */
 @Composable
 fun HomeScreen(
     onOpenPlayer: () -> Unit,
@@ -58,7 +61,6 @@ fun HomeScreen(
     vm: HomeViewModel = hiltViewModel(),
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { vm.openPlayer.collect { onOpenPlayer() } }
 
     var expand by remember { mutableStateOf<ExpandTarget?>(null) }
     val islandClearance = with(LocalDensity.current) { islandHeight.dp }

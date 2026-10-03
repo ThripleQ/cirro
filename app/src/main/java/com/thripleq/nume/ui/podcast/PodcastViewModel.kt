@@ -11,11 +11,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -33,7 +30,7 @@ data class PodcastUiState(
 
 /**
  * 播客页 ViewModel：并发拉取电台资料与首页节目，触底翻页。
- * 点节目以「可播放节目」为队列整单起播并弹出播放页。
+ * 点节目以「可播放节目」为队列整单起播（**不进播放页**，2026-10-03 起）。
  */
 @HiltViewModel
 class PodcastViewModel @Inject constructor(
@@ -44,9 +41,6 @@ class PodcastViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(PodcastUiState())
     val uiState: StateFlow<PodcastUiState> = _uiState.asStateFlow()
-
-    private val _openPlayer = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
-    val openPlayer: SharedFlow<Unit> = _openPlayer.asSharedFlow()
 
     private var loadedId: String? = null
     private var offset = 0
@@ -108,7 +102,8 @@ class PodcastViewModel @Inject constructor(
         }
     }
 
-    /** 点某期节目：以可播放节目为队列，从该节目位置开始播。 */
+    /** 点某期节目：以可播放节目为队列，从该节目位置开始播 —— **不弹播放页**
+     *  （2026-10-03 用户：「点一首歌进行播放不要进入播放页，就单纯开始播放就行」）。 */
     fun onPlayProgram(program: Program) {
         val songId = program.songId ?: return
         val queue = _uiState.value.programs.mapNotNull { it.toTrack() }
@@ -116,7 +111,6 @@ class PodcastViewModel @Inject constructor(
         if (index < 0) return
         viewModelScope.launch {
             playback.play(context, queue, index)
-            _openPlayer.tryEmit(Unit)
         }
     }
 
