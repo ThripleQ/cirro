@@ -385,16 +385,16 @@ fun TrackListScreen(
                             LazyColumn(
                                 state = listState,
                                 // 顶部让开标题条实测下沿（stickyTopDp，高度跟文字走），做成
-                                // **固定内缩**、不走 contentPadding：吸顶的「播放全部」行就停在这一线上，
-                                // 而 contentPadding 会跟着内容滚走，撑不出稳定的停靠线。两条路径的内容
-                                // 都从状态栏下沿起算（nav 走 statusBarsPadding、壳走 shellTopInset），
-                                // 所以这条线是「状态栏下沿 + 标题条高度」。
+                                // 吸顶停靠线 = 壳子顶 = 标题条下沿，**零内缩**：LazyColumn 本就
+                                // 装在壳子里（壳子顶已在标题条之下），「播放全部」吸顶后紧贴标题条、
+                                // 上角由壳子裁圆，两角外露容器色条 —— 完全契合。不走 contentPadding
+                                // 的原因不变：它跟着内容滚走，撑不出稳定停靠线。
                                 //
-                                // 头部封面仍在 [TrackListMetrics.HeroCoverTop]（68dp）：多出来那一档
-                                // 记在头部自己的上内缩里（HeroCoverTop - stickyTopDp）。
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(top = stickyTopDp),
+                                // 2026-10-03 勘误：这里曾误保留旧坐标系的双重内缩（padding
+                                // top = stickyTopDp）—— 旧结构里 LazyColumn 占整屏、内缩让出
+                                // 标题条；新结构壳子顶已让过，再内缩 = 标题条高被算两次，吸顶
+                                // 行与标题条间露出一条空带、头部封面整体偏低一个标题条高。
+                                modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(bottom = bottomPadding),
                             ) {
                                 item(key = "header") {
