@@ -5,6 +5,7 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -185,7 +186,13 @@ internal fun HomeContent(
         // （私人漫游 / 相似艺人）也跟着空。
         val guessPages = data.guessPages.ifEmpty {
             // 回落：block 没给内容（未登录 / 服务端不出卡）时，用每日推荐凑一页。
-            data.dailySongs?.take(GUESS_ROW_COUNT)?.let { listOf(it) }.orEmpty()
+            // **必须挡掉空表**：`emptyList<Track>().take(n)` 是非 null 的空表，
+            // `listOf(它)` 会造出「一个空页」—— 那一栏渲染成一块没有任何行的空白，
+            // 而且只有一页、怎么滑都不动（看起来正好像「不能左右翻页」）。
+            data.dailySongs?.takeIf { it.isNotEmpty() }
+                ?.take(GUESS_ROW_COUNT)
+                ?.let { listOf(it) }
+                .orEmpty()
         }
         if (guessPages.isNotEmpty() || data.dailySongs != null) {
             item(key = "h_guess") { NumeSectionHeader(data.guessHeadline) }
@@ -210,7 +217,10 @@ internal fun HomeContent(
         // 因为它从来不是独立端点，服务端把雷达卡塞在通用 block 流里。
         val radarCards = data.radarCards
         if (radarCards.isNotEmpty()) {
-            item(key = "h_radar") { NumeSectionHeader("雷达歌单") }
+            // 标题用**服务端的原文**，不写死「雷达歌单」：同一个 block 在未登录时给
+            // 「网易云音乐的雷达歌单」、登录后给「<昵称>的雷达歌单」（2026-10-05 两态实测），
+            // 写死就丢掉了这个区别。
+            item(key = "h_radar") { NumeSectionHeader(data.radarTitle ?: "雷达歌单") }
             item(key = "row_radar") {
                 // 同 row_featured：卡片模型按数据 remember，别每次重组重建（见那里的注释）。
                 val cards = remember(radarCards) {
@@ -481,6 +491,11 @@ private fun guessSubtitle(track: Track): String =
  * kanade 主页实测也是「一屏 3 行、能左右翻」。所以这里按**页宽 = 容器宽**排，
  * 一页独占一屏，滑到头才换下一批（而不是把 12 首排成一条长横滑）。
  *
+ * **必须带吸附**（[rememberSnapFlingBehavior]）：页宽恰好等于容器宽，没有 snap 时
+ * 松手停在任意位置，一屏里同时露出两页的半截，并且第 2 页以后永远对不齐 ——
+ * 看上去就「不像翻页、像一条滑不动的长列表」。加了 snap 才是 kanade 那种
+ * 一下翻一整页。
+ *
  * 点任意一首，播放队列是**全部**猜你喜欢单曲而不是只有本页那 3 首 —— 连听不该
  * 在三首后断掉；起点落在被点的那首。
  */
@@ -493,7 +508,12 @@ private fun GuessSongPager(
     val all = remember(pages) { pages.flatten() }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val pageWidth = maxWidth
-        LazyRow(state = state, modifier = Modifier.fillMaxWidth()) {
+        val fling = rememberSnapFlingBehavior(lazyListState = state)
+        LazyRow(
+            state = state,
+            flingBehavior = fling,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             itemsIndexed(pages, key = { i, _ -> "guess_page_$i" }) { _, page ->
                 Column(Modifier.width(pageWidth)) {
                     page.forEach { track ->

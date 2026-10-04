@@ -43,6 +43,23 @@ sealed interface HomeUiState {
          * `radar_private`，两者数据源不同、故意不重名。
          */
         val radar: List<PlaylistCard>?,
+        /** 雷达 block 的服务端栏目标题（未登录「网易云音乐的雷达歌单」/ 登录「<昵称>的雷达歌单」）。 */
+        val radarTitle: String? = null,
+        /**
+         * 「精选推荐」两张**点了直接播**的功能卡的卡面（私人漫游 / 相似艺人）。
+         *
+         * 2026-10-05 改：以前这两张卡借「猜你喜欢」的歌曲封面（`guess[1]` / `guess[2]`）当
+         * 卡面 —— 那是**东拼西凑**：卡面内容和卡片语义毫无关系（一张日语歌封面配「私人漫游」
+         * 四个字），而且猜你喜欢那批数据一旦拿不到，两张卡的卡面就一起变白。
+         * 现在各取**自己的内容源**：
+         * - 私人漫游 → `/api/v1/radio/get` 出的第一首歌封面（就是点开后会播的那批歌之一）
+         * - 相似艺人 → 种子歌手在 `/api/discovery/simiArtist` 里的第一个相似歌手头像
+         *
+         * 两者都是**卡片自己被点开后会给出的内容**，卡面因此与内容自洽。
+         * 仍未拿到时（未登录 / 上游失败）由 [FeaturedCard.coverUrl] 的调用处兜底。
+         */
+        val radioCover: String? = null,
+        val artistCover: String? = null,
         /**
          * 「猜你喜欢的「XX」好歌」整块 —— 标题与歌曲都来自首页 block 流里的
          * `HOMEPAGE_BLOCK_STYLE_RCMD`（见 [HomeRepository.homePage]）。
@@ -134,14 +151,10 @@ sealed interface HomeUiState {
             // 避免同一条歌单在一屏里出现两次（各区块 wire 不同只保证共享元素
             // 键唯一，视觉上还是会重复）。
             val used = radar.orEmpty().map { it.id }.toSet() + listOfNotNull(privateRadar?.id)
-            // 「私人漫游 / 相似艺人」不是歌单，没有自己的封面素材，卡面借猜你喜欢
-            // 那批单曲的封面（kanade 这两张卡用的是它自带的素材图）。
-            //
-            // **这两张卡过去经常是空封面**（用户实测反馈）：封面取自 guessSongs，
-            // 而当时的 guessSongs 是自己拿 `tag/list/get` + `style-tag/home/song`
-            // 拼的 —— 任何一环拿不到就整块空，封面跟着一起空。现在 guess 数据来自
-            // 首页 block 流（服务端直出，必有一批歌），再补一层兜底：万一还是空，
-            // 用推荐歌单封面顶上，卡面不留白块。
+            // 「私人漫游 / 相似艺人」不是歌单，没有歌单封面可用 —— 卡面走 [Ready.radioCover]
+            // / [Ready.artistCover]（各自的**内容源**）。这里只留两级兜底：内容源还没到
+            // （异步后到）时先用猜你喜欢的歌曲封面顶着，最后才退到推荐歌单封面，
+            // 目的是让卡面在**任何时序下都不留白块**。
             val guess = guessSongs
             val fallbackCover = playlists?.firstOrNull()?.coverUrl
             buildList {
@@ -163,7 +176,7 @@ sealed interface HomeUiState {
                 }
                 add(
                     FeaturedCard(
-                        "radio", guess?.getOrNull(1)?.artworkUrl ?: fallbackCover,
+                        "radio", radioCover ?: guess?.getOrNull(1)?.artworkUrl ?: fallbackCover,
                         "私人漫游", "多种听歌模式随心播放", "radio", "",
                         playKind = HomeViewModel.PLAY_RADIO,
                     ),
@@ -178,7 +191,7 @@ sealed interface HomeUiState {
                 }
                 add(
                     FeaturedCard(
-                        "artist", guess?.getOrNull(2)?.artworkUrl ?: fallbackCover,
+                        "artist", artistCover ?: guess?.getOrNull(2)?.artworkUrl ?: fallbackCover,
                         "相似艺人", "从你喜欢的艺人听起", "artist", "",
                         playKind = HomeViewModel.PLAY_ARTIST,
                     ),
@@ -323,10 +336,19 @@ class HomeViewModel @Inject constructor(
             val hp = homePage.await()
             ready = ready.copy(
                 radar = hp.radar,
+                radarTitle = hp.radarTitle,
                 guessTitle = hp.guessTitle,
                 guessPages = hp.guessPages,
             )
             _uiState.value = ready
+
+            // 两张「点了直接播」功能卡的卡面，各取**自己的内容源**（见 [Ready.radioCover]）。
+            // 种子歌手 id 来自 homePage，所以只能等在这里发；两者互不依赖 → 并行。
+            // 它们不参与上面的逐块发布，晚到不影响任何区块的首屏。
+            val radioCover = async { homeRepo.radioSongs("1").firstOrNull()?.artworkUrl }
+            val artistCover = async {
+                hp.seedArtistId?.let { homeRepo.simiArtist(it).firstOrNull()?.picUrl }
+            }
 
             // 曲风表：只为「XX日推」功能卡取风格词 / 该曲风下的歌单。
             val st = styles.await()
@@ -344,6 +366,13 @@ class HomeViewModel @Inject constructor(
             ready = ready.copy(stylePlaylists = stylePlaylists.await())
             _uiState.value = ready
             ready = ready.copy(scene = scene.await())
+
+            // 卡面最后合入（不挡住上面任何一块的展示）。拿不到就为 null，
+            // 由 [featured] 的两级兜底接住，卡面不会留白。
+            ready = ready.copy(
+                radioCover = radioCover.await(),
+                artistCover = artistCover.await(),
+            )
 
             val allEmpty = ready.playlists.isNullOrEmpty() &&
                 ready.charts.isNullOrEmpty() &&

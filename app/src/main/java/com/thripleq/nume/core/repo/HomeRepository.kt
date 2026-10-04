@@ -39,9 +39,24 @@ data class SimiArtist(
  */
 data class HomePageBlocks(
     val radar: List<PlaylistCard> = emptyList(),
+    /**
+     * 雷达 block 的服务端栏目标题。**必须用服务端给的，不要写死「雷达歌单」**：
+     * 同一个 block 在未登录时给「网易云音乐的雷达歌单」、登录后给「<昵称>的雷达歌单」
+     * （2026-10-05 实测两态返回），写死就少了一截信息。
+     */
+    val radarTitle: String? = null,
     /** 「猜你喜欢的「XX」好歌」的完整标题（风格词由服务端给）。 */
     val guessTitle: String? = null,
     val guessPages: List<List<Track>> = emptyList(),
+    /**
+     * 「猜你喜欢」第一首歌的**首位歌手 id** —— 顺路从 block 里带出来，给「相似艺人」
+     * 功能卡当种子（拿相似歌手头像做卡面）。
+     *
+     * 这一层 data class 里塞一个歌手 id 看着越界，但它省掉一次 `/song/detail`：
+     * block 的 `resourceExtInfo.artists[0].id` 本来就在手上（实测 18122 这种真值），
+     * 调 simiArtist 前没必要再回去查一遍歌曲详情。null = block 没给或未登录。
+     */
+    val seedArtistId: String? = null,
 ) {
     /** 拍平后的全部单曲（播放入口用）。 */
     val guessSongs: List<Track> get() = guessPages.flatten()
@@ -114,31 +129,51 @@ class HomeRepository @Inject constructor(
                 .optJSONObject("data")?.optJSONArray("blocks")
                 ?: return@withContext HomePageBlocks()
             var radar: List<PlaylistCard> = emptyList()
+            var radarTitle: String? = null
             var guessTitle: String? = null
             var guessPages: List<List<Track>> = emptyList()
+            var seedArtistId: String? = null
             for (i in 0 until blocks.length()) {
                 val b = blocks.optJSONObject(i) ?: continue
+                // 标题在 subTitle；个别皮肤把它放在 mainTitle，两个都试（两块都用得上）。
+                val ui = b.optJSONObject("uiElement")
+                val blockTitle = ui?.optJSONObject("subTitle")?.optString("title")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: ui?.optJSONObject("mainTitle")?.optString("title")?.takeIf { it.isNotBlank() }
                 when (b.optString("blockCode")) {
                     RADAR_BLOCK_CODE -> {
                         radar = parseRadarCards(b.optJSONArray("creatives"))
+                        radarTitle = blockTitle
                         dbg { "radarBlock cards=${radar.size} ${radar.map { it.name }}" }
                     }
                     GUESS_BLOCK_CODE -> {
-                        // 标题在 subTitle；个别皮肤把它放在 mainTitle，两个都试。
-                        val ui = b.optJSONObject("uiElement")
-                        guessTitle = ui?.optJSONObject("subTitle")?.optString("title")
-                            ?.takeIf { it.isNotBlank() }
-                            ?: ui?.optJSONObject("mainTitle")?.optString("title")
-                                ?.takeIf { it.isNotBlank() }
-                        guessPages = parseSongListCreatives(b.optJSONArray("creatives"))
+                        guessTitle = blockTitle
+                        val creatives = b.optJSONArray("creatives")
+                        guessPages = parseSongListCreatives(creatives)
+                        seedArtistId = firstResourceArtistId(creatives)
                         dbg {
                             "guessBlock title=$guessTitle pages=${guessPages.map { it.size }} " +
+                                "seedArtist=$seedArtistId " +
                                 guessPages.flatten().joinToString { it.name }
                         }
                     }
                 }
             }
-            HomePageBlocks(radar, guessTitle, guessPages)
+            // **release 包也留一行**（dbg 受 BuildConfig.DEBUG 管，CI 出的 release 没有）。
+            // 这两块一旦拿不到，表现是「猜你喜欢不能翻页（只剩一页回落）+ 雷达栏整栏消失」，
+            // 与 UI 层 bug 的表象一模一样，真机排查时没有这行就只能靠猜。
+            Log.e(
+                "HomeApi",
+                "homePage blocks=${blocks.length()} radar=${radar.size} pages=${guessPages.map { it.size }} " +
+                    "radarTitle=$radarTitle guessTitle=$guessTitle",
+            )
+            HomePageBlocks(
+                radar = radar,
+                radarTitle = radarTitle,
+                guessTitle = guessTitle,
+                guessPages = guessPages,
+                seedArtistId = seedArtistId,
+            )
         } catch (_: Exception) {
             HomePageBlocks()
         }
@@ -562,13 +597,29 @@ private fun parseSongListCreatives(arr: JSONArray?): List<List<Track>> {
 }
 
 /**
+ * 「猜你喜欢」第一首的歌手 id（`resourceExtInfo.artists[0].id`），给「相似艺人」卡面当种子。
+ *
+ * 顺手取而不是另调 `/song/detail`：block 里本来就有这个 id（实测 "id": 18122）。
+ * block 的 artists[0] 是**精简结构**（只有 id/name/picId…），所以不能复用 `simiArtist`
+ * 那套解析，这里单独取一个数就够。
+ */
+private fun firstResourceArtistId(arr: JSONArray?): String? {
+    val res = arr?.optJSONObject(0)?.optJSONArray("resources")?.optJSONObject(0) ?: return null
+    return res.optJSONObject("resourceExtInfo")?.optJSONArray("artists")
+        ?.optJSONObject(0)?.optLong("id", 0L)?.takeIf { it > 0L }?.toString()
+}
+
+/**
  * block 流里的 song 资源 → [Track]。
  *
  * 字段名与 `/song/detail` 那套完全不同，这里逐个对上（2026-10-04 探针实测）：
  * `resourceId` = 歌曲 id、`uiElement.mainTitle.title` = 歌名、
  * `uiElement.image.imageUrl` = 封面（给的是明文 http 协议，必须过 [httpsUrl]）、
- * `resourceExtInfo.artists[0].name` = 首位艺人。block 里**没有时长**（实测全为
- * null），给 0：播放器起来后会由播放引擎填真实时长，列表不显示时长不受影响。
+ * `resourceExtInfo.artists[0].name` = 首位艺人。
+ *
+ * **时长在 `resourceExtInfo.song.dt`**（毫秒），2026-10-05 复查实测 12 首**全都有值**
+ * （257893 / 534532 …）—— 旧注释写「block 里没有时长」是只看了 uiElement 一层就下的结论。
+ * 取不到才给 0：播放器起来后会由播放引擎填真实时长。
  */
 private fun parseBlockSongs(arr: JSONArray?): List<Track> {
     if (arr == null) return emptyList()
@@ -580,14 +631,14 @@ private fun parseBlockSongs(arr: JSONArray?): List<Track> {
             val ui = o.optJSONObject("uiElement")
             val name = ui?.optJSONObject("mainTitle")?.optString("title").orEmpty()
             if (name.isBlank()) continue
-            val artists = o.optJSONObject("resourceExtInfo")?.optJSONArray("artists")
+            val ext = o.optJSONObject("resourceExtInfo")
             add(
                 Track(
                     id = id.toString(),
                     name = name,
-                    artist = artists?.optJSONObject(0)?.optString("name").orEmpty(),
+                    artist = ext?.optJSONArray("artists")?.optJSONObject(0)?.optString("name").orEmpty(),
                     artworkUrl = httpsUrl(ui?.optJSONObject("image")?.optString("imageUrl")),
-                    durationMs = 0L,
+                    durationMs = ext?.optJSONObject("song")?.optLong("dt", 0L) ?: 0L,
                 ),
             )
         }
