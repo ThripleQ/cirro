@@ -41,4 +41,24 @@ object NeteaseOp {
     const val RADIO_PROGRAMS = 37
     const val COMMENTS = 38
     const val COMMENTS_HOT = 39
+
+    // ── 探索页补齐（2026-10-04）────────────────────────────────────────
+    // 端点钉自 api-enhanced 现行 module；与 libnetease_jni.c 的 case 一一对应。
+    /** 首页「发现」页圆形入口（每日推荐/歌单/排行榜/私人 FM…）；未登录返回空。 */
+    const val DRAGON_BALL = 40
+
+    /** 曲风标签总表 `/api/tag/list/get`。 */
+    const val STYLE_LIST = 41
+
+    /** 某曲风下的歌曲 `/api/style-tag/home/song`（args: tagId, size, cursor）。 */
+    const val STYLE_SONG = 42
+
+    /** 某曲风下的歌单 `/api/style-tag/home/playlist`（args: tagId, size, cursor）。 */
+    const val STYLE_PLAYLIST = 43
+
+    /**
+     * 私人漫游（私人 FM）`/api/v1/radio/get`（args: mode, subMode, limit）。
+     * 每次调用服务端按口味随机出一批歌，无分页；需登录。mode 留空表示默认模式。
+     */
+    const val RADIO = 44
 }

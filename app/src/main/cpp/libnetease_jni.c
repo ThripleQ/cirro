@@ -220,6 +220,13 @@ static ne_resp *dispatch(int op, int narg, const char *const a[]) {
         case 37: return ne_radio_programs(A(0), A(1), A(2), A(3));
         case 38: return ne_comments(A(0), A(1), A(2), A(3));
         case 39: return ne_comments_hot(A(0), A(1), A(2), A(3));
+        /* 探索页补齐（2026-10-04）：首页龙珠入口 + 曲风体系，见 NeteaseOp 40..43 */
+        case 40: return ne_dragon_ball();
+        case 41: return ne_style_list();
+        case 42: return ne_style_song(A(0), A(1), A(2));
+        case 43: return ne_style_playlist(A(0), A(1), A(2));
+        /* 44: 私人漫游 /api/v1/radio/get（args: mode, subMode, limit） */
+        case 44: return ne_radio_get(A(0), A(1), A(2));
         default: return NULL;
     }
 #undef A
