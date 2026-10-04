@@ -70,4 +70,14 @@ object NeteaseOp {
 
     /** 某标签下的热门歌单 `/weapi/playlist/list`（args: cat, limit, offset）。 */
     const val PLAYLIST_LIST = 46
+
+    /**
+     * 首页「发现」页整条 block 流 `/api/homepage/block/page`（args: refresh, cursor）。
+     *
+     * **「雷达歌单」区就在这里**：`data.blocks[blockCode == HOMEPAGE_BLOCK_MGC_PLAYLIST]`
+     * 的 `creatives[]` 是一批官方雷达歌单（私人雷达 / 新歌雷达 / 会员雷达 / 乐迷雷达 /
+     * 宝藏雷达…，实测稳定 6 张）。带 radar 字样的独立端点全 404 —— 它不是独立接口，
+     * 而是这条通用 block 流里的一个 block（2026-10-04 探针实测）。
+     */
+    const val HOME_BLOCK_PAGE = 47
 }

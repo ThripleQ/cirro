@@ -59,18 +59,35 @@ class HomeRepository @Inject constructor(
     }
 
     /**
-     * 个性化推荐资源（`/weapi/personalized/playlist`，匿名可用）。
+     * 「雷达歌单」区（kanade 主页那排 私人雷达 / 新歌雷达 / 时光雷达 大卡）。
      *
-     * 与 [recommendPlaylists] 的分工（布局参照 kanade 主页，2026-10-04）：
-     * kanade 的「雷达歌单」区显示 私人雷达/新歌雷达/时光雷达 三张卡 —— 这类"雷达"
-     * 歌单恰好是 RECOMMEND_RESOURCE 返回里的常客（实测首条即「私人雷达」），而
-     * RECOMMEND_PLAYLISTS 偏向大众化歌单，作「场景音乐」区的数据源。
+     * 数据源是首页 block 流里的**一个 block**，不是独立接口：
+     * `/api/homepage/block/page` → `data.blocks[blockCode == HOMEPAGE_BLOCK_MGC_PLAYLIST]`
+     * → `creatives[]`（实测稳定 6 张）。每张卡 `creativeId` 即歌单 id、
+     * `uiElement.mainTitle.title` 是名称、`uiElement.image.imageUrl` 是封面。
+     *
+     * 曾经判定「weapi 拿不到雷达」并把整个区块删掉了：带 radar 字样的 7 个候选
+     * 路径全 404、api-enhanced 439 个 module 里也没有 radar module —— 因为它
+     * **从来不是独立端点**，服务端把雷达卡塞在通用 block 流里，按名字找永远找不到。
+     * 2026-10-04 复查 block 流才挖出来（见 .tmp/probe_radar2.py）。
      */
     suspend fun radarPlaylists(): List<PlaylistCard> = withContext(Dispatchers.IO) {
-        val r = gateway.call(NeteaseOp.RECOMMEND_RESOURCE)
+        // refresh 传 false：首次进页走服务端当日缓存，不必每次重新出卡。
+        val r = gateway.call(NeteaseOp.HOME_BLOCK_PAGE, "false", "-1")
+        dbg { "blockPage err=${r.err} len=${r.body.size}" }
         if (r.err != 0 || r.body.isEmpty()) return@withContext emptyList()
         try {
-            parseCards(JSONObject(String(r.body, Charsets.UTF_8)))
+            val blocks = JSONObject(String(r.body, Charsets.UTF_8))
+                .optJSONObject("data")?.optJSONArray("blocks")
+                ?: return@withContext emptyList()
+            for (i in 0 until blocks.length()) {
+                val b = blocks.optJSONObject(i) ?: continue
+                if (b.optString("blockCode") != RADAR_BLOCK_CODE) continue
+                val cards = parseRadarCards(b.optJSONArray("creatives"))
+                dbg { "radarBlock cards=${cards.size} ${cards.map { it.name }}" }
+                return@withContext cards
+            }
+            emptyList()
         } catch (_: Exception) {
             emptyList()
         }
@@ -376,11 +393,47 @@ private fun parseCard(o: JSONObject?): PlaylistCard? {
     )
 }
 
-/** 从响应根里解析歌单列表（推荐歌单 / 雷达 / 曲风歌单共用）。 */
+/** 从响应根里解析歌单列表（推荐歌单 / 曲风歌单共用）。 */
 private fun parseCards(root: JSONObject): List<PlaylistCard> {
     val arr = firstArray(root, "result", "recommend", "data", "playlists")
         ?: return emptyList()
     return buildList {
         for (i in 0 until arr.length()) parseCard(arr.optJSONObject(i))?.let { add(it) }
+    }
+}
+
+/** 首页 block 流里「雷达歌单」区的 blockCode（官方移动端固定值）。 */
+private const val RADAR_BLOCK_CODE = "HOMEPAGE_BLOCK_MGC_PLAYLIST"
+
+/**
+ * 解析 block 流里 creative 卡片（结构见 [HomeRepository.radarPlaylists]）。
+ *
+ * 歌单名形如「华晨宇的歌,总令人心动|华语私人雷达」—— 竖线前是推荐理由、
+ * 后面才是雷达名，卡面只该显示后者（kanade 实测卡面就是「私人雷达」
+ * 「新歌雷达」这种短名，长理由塞不进 146dp 的卡）。没有竖线就整名照用。
+ */
+private fun parseRadarCards(arr: JSONArray?): List<PlaylistCard> {
+    if (arr == null) return emptyList()
+    return buildList {
+        for (i in 0 until arr.length()) {
+            val c = arr.optJSONObject(i) ?: continue
+            // 歌单 id 就在 creativeId 上（卡上的 action 是 orpheus://playlist/<id>）。
+            val id = c.optString("creativeId")
+            if (id.isBlank()) continue
+            val ui = c.optJSONObject("uiElement")
+            val raw = ui?.optJSONObject("mainTitle")?.optString("title").orEmpty()
+            val cover = ui?.optJSONObject("image")?.optString("imageUrl")
+            val playCount = c.optJSONArray("resources")?.optJSONObject(0)
+                ?.optJSONObject("resourceExtInfo")?.optLong("playCount", 0L) ?: 0L
+            add(
+                PlaylistCard(
+                    id = id,
+                    name = raw.substringAfterLast('|').trim().ifBlank { raw },
+                    coverUrl = httpsUrl(cover),
+                    playCount = playCount,
+                    trackCount = 0L,
+                ),
+            )
+        }
     }
 }

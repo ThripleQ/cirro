@@ -58,10 +58,11 @@ import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.numeEntrySurface
 import com.thripleq.nume.ui.components.shellSharedCover
 import com.thripleq.nume.ui.home.HomeUiState
+import com.thripleq.nume.ui.home.HomeViewModel
 import com.thripleq.nume.ui.theme.NumeShape
 
 /**
- * 探索页横滑列表的滚动状态（精选推荐 / 场景音乐）。
+ * 探索页横滑列表的滚动状态（精选推荐 / 雷达歌单 / 场景音乐）。
  *
  * 必须 hoist 到 [HomeScreen]：开合面板走 [androidx.compose.animation.AnimatedContent]，
  * 关闭面板时网格会重新组合，写在 [HomeContent] 内的 `rememberLazyListState()` 会随组合树
@@ -69,6 +70,7 @@ import com.thripleq.nume.ui.theme.NumeShape
  */
 internal data class HomeRowStates(
     val featured: LazyListState,
+    val radar: LazyListState,
     val scene: LazyListState,
 )
 
@@ -175,6 +177,37 @@ internal fun HomeContent(
             }
         }
 
+        // 雷达歌单：横滑大卡（146dp 方形封面）。**无徽标、无底部名称条** ——
+        // 官方雷达封面是程序生成的海报，图里自带「私人雷达」「新歌雷达」这类大字
+        // 标题（实测下载封面即带标题 + 网易云角标），kanade 卡面就是这个样子，
+        // 再叠一条名称条反而与它不像。
+        //
+        // 数据源见 HomeRepository.radarPlaylists：首页 block 流里的
+        // HOMEPAGE_BLOCK_MGC_PLAYLIST block。**它曾经被误判为"拿不到"而整区删除**
+        // （搜 radar 字样的独立端点全 404、api-enhanced 里也没有 radar module）——
+        // 因为它从来不是独立端点，服务端把雷达卡塞在通用 block 流里。
+        val radarCards = data.radarCards
+        if (radarCards.isNotEmpty()) {
+            item(key = "h_radar") { NumeSectionHeader("雷达歌单") }
+            item(key = "row_radar") {
+                KanadeCardRow(
+                    cards = radarCards.map {
+                        KanadeCardModel(it.id, it.coverUrl, it.name, null, HomeViewModel.RADAR_WIRE, it.id)
+                    },
+                    cardWidth = FeaturedCardSize,
+                    state = rowStates.radar,
+                    shared = shared,
+                    avScope = avScope,
+                    showTitleBar = false,
+                ) { c, rect ->
+                    // wire 必须原样带上（同下方场景区）：目标端共享键是
+                    // `shell:<source>:<id>`，写成 "playlist" 就与源端
+                    // `shell:radar:<id>` 对不上，morph 直接不触发。
+                    onExpand(ExpandTarget(HomeViewModel.RADAR_WIRE, c.id, c.title, c.coverUrl, rect))
+                }
+            }
+        }
+
         // 场景音乐：横滑小卡（110dp 窄版，只有底部名称条 —— kanade 实测卡面就是
         // 「封面 + 底部标签名」，日语弦歌 / 伤感 / 浪漫时光 这类词）。
         //
@@ -182,12 +215,6 @@ internal fun HomeContent(
         // 但官方歌单分类（/weapi/playlist/catalogue）里 category 2 = 场景、
         // 3 = 情感，标签名与它高度重合（清晨/夜晚/学习/伤感/治愈/放松…），
         // 所以用标签卡；封面取该标签下第一张热门歌单（分类表里的标签本身没图）。
-        //
-        // 注：原「雷达歌单」区块**已删除**。weapi 侧没有任何雷达列表端点：
-        // 试过 7 个候选路径全部 404，上游 api-enhanced 439 个 module 里也没有
-        // radar —— kanade 的 radar / radar_private / another_radar 三张卡走的是
-        // 它的 OpenAPI（个人开发者需成年才能申请）。RECOMMEND_RESOURCE 里名字带
-        // 「雷达」的通常只有 1 条，撑不起一个区块，按用户要求删掉。
         val scene = data.sceneCards.take(SCENE_CARD_COUNT)
         if (scene.isNotEmpty()) {
             item(key = "h_scene") { NumeSectionHeader("场景音乐") }
@@ -227,9 +254,10 @@ internal val HomeSheetRadius = 28.dp
  * kanade 式卡片（布局实测 2026-10-04，uiautomator 坐标 ÷ 3 = dp）：
  *
  * - **精选推荐**卡：方形封面 146dp（440px）+ 左上角白底圆角**类型徽标** + 底部浅灰名称条；
- * - **雷达歌单**卡：同宽但**无徽标** —— kanade 里「私人雷达」等字样是封面图自带的（dump
- *   对应位置读不到文本节点），我们补一条底部名称条，两种卡其余完全一致；
- * - **场景音乐**卡：110dp（330px）窄版，同样只有名称条。
+ * - **雷达歌单**卡：同宽同高的**纯封面**（[showTitleBar] = false）—— 官方雷达封面是
+ *   程序生成的海报，图里自带「私人雷达」「新歌雷达」这类大字标题（下载封面实测确认），
+ *   在 kanade 的 dump 里对应位置读不到文本节点，正因为那不是文本而是图；
+ * - **场景音乐**卡：110dp（330px）窄版，只有底部名称条（这里的标签名确实是文本）。
  */
 internal data class KanadeCardModel(
     val key: Any,
@@ -261,7 +289,7 @@ private val CardStripHeight = 32.dp
 /** 卡片封面（上半部）圆角：与 [NumeShape.Card] 同半径，只用于共享元素内层的 clip。 */
 private val CardCoverRadius = 16.dp
 
-/** 横滑卡片行：精选推荐（带徽标）与雷达 / 场景（无徽标）共用。 */
+/** 横滑卡片行：精选推荐（带徽标 + 名称条）与雷达（纯封面）/ 场景（窄版 + 名称条）共用。 */
 @Composable
 private fun KanadeCardRow(
     cards: List<KanadeCardModel>,
@@ -269,6 +297,8 @@ private fun KanadeCardRow(
     state: LazyListState,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
+    /** false = 纯封面卡（雷达歌单）：卡名在封面图上，不再画名称条。 */
+    showTitleBar: Boolean = true,
     onClick: (KanadeCardModel, Rect) -> Unit,
 ) {
     LazyRow(
@@ -277,7 +307,7 @@ private fun KanadeCardRow(
         horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         items(cards, key = { it.key }) { card ->
-            KanadeCard(card, cardWidth, shared, avScope, onClick)
+            KanadeCard(card, cardWidth, shared, avScope, showTitleBar, onClick)
         }
     }
 }
@@ -288,6 +318,7 @@ private fun KanadeCard(
     cardWidth: Dp,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
+    showTitleBar: Boolean,
     onClick: (KanadeCardModel, Rect) -> Unit,
 ) {
     var rect by remember { mutableStateOf<Rect?>(null) }
@@ -319,12 +350,14 @@ private fun KanadeCard(
                 // 转场时在 overlay 里飞的是 sharedBounds 圈住的这一份内容，圆角若只由
                 // 整卡 Column（外层）提供，那一份就是直角 —— 表现正是「动画中卡片圆角没了」。
                 // 旧 BigCoverCard 的 `.then(shared).clip()` 顺序也是这个道理。
-                // 只取上两角：封面下面紧接名称条，下两角由整卡 clip 收口。
+                // 有名称条时只取上两角（下两角由整卡 clip 收口）；纯封面卡没有名称条
+                // 托底，四角都得自己圆 —— 否则 overlay 里飞的那份是「上圆下直」。
                 .clip(
-                    RoundedCornerShape(
-                        topStart = CardCoverRadius,
-                        topEnd = CardCoverRadius,
-                    ),
+                    if (showTitleBar) {
+                        RoundedCornerShape(topStart = CardCoverRadius, topEnd = CardCoverRadius)
+                    } else {
+                        NumeShape.Card
+                    },
                 ),
         ) {
             BigCoverVisual(card.coverUrl, card.title, Modifier.fillMaxSize())
@@ -343,21 +376,23 @@ private fun KanadeCard(
                 )
             }
         }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(CardStripHeight)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = card.title,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 6.dp),
-            )
+        if (showTitleBar) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(CardStripHeight)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = card.title,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                )
+            }
         }
     }
 }

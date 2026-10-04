@@ -230,6 +230,9 @@ static ne_resp *dispatch(int op, int narg, const char *const a[]) {
         /* 45/46: 歌单分类表 / 分类歌单（场景音乐区的标签卡与其封面） */
         case 45: return ne_playlist_catalogue();
         case 46: return ne_playlist_list(A(0), A(1), A(2));
+        /* 47: 首页 block 流 /api/homepage/block/page（args: refresh, cursor）。
+         * 「雷达歌单」区（HOMEPAGE_BLOCK_MGC_PLAYLIST）就藏在这条通用流里。 */
+        case 47: return ne_homepage_block_page(A(0), A(1));
         default: return NULL;
     }
 #undef A

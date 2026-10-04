@@ -36,6 +36,12 @@ sealed interface HomeUiState {
         val playlists: List<PlaylistCard>?,
         val charts: List<Chart>?,
         val dailySongs: List<Track>?,
+        /**
+         * 「雷达歌单」区的卡（首页 block 流里 HOMEPAGE_BLOCK_MGC_PLAYLIST 那个
+         * block，6 张官方雷达歌单：私人雷达 / 新歌雷达 / 会员雷达 / 乐迷雷达…）。
+         * 它**不是**「精选推荐」里那张私人雷达功能卡 —— 后者见 [featured] 的
+         * `radar_private`，两者数据源不同、故意不重名。
+         */
         val radar: List<PlaylistCard>?,
         /** 曲风标签总表（`/api/tag/list/get`），null = 还没拉到。 */
         val styles: List<StyleTag>? = null,
@@ -83,6 +89,9 @@ sealed interface HomeUiState {
          */
         val sceneCards: List<SceneCard> get() = scene.orEmpty()
 
+        /** 「雷达歌单」区的卡：直接来自 [radar]（首页 block 流里的雷达 block）。 */
+        val radarCards: List<PlaylistCard> get() = radar.orEmpty()
+
         /**
          * 「精选推荐」横滑功能卡（布局抄 kanade 主页，2026-10-04）。
          *
@@ -94,7 +103,7 @@ sealed interface HomeUiState {
          * | 1 | 热歌榜 | 云音乐官方top排行榜 | TOPLIST 里名为「热歌榜」的那张 |
          * | 2 | 每日推荐 | 符合你口味的新鲜好歌 | RECOMMEND_SONGS（需登录） |
          * | 3 | 私人漫游 | 多种听歌模式随心播放 | `/api/v1/radio/get`，点了直接播 |
-         * | 4 | 私人雷达 | 从你喜欢的歌听起 | RECOMMEND_RESOURCE 首条 |
+         * | 4 | 私人雷达 | 从你喜欢的歌听起 | RECOMMEND_PLAYLISTS 里名称带「雷达」的那条 |
          * | 5 | 相似艺人 | 从你喜欢的艺人听起 | 种子歌 → 歌手 → 热门歌（见 HomeRepository.artistRadio） |
          * | 6 | 「XX」日推 | 你喜欢的XX歌曲 | 曲风歌单（style-tag 体系，风格词随账号口味） |
          *
@@ -102,10 +111,19 @@ sealed interface HomeUiState {
          * 规格从**已有数据**组装等价物；拿不到就少一张，末尾用推荐歌单补位凑 6 张。
          */
         val featured: List<FeaturedCard> by lazy {
-            // 推荐池重叠去重：personalized/playlist 与 RECOMMEND_RESOURCE 高度重叠，
-            // 「今天从X听起|私人雷达」两边都有 —— 补位卡跳过雷达区已展示的条目，
-            // 避免同一条歌单在两个区块各出现一次（见 sceneCards 注释）。
-            val radarIds = radar.orEmpty().filter { it.name.contains("雷达") }.map { it.id }.toSet()
+            // 私人雷达卡：从当日推荐池里挑名字带「雷达」的那条（通常是
+            // 「今天从《X》听起|私人雷达」）。**必须按名过滤**：推荐池绝大多数条目
+            // 是普通歌单，firstOrNull() 会把一张普通歌单当成私人雷达。
+            //
+            // 数据源是 RECOMMEND_PLAYLISTS 而不是下面的 radar —— 2026-10-04 起
+            // radar 改指「雷达歌单」区块（首页 block 流里那 6 张雷达卡），
+            // 而这张功能卡要的是「从你喜欢的歌听起」那条私人雷达，
+            // 两者混用会让功能卡与雷达区第一张卡撞成同一张封面。
+            val privateRadar = playlists?.firstOrNull { it.name.contains("雷达") }
+            // 补位去重：雷达区块与私人雷达卡已经展示过的歌单，补位卡不再重复取，
+            // 避免同一条歌单在一屏里出现两次（各区块 wire 不同只保证共享元素
+            // 键唯一，视觉上还是会重复）。
+            val used = radar.orEmpty().map { it.id }.toSet() + listOfNotNull(privateRadar?.id)
             buildList {
                 charts?.firstOrNull { it.name == "热歌榜" }?.let {
                     add(
@@ -130,10 +148,7 @@ sealed interface HomeUiState {
                         playKind = HomeViewModel.PLAY_RADIO,
                     ),
                 )
-                // 必须挑名字里带「雷达」的那条：RECOMMEND_RESOURCE 返回的是当日个性化
-                // 推荐池，绝大多数条目不是雷达（今天的首条是「他们是历经岁月…」），
-                // 直接 firstOrNull() 会把一张普通歌单当成私人雷达展示。
-                radar?.firstOrNull { it.name.contains("雷达") }?.let {
+                privateRadar?.let {
                     add(
                         FeaturedCard(
                             "radar_private", it.coverUrl,
@@ -159,7 +174,7 @@ sealed interface HomeUiState {
                         ),
                     )
                 }
-                playlists.orEmpty().filter { it.id !in radarIds }.forEachIndexed { i, p ->
+                playlists.orEmpty().filter { it.id !in used }.forEachIndexed { i, p ->
                     if (size < 6) {
                         add(
                             FeaturedCard(
@@ -227,6 +242,13 @@ class HomeViewModel @Inject constructor(
          * 一律回落 PLAYLIST，取数完全不受影响。
          */
         const val FEATURED_PLAYLIST_WIRE = "fpl"
+
+        /**
+         * 「雷达歌单」区的 wire。与 [FEATURED_PLAYLIST_WIRE] 同理：雷达卡也是歌单，
+         * 若沿用 "playlist" 就可能与别处的同一条歌单撞共享元素键。
+         * 源端 key = `shell:radar:<id>`，目标端由 `ExpandTarget("radar", …)` 原样拼出。
+         */
+        const val RADAR_WIRE = "radar"
     }
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
