@@ -48,6 +48,20 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+
+        // release 复用同一把 keystore（**故意为之**，自用项目）：
+        // 1. 手机上现在的 nume 就是这把签的，release 版换新 key 会
+        //    INSTALL_FAILED_UPDATE_INCOMPATIBLE —— 必须卸载才装得上，歌单缓存、
+        //    登录态全丢。同 key 才能就地覆盖升级。
+        // 2. APK 不进 Play，没有「debug key 不被市场接受」的问题。
+        // 3. keystore 本来就在仓库里（见上面注释），CI 无需额外 secret 也能签出
+        //    可安装的 release 包 —— 否则 CI 只能产出 unsigned，装了没意义。
+        create("release") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -57,6 +71,9 @@ android {
             ndk { abiFilters += "arm64-v8a" }
         }
         release {
+            // 没这行，assembleRelease 产出的是 `app-release-unsigned.apk` —— 根本
+            // 装不上（adb install 直接 INSTALL_PARSE_FAILED_NO_CERTIFICATES）。
+            signingConfig = signingConfigs.getByName("release")
             // Release stays ABI-complete.
             ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
             isMinifyEnabled = true
