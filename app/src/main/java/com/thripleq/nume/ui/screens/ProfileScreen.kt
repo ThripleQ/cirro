@@ -40,6 +40,7 @@ import com.thripleq.nume.core.repo.PlaylistSummary
 import com.thripleq.nume.ui.components.NumeErrorState
 import com.thripleq.nume.ui.components.NumePageTitleBar
 import com.thripleq.nume.ui.components.ShellPanel
+import com.thripleq.nume.ui.components.rememberSharedSourceGuard
 import com.thripleq.nume.ui.profile.ProfileUiState
 import com.thripleq.nume.ui.profile.ProfileViewModel
 import com.thripleq.nume.ui.theme.Motion
@@ -71,6 +72,10 @@ fun ProfileScreen(
     var panel by remember { mutableStateOf<ProfilePanel?>(null) }
     // 被点击大卡的屏幕坐标（自研 CoverExpandShell 路径的动画起点）。
     var panelRect by remember { mutableStateOf<Rect?>(null) }
+    // 这次面板要不要走封面 morph：点击那一刻起点封面是否完整可见
+    // （被顶部圆角纸切着就不飞，见 [SharedSourceGuard]）。**必须存在这里** ——
+    // 关闭面板时卡片网格会重新组合，源端的判断随之归位，只有目标端留得住。
+    var panelMorph by remember { mutableStateOf(true) }
 
     // 面板打开时通知上层收起底部导航（保留迷你播放条）；离开页面时复位。
     val shellOpen = panel != null
@@ -86,7 +91,11 @@ fun ProfileScreen(
     val scrollState = rememberScrollState()
 
     val onOpenPanel = remember {
-        { target: ProfilePanel, rect: Rect? -> panelRect = rect; panel = target }
+        { target: ProfilePanel, rect: Rect?, morph: Boolean ->
+            panelRect = rect
+            panelMorph = morph
+            panel = target
+        }
     }
     val onDismiss = remember { { panel = null } }
     val onRetry = remember(vm) { { vm.refresh() } }
@@ -134,6 +143,7 @@ fun ProfileScreen(
                             bottomPadding = panelBottomPad,
                             shared = shared,
                             avScope = scope,
+                            morph = panelMorph,
                             onDismiss = onDismiss,
                         )
                     }
@@ -176,7 +186,7 @@ private fun ProfileBodyUi(
     state: ProfileUiState,
     scrollState: ScrollState,
     onOpenTracks: (source: String, id: String, title: String) -> Unit,
-    onOpenPanel: (ProfilePanel, Rect?) -> Unit,
+    onOpenPanel: (ProfilePanel, Rect?, morphable: Boolean) -> Unit,
     onWebLogin: () -> Unit,
     onRetry: () -> Unit,
     shared: SharedTransitionScope?,
@@ -194,6 +204,10 @@ private fun ProfileBodyUi(
     ) {
         NumePageTitleBar("我的")
 
+        // 源可见性守卫：卡片被这张圆角纸的顶边切掉时不许挂共享元素
+        // （overlay 不裁，飞的那份会画在纸上方 —— 见 [SharedSourceGuard]）。
+        val guard = rememberSharedSourceGuard()
+
         // 底部避让必须放在滚动内容内部（同 TrackListScreen 的 contentPadding 做法）：
         // 放在外层 padding 会在岛背后留一条永久空白带，卡片进不去、岛像贴在画布上。
         // 顶部反过来：状态栏让位**不再**由内容承担，改由标题条兜住 —— 内容从纸上沿起，
@@ -204,6 +218,10 @@ private fun ProfileBodyUi(
                 .weight(1f)
                 .clip(RoundedCornerShape(topStart = HomeSheetRadius, topEnd = HomeSheetRadius))
                 .background(MaterialTheme.colorScheme.surface)
+                // 视口 = 这张纸的裁切边界。**必须挂在 `.padding(...)` 之前**：
+                // onGloballyPositioned 量的是它所在链条位置的尺寸，放到 padding 之后
+                // 会量到内缩后的小矩形，贴着纸边的卡会被误判成「没被切」。
+                .then(guard.viewportModifier())
                 .verticalScroll(scrollState)
                 .padding(start = 16.dp, end = 16.dp, bottom = bottomPadding),
         ) {
@@ -220,6 +238,7 @@ private fun ProfileBodyUi(
                     onOpenPanel = onOpenPanel,
                     shared = shared,
                     avScope = avScope,
+                    guard = guard,
                 )
             }
         }

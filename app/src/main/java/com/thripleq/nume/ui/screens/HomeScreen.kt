@@ -168,6 +168,16 @@ internal data class ExpandTarget(
     val title: String,
     val coverUrl: String?,
     val rect: Rect,
+    /**
+     * 这次开合要不要走封面 morph —— **点击那一刻**起点卡片是否完整可见
+     * （判定见 [com.thripleq.nume.ui.components.SharedSourceGuard]）。
+     *
+     * 决定必须记在**目标数据**上，不能只靠源端自己判断：关闭面板时网格会重新组合，
+     * 源卡片是全新的组合（其可见性 state 回到默认「可见」），判断随之丢失；而目标
+     * 一直带着这份数据，开关才算数。所以两头都挂闸：源端挡「起点被切」，目标端挡
+     * 「这次压根不该飞」。
+     */
+    val morph: Boolean = true,
 ) {
     /** 容器变换共享键：源卡片与目标面板必须一致。 */
     fun shellKey(): Any = "shell:$source:$id"
@@ -251,7 +261,14 @@ private fun HomePanelContent(
             showBackButton = false,
             previewCoverUrl = target.coverUrl,
             bottomPadding = bottomPadding,
-            coverSharedModifier = Modifier.shellSharedCover(shared, avScope, target.shellKey()),
+            // target.morph = false（点它时起点封面被顶部圆角纸切着）→ **不挂**共享元素：
+            // 挂上就有 counterpart，overlay 里那份不受裁切的封面会画在纸上方飞出来。
+            // 不挂则框架匹配不到两端，面板与封面各自淡入淡出：少了飞行，但没有错动画。
+            coverSharedModifier = if (target.morph) {
+                Modifier.shellSharedCover(shared, avScope, target.shellKey())
+            } else {
+                Modifier
+            },
         )
     }
 }

@@ -141,6 +141,8 @@ internal fun ProfileSharedPanelContent(
     bottomPadding: Dp,
     shared: SharedTransitionScope,
     avScope: AnimatedVisibilityScope,
+    /** 这次开合要不要走封面 morph（点击时起点封面是否完整可见，见 [SharedSourceGuard]）。 */
+    morph: Boolean,
     onDismiss: () -> Unit,
 ) {
     // 共享元素版没有「壳进度」，但 TrackListScreen 仍靠 LocalShellSettled 把「切到真列表」
@@ -151,6 +153,10 @@ internal fun ProfileSharedPanelContent(
             t.currentState == EnterExitState.Visible && !t.isRunning
         }
     }
+    // morph = false（点它时起点封面被顶部圆角纸切着）→ **不挂**共享元素：挂上就有
+    // counterpart，overlay 里那份不受裁切的封面会画在纸上方飞出来。不挂则匹配不到两端，
+    // 面板与封面各自淡入淡出：少了飞行，但没有错动画。
+    val coverShared = if (morph) Modifier.shellSharedCover(shared, avScope, target.shellKey) else Modifier
     CompositionLocalProvider(LocalShellSettled provides settled) {
         when (target) {
             is ProfilePanel.Tracks -> {
@@ -165,7 +171,7 @@ internal fun ProfileSharedPanelContent(
                     previewCoverUrl = target.coverUrl,
                     watermarkIcon = target.icon,
                     bottomPadding = bottomPadding,
-                    coverSharedModifier = Modifier.shellSharedCover(shared, avScope, target.shellKey),
+                    coverSharedModifier = coverShared,
                 )
             }
             is ProfilePanel.Playlists -> PlaylistGridPanel(
@@ -176,7 +182,7 @@ internal fun ProfileSharedPanelContent(
                 onCoverReady = {},
                 onOpenTracks = onOpenTracks,
                 bottomPadding = bottomPadding,
-                coverSharedModifier = Modifier.shellSharedCover(shared, avScope, target.shellKey),
+                coverSharedModifier = coverShared,
             )
         }
     }

@@ -69,6 +69,7 @@ import com.thripleq.nume.ui.components.ArtistAvatarSize
 import com.thripleq.nume.ui.components.BigCoverVisual
 import com.thripleq.nume.ui.components.NumeArt
 import com.thripleq.nume.ui.components.NumeArtwork
+import com.thripleq.nume.ui.components.SharedSourceGuard
 import com.thripleq.nume.ui.components.shellSharedCover
 import com.thripleq.nume.ui.theme.Motion
 import com.thripleq.nume.ui.theme.NumeFade
@@ -282,11 +283,17 @@ private fun LikedHeroCard(
     meta: String,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
+    guard: SharedSourceGuard,
     sharedKey: String?,
-    onClick: (Rect?) -> Unit,
+    /** morphable = 封面此刻完整可见（点击时一并交出去，决定这次开合飞不飞）。 */
+    onClick: (Rect?, morphable: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var rect by remember { mutableStateOf<Rect?>(null) }
+    // 封面此刻是否**完整**落在滚动视口里（被纸的顶边切掉一段就是 false）——
+    // 被切时不挂共享元素：overlay 里飞的那份不受裁切，会画在纸上方
+    // （见 [SharedSourceGuard]）。只在布尔翻转时写 state，滚动途中不重组。
+    var shareable by remember { mutableStateOf(true) }
     BigCoverVisual(
         coverUrl = coverUrl,
         name = "喜欢的音乐",
@@ -296,17 +303,20 @@ private fun LikedHeroCard(
             .fillMaxWidth()
             .aspectRatio(21f / 10f)
             .onGloballyPositioned { coords ->
-                rect = Rect(coords.localToWindow(Offset.Zero), coords.size.toSize())
+                val r = Rect(coords.localToWindow(Offset.Zero), coords.size.toSize())
+                rect = r
+                val ok = guard.isFullyVisible(r)
+                if (ok != shareable) shareable = ok
             }
             .then(
-                if (shared != null && avScope != null && sharedKey != null) {
+                if (shared != null && avScope != null && sharedKey != null && shareable) {
                     Modifier.shellSharedCover(shared, avScope, sharedKey)
                 } else {
                     Modifier
                 },
             )
             .clip(NumeShape.Card)
-            .pressScale { onClick(rect) },
+            .pressScale { onClick(rect, shareable) },
     )
 }
 
@@ -319,17 +329,22 @@ private fun ProfileRowCard(
     coverUrl: String?,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
+    /** null = 这条路径不挂共享元素（未登录占位卡），无需判定可见性。 */
+    guard: SharedSourceGuard?,
     sharedKey: String?,
-    onClick: (Rect?) -> Unit,
+    onClick: (Rect?, morphable: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var rect by remember { mutableStateOf<Rect?>(null) }
+    // 判定的是**小封面**而不是整行卡：卡片被纸边切掉一截时，只要 64dp 的封面还完整
+    // 露着，morph 的起点就还是有效的 —— 门槛按真正的共享元素（封面）算。
+    var shareable by remember { mutableStateOf(true) }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
             .clip(NumeShape.Card)
-            .pressScale { onClick(rect) }
+            .pressScale { onClick(rect, shareable) }
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
@@ -338,10 +353,13 @@ private fun ProfileRowCard(
                 .size(64.dp)
                 .clip(NumeShape.CardSmall)
                 .onGloballyPositioned { coords ->
-                    rect = Rect(coords.localToWindow(Offset.Zero), coords.size.toSize())
+                    val r = Rect(coords.localToWindow(Offset.Zero), coords.size.toSize())
+                    rect = r
+                    val ok = guard?.isFullyVisible(r) ?: true
+                    if (ok != shareable) shareable = ok
                 }
                 .then(
-                    if (shared != null && avScope != null && sharedKey != null) {
+                    if (shared != null && avScope != null && sharedKey != null && shareable) {
                         Modifier.shellSharedCover(shared, avScope, sharedKey)
                     } else {
                         Modifier
@@ -431,8 +449,9 @@ internal fun LoggedOutContent(onLogin: () -> Unit) {
                     coverUrl = null,
                     shared = null,
                     avScope = null,
+                    guard = null,
                     sharedKey = null,
-                    onClick = { onLogin() },
+                    onClick = { _, _ -> onLogin() },
                 )
             }
             if (i < placeholders.lastIndex) Spacer(Modifier.height(10.dp))
@@ -487,9 +506,11 @@ private fun LoginHeroCard(onLogin: () -> Unit) {
 internal fun LoggedInContent(
     data: ProfileData,
     onOpenTracks: (source: String, id: String, title: String) -> Unit,
-    onOpenPanel: (ProfilePanel, Rect?) -> Unit,
+    onOpenPanel: (ProfilePanel, Rect?, morphable: Boolean) -> Unit,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
+    /** 滚动视口的源可见性守卫（见 [SharedSourceGuard]）。 */
+    guard: SharedSourceGuard,
 ) {
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
     Column(Modifier.fillMaxWidth()) {
@@ -547,8 +568,9 @@ internal fun LoggedInContent(
                 meta = likedMeta,
                 shared = shared,
                 avScope = avScope,
+                guard = guard,
                 sharedKey = panels[0].shellKey,
-                onClick = { rect -> onOpenPanel(panels[0], rect) },
+                onClick = { rect, morphable -> onOpenPanel(panels[0], rect, morphable) },
             )
         }
         Spacer(Modifier.height(10.dp))
@@ -572,8 +594,9 @@ internal fun LoggedInContent(
                     },
                     shared = shared,
                     avScope = avScope,
+                    guard = guard,
                     sharedKey = panels[i + 1].shellKey,
-                    onClick = { rect -> onOpenPanel(panels[i + 1], rect) },
+                    onClick = { rect, morphable -> onOpenPanel(panels[i + 1], rect, morphable) },
                 )
             }
             if (i < rows.lastIndex) Spacer(Modifier.height(10.dp))

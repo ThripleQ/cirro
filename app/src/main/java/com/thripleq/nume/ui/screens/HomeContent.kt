@@ -54,8 +54,10 @@ import com.thripleq.nume.ui.components.BigCoverVisual
 import com.thripleq.nume.ui.components.NumeMediaRow
 import com.thripleq.nume.ui.components.NumePageTitleBar
 import com.thripleq.nume.ui.components.NumeSectionHeader
+import com.thripleq.nume.ui.components.SharedSourceGuard
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.numeEntrySurface
+import com.thripleq.nume.ui.components.rememberSharedSourceGuard
 import com.thripleq.nume.ui.components.shellSharedCover
 import com.thripleq.nume.ui.home.HomeUiState
 import com.thripleq.nume.ui.home.HomeViewModel
@@ -88,6 +90,10 @@ internal fun HomeContent(
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
 ) {
+    // 源可见性守卫：卡片被这张圆角纸的顶边切掉时不许挂共享元素
+    // （overlay 不裁，飞的那份会画在纸上方 —— 见 [SharedSourceGuard]）。
+    val guard = rememberSharedSourceGuard()
+
     // 顶层铺 `surfaceContainer` 当「标题条」底色，内容是一张 `surface` 圆角纸：纸的顶角
     // 圆角把底下的容器色露出来 —— 就是状态栏那条容器色 + 下方圆角内容的关系（用户参照）。
     Column(
@@ -110,7 +116,9 @@ internal fun HomeContent(
                 .fillMaxWidth()
                 .weight(1f)
                 .clip(RoundedCornerShape(topStart = HomeSheetRadius, topEnd = HomeSheetRadius))
-                .background(MaterialTheme.colorScheme.surface),
+                .background(MaterialTheme.colorScheme.surface)
+                // 视口 = 这张纸的裁切边界（列表就在纸里，标题条在纸外）。
+                .then(guard.viewportModifier()),
             contentPadding = PaddingValues(bottom = bottomPadding),
         ) {
 
@@ -140,13 +148,16 @@ internal fun HomeContent(
                     },
                     spec = FeaturedCardSpec,
                     state = rowStates.featured,
+                    guard = guard,
                     shared = shared,
                     avScope = avScope,
-                ) { c, rect ->
+                ) { c, rect, morphable ->
                     if (c.playKind != null) {
                         onPlayFeatured(c.playKind)
                     } else {
-                        onExpand(ExpandTarget(c.source, c.id, c.title, c.coverUrl, rect))
+                        onExpand(
+                            ExpandTarget(c.source, c.id, c.title, c.coverUrl, rect, morph = morphable),
+                        )
                     }
                 }
             }
@@ -197,13 +208,19 @@ internal fun HomeContent(
                     },
                     spec = RadarCardSpec,
                     state = rowStates.radar,
+                    guard = guard,
                     shared = shared,
                     avScope = avScope,
-                ) { c, rect ->
+                ) { c, rect, morphable ->
                     // wire 必须原样带上（同下方场景区）：目标端共享键是
                     // `shell:<source>:<id>`，写成 "playlist" 就与源端
                     // `shell:radar:<id>` 对不上，morph 直接不触发。
-                    onExpand(ExpandTarget(HomeViewModel.RADAR_WIRE, c.id, c.title, c.coverUrl, rect))
+                    onExpand(
+                        ExpandTarget(
+                            HomeViewModel.RADAR_WIRE, c.id, c.title, c.coverUrl, rect,
+                            morph = morphable,
+                        ),
+                    )
                 }
             }
         }
@@ -230,10 +247,13 @@ internal fun HomeContent(
                     },
                     spec = SceneCardSpec,
                     state = rowStates.scene,
+                    guard = guard,
                     shared = shared,
                     avScope = avScope,
-                ) { c, rect ->
-                    onExpand(ExpandTarget("scene", c.id, c.title, c.coverUrl, rect))
+                ) { c, rect, morphable ->
+                    onExpand(
+                        ExpandTarget("scene", c.id, c.title, c.coverUrl, rect, morph = morphable),
+                    )
                 }
             }
         }
@@ -314,9 +334,11 @@ private fun KanadeCardRow(
     cards: List<KanadeCardModel>,
     spec: KanadeCardSpec,
     state: LazyListState,
+    guard: SharedSourceGuard,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
-    onClick: (KanadeCardModel, Rect) -> Unit,
+    /** morphable = 这张卡的封面此刻完整可见（决定这次开合要不要走封面飞行）。 */
+    onClick: (KanadeCardModel, Rect, morphable: Boolean) -> Unit,
 ) {
     LazyRow(
         state = state,
@@ -324,7 +346,7 @@ private fun KanadeCardRow(
         horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         items(cards, key = { it.key }) { card ->
-            KanadeCard(card, spec, shared, avScope, onClick)
+            KanadeCard(card, spec, guard, shared, avScope, onClick)
         }
     }
 }
@@ -333,17 +355,24 @@ private fun KanadeCardRow(
 private fun KanadeCard(
     card: KanadeCardModel,
     spec: KanadeCardSpec,
+    guard: SharedSourceGuard,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
-    onClick: (KanadeCardModel, Rect) -> Unit,
+    onClick: (KanadeCardModel, Rect, morphable: Boolean) -> Unit,
 ) {
     val showTitleBar = spec.showTitleBar
     var rect by remember { mutableStateOf<Rect?>(null) }
+    // 封面此刻是否**完整**落在滚动视口里（被纸的顶边切掉一段就是 false）。
+    // 组合期要读它决定挂不挂共享元素，所以必须是 state；但只在布尔翻转时才写，
+    // 滚动途中不重组（见 [SharedSourceGuard]）。
+    var shareable by remember { mutableStateOf(true) }
     Column(
         Modifier
             .width(spec.width)
             .clip(NumeShape.Card)
-            .clickable { rect?.let { onClick(card, it) } },
+            // 点击时把「当时可见吗」一起交出去：目标端据此决定要不要飞
+            // （关闭面板时本卡会重新组合、state 归位，判断只有记在目标数据上才留得住）。
+            .clickable { rect?.let { onClick(card, it, shareable) } },
     ) {
         // 共享元素挂**封面**而非整卡：morph 的目标是面板 banner 封面（同为方形），
         // 名称条不该跟着飞。rect 也量封面 —— 与旧 BigCoverCard 的起点几何同口径。
@@ -352,12 +381,19 @@ private fun KanadeCard(
                 .fillMaxWidth()
                 .height(spec.coverHeight)
                 .onGloballyPositioned { coords ->
-                    rect = Rect(coords.localToWindow(Offset.Zero), coords.size.toSize())
+                    val r = Rect(coords.localToWindow(Offset.Zero), coords.size.toSize())
+                    rect = r
+                    val ok = guard.isFullyVisible(r)
+                    if (ok != shareable) shareable = ok
                 }
                 .then(
                     // playKind 非空的卡（漫游 / 艺人）点了直接播、不展开面板 —— 没有
                     // 对侧目标却挂共享元素，等于给转场注册一个孤儿 bounds，不挂。
-                    if (shared != null && avScope != null && card.playKind == null) {
+                    //
+                    // shareable = false（封面被列表裁切）：同样不挂 —— overlay 里飞的
+                    // 那一份不受裁切，会画在顶部圆角纸上方，看上去像封面从标题栏钻出来。
+                    // 不挂则面板照常开合、封面只淡入，不会出现「从遮挡处飞出来」的错动画。
+                    if (shared != null && avScope != null && card.playKind == null && shareable) {
                         Modifier.shellSharedCover(shared, avScope, "shell:${card.source}:${card.id}")
                     } else {
                         Modifier
