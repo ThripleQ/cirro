@@ -50,10 +50,13 @@ object NeteaseOp {
     /** 曲风标签总表 `/api/tag/list/get`。 */
     const val STYLE_LIST = 41
 
-    /** 某曲风下的歌曲 `/api/style-tag/home/song`（args: tagId, size, cursor）。 */
+    /**
+     * 某曲风下的歌曲 `/weapi/style-tag/home/song`（args: tagId, size, cursor）。
+     * 前缀必须是 weapi：服务端只在 /weapi 下注册了 style-tag 系列，打 /api 返回 400。
+     */
     const val STYLE_SONG = 42
 
-    /** 某曲风下的歌单 `/api/style-tag/home/playlist`（args: tagId, size, cursor）。 */
+    /** 某曲风下的歌单 `/weapi/style-tag/home/playlist`（args: tagId, size, cursor）。 */
     const val STYLE_PLAYLIST = 43
 
     /**
@@ -61,4 +64,10 @@ object NeteaseOp {
      * 每次调用服务端按口味随机出一批歌，无分页；需登录。mode 留空表示默认模式。
      */
     const val RADIO = 44
+
+    /** 歌单分类总表 `/weapi/playlist/catalogue`（场景 / 情感 / 风格…标签）。 */
+    const val PLAYLIST_CATALOGUE = 45
+
+    /** 某标签下的热门歌单 `/weapi/playlist/list`（args: cat, limit, offset）。 */
+    const val PLAYLIST_LIST = 46
 }

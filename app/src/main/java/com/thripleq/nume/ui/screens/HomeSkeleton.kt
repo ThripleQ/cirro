@@ -70,9 +70,8 @@ internal fun HomeSkeleton(bottomPadding: Dp) {
             NumeSectionHeaderSkeleton()
             repeat(3) { NumeMediaRowSkeleton() }
 
-            NumeSectionHeaderSkeleton()
-            SkeletonCarousel(FeaturedCardSize)
-
+            // 区块顺序与 HomeContent 对齐：精选推荐 / 猜你喜欢 / 场景音乐
+            // （原「雷达歌单」区已删除，骨架同步少一块）。
             NumeSectionHeaderSkeleton()
             SkeletonCarousel(SceneCardSize)
         }

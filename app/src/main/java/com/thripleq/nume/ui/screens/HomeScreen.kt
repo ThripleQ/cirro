@@ -207,11 +207,10 @@ private fun HomeBodyUi(
     }
 }
 
-/** 探索页三个横滑列表的滚动状态，hoist 到 [HomeScreen]（见 [HomeRowStates] 注释）。 */
+/** 探索页横滑列表的滚动状态，hoist 到 [HomeScreen]（见 [HomeRowStates] 注释）。 */
 @Composable
 private fun rememberRowStates(): HomeRowStates = HomeRowStates(
     featured = rememberLazyListState(),
-    radar = rememberLazyListState(),
     scene = rememberLazyListState(),
 )
 

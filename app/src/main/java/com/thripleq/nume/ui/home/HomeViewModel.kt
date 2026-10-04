@@ -13,6 +13,8 @@ import com.thripleq.nume.core.repo.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,8 +41,15 @@ sealed interface HomeUiState {
         val styles: List<StyleTag>? = null,
         /** 首个曲风下的歌曲（`/api/style-tag/home/song`），null = 还没拉到。 */
         val styleSongs: List<Track>? = null,
-        /** 第二个曲风下的歌单（`/api/style-tag/home/playlist`），给场景音乐顶位。 */
+        /** 第二个曲风下的歌单（`/weapi/style-tag/home/playlist`）。 */
         val stylePlaylists: List<PlaylistCard>? = null,
+        /**
+         * 「场景音乐」卡：kanade 这一区是 **sceneTags**（清晨 / 夜晚 / 伤感 /
+         * 治愈…的标签卡）。官方歌单分类里 category 2 = 场景、3 = 情感，标签名与
+         * kanade 卡面重合，所以用它，封面取该标签下第一张热门歌单。
+         * null = 还没拉到。
+         */
+        val scene: List<SceneCard>? = null,
     ) : HomeUiState {
 
         /**
@@ -65,16 +74,14 @@ sealed interface HomeUiState {
                 else -> dailySongs
             }
 
-        /** 场景音乐：优先曲风歌单，否则用大众化推荐歌单顶位（视觉同是歌单卡）。 */
-        val sceneCards: List<PlaylistCard>
-            get() {
-                // 雷达区已展示的歌单不再进场景区：RECOMMEND_RESOURCE 与
-                // personalized/playlist 是两个高度重叠的推荐池，同一条「今天从X听起|
-                // 私人雷达」两边都可能出现（探针实测 id 3136952023），视觉上重复。
-                val used = radar.orEmpty().filter { it.name.contains("雷达") }.map { it.id }.toSet()
-                val base = stylePlaylists?.takeIf { it.isNotEmpty() } ?: playlists.orEmpty()
-                return base.filter { it.id !in used }
-            }
+        /**
+         * 场景音乐卡：直接用 [scene]（场景 / 情感标签卡）。
+         *
+         * 以前这里是「曲风歌单 / 大众推荐歌单」，与 kanade 的 sceneTags 不是一回事，
+         * 而且与「雷达歌单」区共用推荐池会撞同一条歌单（见 466b035）。换成标签卡后
+         * 数据源彻底分开，不会再撞。
+         */
+        val sceneCards: List<SceneCard> get() = scene.orEmpty()
 
         /**
          * 「精选推荐」横滑功能卡（布局抄 kanade 主页，2026-10-04）。
@@ -123,13 +130,12 @@ sealed interface HomeUiState {
                         playKind = HomeViewModel.PLAY_RADIO,
                     ),
                 )
-                radar?.firstOrNull()?.let {
+                // 必须挑名字里带「雷达」的那条：RECOMMEND_RESOURCE 返回的是当日个性化
+                // 推荐池，绝大多数条目不是雷达（今天的首条是「他们是历经岁月…」），
+                // 直接 firstOrNull() 会把一张普通歌单当成私人雷达展示。
+                radar?.firstOrNull { it.name.contains("雷达") }?.let {
                     add(
                         FeaturedCard(
-                            // source 用 "fradar" 而不是 "radar"：下面「雷达歌单」区块
-                            // 用区块专属 wire "radar"，若这张卡也用 "radar"，同一条歌单
-                            // 又是两个源抢一个展开目标（见 HomeContent 雷达区注释）。
-                            // 各区块 wire 互不相同，整页共享键恒唯一。
                             "radar_private", it.coverUrl,
                             "私人雷达", "从你喜欢的歌听起", "fradar", it.id,
                         ),
@@ -173,6 +179,13 @@ sealed interface HomeUiState {
  * 「精选推荐」一张功能卡：方形封面 + 左上角白底徽标（卡名）+ 底部浅灰说明条。
  * 与 kanade 实测一致：徽标是**卡名**，说明条是**一句描述**，不是歌单名。
  */
+/** 「场景音乐」一张标签卡：卡面是该标签下第一张热门歌单的封面，名称条是标签名。 */
+data class SceneCard(
+    val tag: String,
+    val coverUrl: String?,
+    val playlistId: String,
+)
+
 data class FeaturedCard(
     val key: String,
     val coverUrl: String?,
@@ -200,6 +213,9 @@ class HomeViewModel @Inject constructor(
 
         /** [FeaturedCard.playKind]：点了播「种子歌所属艺人」的热门歌。 */
         const val PLAY_ARTIST = "artist"
+
+        /** 场景音乐取几个场景 / 情感标签（kanade 实测首屏 3 张，多给几张可横滑）。 */
+        const val SCENE_TAG_COUNT = 8
 
         /**
          * 歌单型功能卡的 wire：故意不叫 "playlist"。
@@ -233,6 +249,19 @@ class HomeViewModel @Inject constructor(
             val charts = async { chartRepo.charts() }
             val radar = async { homeRepo.radarPlaylists() }
             val styles = async { homeRepo.styleList() }
+            // 场景音乐：先拿场景/情感标签，再为每个标签各取一张热门歌单当封面
+            // （分类表里标签没有封面）。标签之间无依赖 → 并行。
+            val scene = async {
+                val tags = homeRepo.sceneTags(SCENE_TAG_COUNT)
+                coroutineScope {
+                    tags.map { tag ->
+                        async {
+                            homeRepo.playlistsByCat(tag, "1").firstOrNull()
+                                ?.let { SceneCard(tag, it.coverUrl, it.id) }
+                        }
+                    }.awaitAll().filterNotNull()
+                }
+            }
             // account 慢只拖后 daily 一块，其余四块完全不受影响。
             val daily = async { if (loggedInAsync.await()) homeRepo.dailySongs() else emptyList() }
 
@@ -271,13 +300,16 @@ class HomeViewModel @Inject constructor(
             ready = ready.copy(styleSongs = styleSongs.await())
             _uiState.value = ready
             ready = ready.copy(stylePlaylists = stylePlaylists.await())
+            _uiState.value = ready
+            ready = ready.copy(scene = scene.await())
 
             val allEmpty = ready.playlists.isNullOrEmpty() &&
                 ready.charts.isNullOrEmpty() &&
                 ready.radar.isNullOrEmpty() &&
                 ready.dailySongs.isNullOrEmpty() &&
                 ready.styleSongs.isNullOrEmpty() &&
-                ready.stylePlaylists.isNullOrEmpty()
+                ready.stylePlaylists.isNullOrEmpty() &&
+                ready.scene.isNullOrEmpty()
             _uiState.value = if (allEmpty) HomeUiState.Error else ready
         }
     }

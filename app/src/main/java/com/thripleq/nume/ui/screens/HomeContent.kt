@@ -61,7 +61,7 @@ import com.thripleq.nume.ui.home.HomeUiState
 import com.thripleq.nume.ui.theme.NumeShape
 
 /**
- * 探索页三个横滑列表的滚动状态（精选推荐 / 雷达歌单 / 场景音乐）。
+ * 探索页横滑列表的滚动状态（精选推荐 / 场景音乐）。
  *
  * 必须 hoist 到 [HomeScreen]：开合面板走 [androidx.compose.animation.AnimatedContent]，
  * 关闭面板时网格会重新组合，写在 [HomeContent] 内的 `rememberLazyListState()` 会随组合树
@@ -69,7 +69,6 @@ import com.thripleq.nume.ui.theme.NumeShape
  */
 internal data class HomeRowStates(
     val featured: LazyListState,
-    val radar: LazyListState,
     val scene: LazyListState,
 )
 
@@ -176,48 +175,38 @@ internal fun HomeContent(
             }
         }
 
-        // 雷达歌单：横滑卡（无左上角徽标 —— kanade 里「私人雷达」等字样是封面图自带的，
-        // 我们用底部名称条替代；名称条两种卡都有）。数据取 RECOMMEND_RESOURCE 里
-        // 名字带「雷达」的条目；当前账号实测只有「私人雷达」一条，有几个显示几个。
-        val radar = data.radar.orEmpty().filter { it.name.contains("雷达") }
-        if (radar.isNotEmpty()) {
-            item(key = "h_radar") { NumeSectionHeader("雷达歌单") }
-            item(key = "row_radar") {
-                KanadeCardRow(
-                    // source 用区块专属 wire "radar"：RECOMMEND_RESOURCE 与
-                    // personalized/playlist 是两个高度重叠的推荐池（同一条歌单两边都会
-                    // 出现，探针实测 id 3136952023 两边都有），若两边都注册
-                    // `shell:playlist:<id>` 就是两个源抢一个展开目标 —— 表现为动画错乱。
-                    // 每个区块一个 wire，键在整页内恒唯一；TrackListSource.from 对未知
-                    // wire 回落 PLAYLIST，取数不受影响。
-                    cards = radar.map { KanadeCardModel(it.id, it.coverUrl, it.name, null, "radar", it.id) },
-                    cardWidth = FeaturedCardSize,
-                    state = rowStates.radar,
-                    shared = shared,
-                    avScope = avScope,
-                ) { c, rect ->
-                    onExpand(ExpandTarget("playlist", c.id, c.title, c.coverUrl, rect))
-                }
-            }
-        }
-
-        // 场景音乐：横滑小卡（110dp 窄版，同样只有底部名称条）。
-        // kanade 的场景音乐走 OpenAPI 的 scene/radio 接口（情绪/场景标签歌单）；
-        // 2026-10-04 补齐：优先用 `/api/style-tag/home/playlist` 的曲风歌单，
-        // 拿不到再退回大众化推荐歌单（RECOMMEND_PLAYLISTS）顶位，取前 6 张。
+        // 场景音乐：横滑小卡（110dp 窄版，只有底部名称条 —— kanade 实测卡面就是
+        // 「封面 + 底部标签名」，日语弦歌 / 伤感 / 浪漫时光 这类词）。
+        //
+        // kanade 这一区是 sceneTags（它那套 OpenAPI 的场景标签）。我们拿不到，
+        // 但官方歌单分类（/weapi/playlist/catalogue）里 category 2 = 场景、
+        // 3 = 情感，标签名与它高度重合（清晨/夜晚/学习/伤感/治愈/放松…），
+        // 所以用标签卡；封面取该标签下第一张热门歌单（分类表里的标签本身没图）。
+        //
+        // 注：原「雷达歌单」区块**已删除**。weapi 侧没有任何雷达列表端点：
+        // 试过 7 个候选路径全部 404，上游 api-enhanced 439 个 module 里也没有
+        // radar —— kanade 的 radar / radar_private / another_radar 三张卡走的是
+        // 它的 OpenAPI（个人开发者需成年才能申请）。RECOMMEND_RESOURCE 里名字带
+        // 「雷达」的通常只有 1 条，撑不起一个区块，按用户要求删掉。
         val scene = data.sceneCards.take(SCENE_CARD_COUNT)
         if (scene.isNotEmpty()) {
             item(key = "h_scene") { NumeSectionHeader("场景音乐") }
             item(key = "row_scene") {
                 KanadeCardRow(
-                    // source 用区块专属 wire "scene"，理由同上「雷达歌单」区。
-                    cards = scene.map { KanadeCardModel(it.id, it.coverUrl, it.name, null, "scene", it.id) },
+                    // source "scene" = 区块专属 wire，保证整页共享键唯一
+                    // （见 HomeViewModel.FEATURED_PLAYLIST_WIRE 注释）。
+                    // **ExpandTarget 必须原样带上这个 wire**：目标端 banner 的
+                    // 共享键是 `shell:<source>:<id>`，这里再写 "playlist" 就会
+                    // 与源端 `shell:scene:<id>` 对不上，morph 直接不触发。
+                    cards = scene.map {
+                        KanadeCardModel(it.playlistId, it.coverUrl, it.tag, null, "scene", it.playlistId)
+                    },
                     cardWidth = SceneCardSize,
                     state = rowStates.scene,
                     shared = shared,
                     avScope = avScope,
                 ) { c, rect ->
-                    onExpand(ExpandTarget("playlist", c.id, c.title, c.coverUrl, rect))
+                    onExpand(ExpandTarget("scene", c.id, c.title, c.coverUrl, rect))
                 }
             }
         }

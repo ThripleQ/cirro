@@ -227,6 +227,9 @@ static ne_resp *dispatch(int op, int narg, const char *const a[]) {
         case 43: return ne_style_playlist(A(0), A(1), A(2));
         /* 44: 私人漫游 /api/v1/radio/get（args: mode, subMode, limit） */
         case 44: return ne_radio_get(A(0), A(1), A(2));
+        /* 45/46: 歌单分类表 / 分类歌单（场景音乐区的标签卡与其封面） */
+        case 45: return ne_playlist_catalogue();
+        case 46: return ne_playlist_list(A(0), A(1), A(2));
         default: return NULL;
     }
 #undef A

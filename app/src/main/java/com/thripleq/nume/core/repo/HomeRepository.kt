@@ -226,7 +226,8 @@ class HomeRepository @Inject constructor(
             }
         }
 
-    /** 某曲风下的歌单（`style_playlist`），给「场景音乐」区顶位用。 */
+    /** 某曲风下的歌单（`style_playlist`）。返回壳是 `data.playlist`，封面键是
+     *  `cover`（不是 picUrl）、曲目数是 `songCount`（不是 trackCount）。 */
     suspend fun stylePlaylists(tagId: String, size: String = "6"): List<PlaylistCard> =
         withContext(Dispatchers.IO) {
             val r = gateway.call(NeteaseOp.STYLE_PLAYLIST, tagId, size, "0")
@@ -234,7 +235,8 @@ class HomeRepository @Inject constructor(
             if (r.err != 0 || r.body.isEmpty()) return@withContext emptyList()
             try {
                 val root = JSONObject(String(r.body, Charsets.UTF_8))
-                val arr = firstArray(root, "data", "result", "list", "playlists")
+                val arr = root.optJSONObject("data")?.optJSONArray("playlist")
+                    ?: firstArray(root, "data", "result", "list", "playlists")
                 if (arr != null) {
                     buildList {
                         for (i in 0 until arr.length()) {
@@ -244,6 +246,52 @@ class HomeRepository @Inject constructor(
                 } else {
                     parseCards(root)
                 }
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+
+    /**
+     * 歌单分类总表（`/weapi/playlist/catalogue`）。
+     *
+     * kanade 的「场景音乐」是 **sceneTags**（清晨 / 夜晚 / 伤感 / 治愈…），
+     * 我们拿不到它那套 OpenAPI，但官方这套歌单分类里 category 2 = 场景、
+     * 3 = 情感，标签名与 kanade 卡面高度重合，语义对得上。
+     * 只返回这两类的标签名（**标签本身没有封面**，封面要另取，见 [playlistsByCat]）。
+     */
+    suspend fun sceneTags(limit: Int = 8): List<String> =
+        withContext(Dispatchers.IO) {
+            val r = gateway.call(NeteaseOp.PLAYLIST_CATALOGUE)
+            dbg { "catalogue err=${r.err} len=${r.body.size} body=${String(r.body, Charsets.UTF_8).take(300)}" }
+            if (r.err != 0 || r.body.isEmpty()) return@withContext emptyList()
+            try {
+                val root = JSONObject(String(r.body, Charsets.UTF_8))
+                val sub = root.optJSONArray("sub") ?: return@withContext emptyList()
+                buildList {
+                    for (i in 0 until sub.length()) {
+                        val o = sub.optJSONObject(i) ?: continue
+                        // 2 = 场景，3 = 情感；其余（语种/风格/主题）不进场景音乐区
+                        val cat = o.optInt("category", -1)
+                        if (cat != 2 && cat != 3) continue
+                        val name = o.optString("name")
+                        if (name.isBlank()) continue
+                        add(name)
+                        if (size >= limit) break
+                    }
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+
+    /** 某标签（场景 / 情感词）下的热门歌单（`/weapi/playlist/list`）。 */
+    suspend fun playlistsByCat(cat: String, limit: String = "3"): List<PlaylistCard> =
+        withContext(Dispatchers.IO) {
+            val r = gateway.call(NeteaseOp.PLAYLIST_LIST, cat, limit, "0")
+            dbg { "playlistList cat=$cat err=${r.err} len=${r.body.size}" }
+            if (r.err != 0 || r.body.isEmpty()) return@withContext emptyList()
+            try {
+                parseCards(JSONObject(String(r.body, Charsets.UTF_8)))
             } catch (_: Exception) {
                 emptyList()
             }
@@ -312,13 +360,19 @@ private fun parseCard(o: JSONObject?): PlaylistCard? {
     if (o == null) return null
     val id = o.optLong("id", 0L)
     if (id <= 0) return null
-    val cover = o.optString("picUrl").ifBlank { o.optString("coverImgUrl") }
+    // 封面键三个端点三种写法：picUrl（推荐/雷达）、coverImgUrl（playlist/list）、
+    // cover（style-tag/home/playlist）—— 全都试，谁非空用谁。
+    val cover = o.optString("picUrl")
+        .ifBlank { o.optString("coverImgUrl") }
+        .ifBlank { o.optString("cover") }
+    val tracks = o.optLong("trackCount", -1L)
+        .let { if (it >= 0) it else o.optLong("songCount", 0L) }
     return PlaylistCard(
         id = id.toString(),
         name = o.optString("name"),
         coverUrl = httpsUrl(cover),
         playCount = o.optLong("playCount", o.optLong("playcount", 0L)),
-        trackCount = o.optLong("trackCount", o.optLong("trackCount", 0L)),
+        trackCount = tracks,
     )
 }
 
