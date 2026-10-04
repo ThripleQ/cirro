@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -54,7 +53,8 @@ internal fun HomeSkeleton(bottomPadding: Dp) {
             SkeletonBox(Modifier.size(28.dp), CircleShape)
         }
 
-        // 内容圆角纸，与真内容的 LazyColumn 同形。
+        // 内容圆角纸，与真内容的 LazyColumn 同形（区块顺序照 kanade 主页，2026-10-04）：
+        // 精选推荐大卡 → 猜你喜欢单曲行 → 雷达歌单大卡 → 场景音乐窄卡。
         Column(
             Modifier
                 .fillMaxWidth()
@@ -65,29 +65,29 @@ internal fun HomeSkeleton(bottomPadding: Dp) {
                 .padding(bottom = bottomPadding),
         ) {
             NumeSectionHeaderSkeleton()
-            repeat(4) { NumeMediaRowSkeleton() }
+            SkeletonCarousel(FeaturedCardSize)
 
             NumeSectionHeaderSkeleton()
-            SkeletonCarousel()
+            repeat(3) { NumeMediaRowSkeleton() }
 
             NumeSectionHeaderSkeleton()
-            SkeletonCarousel()
+            SkeletonCarousel(FeaturedCardSize)
 
             NumeSectionHeaderSkeleton()
-            repeat(4) { NumeMediaRowSkeleton() }
+            SkeletonCarousel(SceneCardSize)
         }
     }
 }
 
 @Composable
-private fun SkeletonCarousel() {
+private fun SkeletonCarousel(cardWidth: Dp) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        repeat(3) { SkeletonBox(Modifier.size(BigCoverSize), NumeShape.Card) }
+        repeat(3) { SkeletonBox(Modifier.size(cardWidth), NumeShape.Card) }
     }
 }
 

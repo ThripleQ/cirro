@@ -8,7 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,11 +21,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
@@ -65,17 +61,16 @@ import com.thripleq.nume.ui.home.HomeUiState
 import com.thripleq.nume.ui.theme.NumeShape
 
 /**
- * 探索页四个横滑列表的滚动状态（播放歌单 / 榜单 / 每日推荐 / 最近播放）。
+ * 探索页三个横滑列表的滚动状态（精选推荐 / 雷达歌单 / 场景音乐）。
  *
  * 必须 hoist 到 [HomeScreen]：开合面板走 [androidx.compose.animation.AnimatedContent]，
  * 关闭面板时网格会重新组合，写在 [HomeContent] 内的 `rememberLazyListState()` 会随组合树
  * 销毁而回到 0——与纵向 [listState] 同样的坑。
  */
 internal data class HomeRowStates(
-    val playlists: LazyListState,
-    val charts: LazyListState,
-    val daily: LazyGridState,
-    val recent: LazyGridState,
+    val featured: LazyListState,
+    val radar: LazyListState,
+    val scene: LazyListState,
 )
 
 @Composable
@@ -119,70 +114,88 @@ internal fun HomeContent(
 
         // 逐块渲染：null = 这块还没就绪，整个区块（含标题）不显示，避免未就绪
         // 时先闪出空标题/登录引导；就绪后再按是否有内容决定渲染。
+        // 区块与卡片样式照抄 kanade 主页（uiautomator 实测坐标，2026-10-04）。
 
-        // 每日推荐歌曲（小封面单曲行，每页 4 首左右翻页）
+        // 精选推荐：功能卡横滑（方形封面 + 左上角类型徽标 + 底部名称条）。
+        // kanade 用客户端侧枚举定死 6 张卡；我们从已有数据组装等价物（见
+        // HomeUiState.Ready.featured），逐块就绪后这张行会自动长齐。
+        val featured = data.featured
+        if (featured.isNotEmpty()) {
+            item(key = "h_featured") { NumeSectionHeader("精选推荐") }
+            item(key = "row_featured") {
+                KanadeCardRow(
+                    cards = featured.map {
+                        KanadeCardModel(it.key, it.coverUrl, it.title, it.badge, it.source, it.id)
+                    },
+                    cardWidth = FeaturedCardSize,
+                    state = rowStates.featured,
+                    shared = shared,
+                    avScope = avScope,
+                ) { c, rect ->
+                    onExpand(ExpandTarget(c.source, c.id, c.title, c.coverUrl, rect))
+                }
+            }
+        }
+
+        // 猜你喜欢的好歌：竖列表（封面 + 歌名 + 歌手 - 专辑），点了直接播。
+        // kanade 的标题是「猜你喜欢的「风格」好歌」，风格词来自它的 styleList 接口
+        // （OpenAPI 专属）；我们没有，故标题不带风格限定。
         val daily = data.dailySongs
         if (daily != null) {
-            item(key = "h_daily") { NumeSectionHeader("每日推荐歌曲") }
+            item(key = "h_guess") { NumeSectionHeader("猜你喜欢的好歌") }
             if (daily.isNotEmpty()) {
-                item(key = "daily_pager") {
-                    SongRowGrid(tracks = daily, onPlay = onPlay, state = rowStates.daily)
+                itemsIndexed(
+                    daily.take(GUESS_ROW_COUNT),
+                    key = { i, t -> "guess_${t.id}_$i" },
+                ) { index, track ->
+                    NumeMediaRow(
+                        title = track.name,
+                        subtitle = guessSubtitle(track),
+                        coverUrl = track.artworkUrl,
+                        onClick = { onPlay(daily, index) },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                    )
                 }
             } else {
                 item(key = "login_daily") { LoginPrompt(onWebLogin) }
             }
         }
 
-        // 推荐歌单（大封面横滑卡片）
-        val playlists = data.playlists
-        if (playlists.isNullOrEmpty().not()) {
-            item(key = "h_pl") { NumeSectionHeader("推荐歌单") }
-            item(key = "row_pl") {
-                CarouselRow(
-                    items = playlists,
-                    keyPrefix = "playlist",
-                    keyOf = { it.id },
-                    coverOf = { it.coverUrl },
-                    nameOf = { it.name },
-                    state = rowStates.playlists,
-                    shared = shared,
-                    avScope = avScope,
-                ) { p, rect ->
-                    onExpand(ExpandTarget("playlist", p.id, p.name, p.coverUrl, rect))
-                }
-            }
-        }
-
-        // 排行榜（大封面横滑卡片）
-        val charts = data.charts
-        if (charts.isNullOrEmpty().not()) {
-            item(key = "h_chart") { NumeSectionHeader("排行榜") }
-            item(key = "row_chart") {
-                CarouselRow(
-                    items = charts,
-                    keyPrefix = "chart",
-                    keyOf = { it.id },
-                    coverOf = { it.coverUrl },
-                    nameOf = { it.name },
-                    state = rowStates.charts,
+        // 雷达歌单：横滑卡（无左上角徽标 —— kanade 里「私人雷达」等字样是封面图自带的，
+        // 我们用底部名称条替代；名称条两种卡都有）。数据取 RECOMMEND_RESOURCE 里
+        // 名字带「雷达」的条目；当前账号实测只有「私人雷达」一条，有几个显示几个。
+        val radar = data.radar.orEmpty().filter { it.name.contains("雷达") }
+        if (radar.isNotEmpty()) {
+            item(key = "h_radar") { NumeSectionHeader("雷达歌单") }
+            item(key = "row_radar") {
+                KanadeCardRow(
+                    cards = radar.map { KanadeCardModel(it.id, it.coverUrl, it.name, null, "playlist", it.id) },
+                    cardWidth = FeaturedCardSize,
+                    state = rowStates.radar,
                     shared = shared,
                     avScope = avScope,
                 ) { c, rect ->
-                    onExpand(ExpandTarget("chart", c.id, c.name, c.coverUrl, rect))
+                    onExpand(ExpandTarget("playlist", c.id, c.title, c.coverUrl, rect))
                 }
             }
         }
 
-        // 最近播放（小封面单曲行，每页 4 首左右翻页）
-        val recent = data.recentSongs
-        if (recent != null) {
-            item(key = "h_recent") { NumeSectionHeader("最近播放") }
-            if (recent.isNotEmpty()) {
-                item(key = "recent_pager") {
-                    SongRowGrid(tracks = recent, onPlay = onPlay, state = rowStates.recent)
+        // 场景音乐：横滑小卡（110dp 窄版，同样只有底部名称条）。
+        // kanade 的场景音乐走 OpenAPI 的 scene/radio 接口（情绪/场景标签歌单）；
+        // 我们用大众化推荐歌单（RECOMMEND_PLAYLISTS）顶位，取前 6 张。
+        val scene = data.playlists.orEmpty().take(SCENE_CARD_COUNT)
+        if (scene.isNotEmpty()) {
+            item(key = "h_scene") { NumeSectionHeader("场景音乐") }
+            item(key = "row_scene") {
+                KanadeCardRow(
+                    cards = scene.map { KanadeCardModel(it.id, it.coverUrl, it.name, null, "playlist", it.id) },
+                    cardWidth = SceneCardSize,
+                    state = rowStates.scene,
+                    shared = shared,
+                    avScope = avScope,
+                ) { c, rect ->
+                    onExpand(ExpandTarget("playlist", c.id, c.title, c.coverUrl, rect))
                 }
-            } else {
-                item(key = "login_recent") { LoginPrompt(onWebLogin) }
             }
         }
     }
@@ -198,111 +211,131 @@ internal val HomeSheetRadius = 28.dp
  * `surface` 圆角纸的顶角会把容器色露出来。标题固定，内容在圆角纸里滚。
  */
 
-/** 大封面横滑卡片行（歌单 / 榜单）。 */
+/**
+ * kanade 式卡片（布局实测 2026-10-04，uiautomator 坐标 ÷ 3 = dp）：
+ *
+ * - **精选推荐**卡：方形封面 146dp（440px）+ 左上角白底圆角**类型徽标** + 底部浅灰名称条；
+ * - **雷达歌单**卡：同宽但**无徽标** —— kanade 里「私人雷达」等字样是封面图自带的（dump
+ *   对应位置读不到文本节点），我们补一条底部名称条，两种卡其余完全一致；
+ * - **场景音乐**卡：110dp（330px）窄版，同样只有名称条。
+ */
+internal data class KanadeCardModel(
+    val key: Any,
+    val coverUrl: String?,
+    val title: String,
+    /** 左上角白底类型徽标；null = 不画（雷达 / 场景卡）。 */
+    val badge: String?,
+    val source: String,
+    val id: String,
+)
+
+/** 精选推荐 / 雷达歌单卡宽（kanade 实测 440px ÷ 3）。 */
+internal val FeaturedCardSize = 146.dp
+
+/** 场景音乐卡宽（kanade 实测 330px ÷ 3）。 */
+internal val SceneCardSize = 110.dp
+
+/** 猜你喜欢好歌展示行数（kanade 实测 3 行）。 */
+private const val GUESS_ROW_COUNT = 3
+
+/** 场景音乐展示张数（kanade 实测 3 张，我们多给几张可横滑）。 */
+private const val SCENE_CARD_COUNT = 6
+
+/** 卡片底部名称条高度（kanade 卡高约 1/4）。 */
+private val CardStripHeight = 32.dp
+
+/** 横滑卡片行：精选推荐（带徽标）与雷达 / 场景（无徽标）共用。 */
 @Composable
-private fun <T> CarouselRow(
-    items: List<T>,
-    keyPrefix: String,
-    keyOf: (T) -> Any,
-    coverOf: (T) -> String?,
-    nameOf: (T) -> String,
+private fun KanadeCardRow(
+    cards: List<KanadeCardModel>,
+    cardWidth: Dp,
     state: LazyListState,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
-    onClick: (T, Rect) -> Unit,
+    onClick: (KanadeCardModel, Rect) -> Unit,
 ) {
     LazyRow(
         state = state,
         contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
-        items(items, key = { keyOf(it) }) { item ->
-            BigCoverCard(
-                coverUrl = coverOf(item),
-                name = nameOf(item),
-                shared = shared,
-                avScope = avScope,
-                sharedKey = "shell:$keyPrefix:${keyOf(item)}",
-            ) { rect -> onClick(item, rect) }
+        items(cards, key = { it.key }) { card ->
+            KanadeCard(card, cardWidth, shared, avScope, onClick)
         }
     }
 }
 
-internal val BigCoverSize = 116.dp
-
 @Composable
-private fun BigCoverCard(
-    coverUrl: String?,
-    name: String,
+private fun KanadeCard(
+    card: KanadeCardModel,
+    cardWidth: Dp,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
-    sharedKey: Any,
-    onClick: (Rect) -> Unit,
+    onClick: (KanadeCardModel, Rect) -> Unit,
 ) {
     var rect by remember { mutableStateOf<Rect?>(null) }
-    Box(
+    Column(
         Modifier
-            .size(BigCoverSize)
-            .onGloballyPositioned { coords ->
-                rect = Rect(coords.localToWindow(Offset.Zero), coords.size.toSize())
-            }
-            // 容器变换（sharedBounds）：与目标 banner 封面挂同一个 sharedKey，框架把这张
-            // 封面从卡片位置/尺寸 morph 到 banner，内容按 scaleToBounds 缩放（不逐帧重排）。
-            .then(
-                if (shared != null && avScope != null) {
-                    Modifier.shellSharedCover(shared, avScope, sharedKey)
-                } else {
-                    Modifier
-                },
-            )
+            .width(cardWidth)
             .clip(NumeShape.Card)
-            .clickable { rect?.let(onClick) },
+            .clickable { rect?.let { onClick(card, it) } },
     ) {
-        BigCoverVisual(coverUrl, name, Modifier.fillMaxSize())
-    }
-}
-
-/** 单曲区块行高（封面 52dp + 上下 8dp）。 */
-private val TrackRowHeight = 68.dp
-
-/**
- * 单曲区块：横向滚动的多行网格（最多 4 行），每列占屏 ~47.5%——YT Music / InnerTune 的
- * 「Quick picks」式布局：一屏内把整组歌摊开、横向滑查看更多，比整页翻页更易扫读。
- * 布局参照 InnerTune（z-huang/InnerTune，Material 3 YT Music 客户端）的 HomeScreen Quick Picks。
- */
-@Composable
-private fun SongRowGrid(
-    tracks: List<Track>,
-    onPlay: (List<Track>, Int) -> Unit,
-    state: LazyGridState,
-) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val itemWidth = maxWidth * 0.475f
-        val rows = minOf(4, tracks.size).coerceAtLeast(1)
-        LazyHorizontalGrid(
-            state = state,
-            rows = GridCells.Fixed(rows),
-            modifier = Modifier
+        // 共享元素挂**封面**而非整卡：morph 的目标是面板 banner 封面（同为方形），
+        // 名称条不该跟着飞。rect 也量封面 —— 与旧 BigCoverCard 的起点几何同口径。
+        Box(
+            Modifier
                 .fillMaxWidth()
-                .height(TrackRowHeight * rows),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .height(cardWidth)
+                .onGloballyPositioned { coords ->
+                    rect = Rect(coords.localToWindow(Offset.Zero), coords.size.toSize())
+                }
+                .then(
+                    if (shared != null && avScope != null) {
+                        Modifier.shellSharedCover(shared, avScope, "shell:${card.source}:${card.id}")
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
-            gridItemsIndexed(
-                items = tracks,
-                key = { _, track -> track.id },
-            ) { index, track ->
-                NumeMediaRow(
-                    title = track.name,
-                    subtitle = track.artist.ifBlank { null },
-                    coverUrl = track.artworkUrl,
-                    onClick = { onPlay(tracks, index) },
-                    modifier = Modifier.width(itemWidth),
+            BigCoverVisual(card.coverUrl, card.title, Modifier.fillMaxSize())
+            card.badge?.let { badge ->
+                Text(
+                    text = badge,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .clip(NumeShape.Chip)
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
         }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(CardStripHeight)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = card.title,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 6.dp),
+            )
+        }
     }
 }
+
+/** 「歌手 - 专辑」副标题（kanade 猜你喜欢行格式；无专辑时只留歌手）。 */
+private fun guessSubtitle(track: Track): String =
+    if (track.albumName.isBlank()) track.artist
+    else "${track.artist} - ${track.albumName}"
 
 @Composable
 private fun LoginPrompt(onLogin: () -> Unit) {

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.thripleq.nume.core.playback.PlaybackLauncher
 import com.thripleq.nume.core.repo.ChartRepository
+import com.thripleq.nume.core.repo.HomeRepository
 import com.thripleq.nume.core.repo.ProfileRepository
 import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.core.repo.TrackCollection
@@ -25,7 +26,10 @@ enum class TrackListSource(val wire: String, val label: String) {
     LIKED("liked", "喜欢的音乐"),
     PURCHASED("purchased", "已购音乐"),
     PLAYLIST("playlist", "歌单"),
-    ALBUM("album", "专辑");
+    ALBUM("album", "专辑"),
+
+    /** 每日推荐歌曲（探索页「精选推荐」卡入口；无后端壳，ViewModel 组装简化壳）。 */
+    DAILY("daily", "每日推荐");
 
     companion object {
         fun from(wire: String): TrackListSource =
@@ -42,12 +46,13 @@ sealed interface TrackListUiState {
 
 /**
  * 统一"壳子 + 列表"页：榜单 / 歌单 / 专辑走真实后端壳，
- * 喜欢 / 已购没有独立壳，用已有数据组装一个简化壳（标题 + 曲目数）。
+ * 喜欢 / 已购 / 每日推荐没有独立壳，用已有数据组装一个简化壳（标题 + 曲目数）。
  */
 @HiltViewModel
 class TrackListViewModel @Inject constructor(
     private val chartRepo: ChartRepository,
     private val profileRepo: ProfileRepository,
+    private val homeRepo: HomeRepository,
     private val playback: PlaybackLauncher,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
@@ -81,6 +86,8 @@ class TrackListViewModel @Inject constructor(
                     .let { simpleShell(id, title, it) }
                 TrackListSource.PURCHASED -> profileRepo.purchasedSongs()
                     .let { simpleShell(id, title, it) }
+                TrackListSource.DAILY -> homeRepo.dailySongs()
+                    .let { simpleShell(id, title.ifBlank { "每日推荐" }, it) }
             }
             _uiState.value = when {
                 collection == null -> TrackListUiState.Error

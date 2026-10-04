@@ -18,7 +18,7 @@ data class PlaylistCard(
 )
 
 /**
- * Explore (Home) content source. 推荐歌单 / 排行榜匿名可拉；每日推荐歌曲 / 最近播放
+ * Explore (Home) content source. 推荐歌单 / 雷达歌单 / 排行榜匿名可拉；每日推荐歌曲
  * 需要登录（否则接口返回 301 / 空）。所有拉取容错返回空列表，不抛。
  */
 @Singleton
@@ -74,20 +74,36 @@ class HomeRepository @Inject constructor(
         }
     }
 
-    /** 最近播放（需登录）。返回结构防御性兼容 list[].song / list[].data / allData[].song。 */
-    suspend fun recentSongs(limit: String = "30"): List<Track> = withContext(Dispatchers.IO) {
-        val r = gateway.call(NeteaseOp.RECORD_RECENT, limit)
+    /**
+     * 个性化推荐资源（`/weapi/personalized/playlist`，匿名可用）。
+     *
+     * 与 [recommendPlaylists] 的分工（布局参照 kanade 主页，2026-10-04）：
+     * kanade 的「雷达歌单」区显示 私人雷达/新歌雷达/时光雷达 三张卡 —— 这类"雷达"
+     * 歌单恰好是 RECOMMEND_RESOURCE 返回里的常客（实测首条即「私人雷达」），而
+     * RECOMMEND_PLAYLISTS 偏向大众化歌单，作「场景音乐」区的数据源。
+     */
+    suspend fun radarPlaylists(): List<PlaylistCard> = withContext(Dispatchers.IO) {
+        val r = gateway.call(NeteaseOp.RECOMMEND_RESOURCE)
         if (r.err != 0 || r.body.isEmpty()) return@withContext emptyList()
         try {
             val root = JSONObject(String(r.body, Charsets.UTF_8))
-            val list = root.optJSONObject("data")?.optJSONArray("list")
-                ?: root.optJSONArray("allData")
+            val arr = root.optJSONArray("result")
+                ?: root.optJSONArray("recommend")
                 ?: return@withContext emptyList()
             buildList {
-                for (i in 0 until list.length()) {
-                    val o = list.optJSONObject(i) ?: continue
-                    val song = o.optJSONObject("song") ?: o.optJSONObject("data") ?: o
-                    parseTrack(song)?.let { add(it) }
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val id = o.optLong("id", 0L)
+                    if (id <= 0) continue
+                    add(
+                        PlaylistCard(
+                            id = id.toString(),
+                            name = o.optString("name"),
+                            coverUrl = httpsUrl(o.optString("picUrl")),
+                            playCount = o.optLong("playCount", o.optLong("playcount", 0L)),
+                            trackCount = o.optLong("trackCount", 0L),
+                        ),
+                    )
                 }
             }
         } catch (_: Exception) {

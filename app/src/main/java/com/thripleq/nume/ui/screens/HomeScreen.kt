@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,12 +44,12 @@ import com.thripleq.nume.ui.home.HomeUiState
 import com.thripleq.nume.ui.home.HomeViewModel
 import com.thripleq.nume.ui.theme.Motion
 
-/** 探索 tab：每日推荐歌曲 / 推荐歌单 / 排行榜 / 最近播放。
- *  大封面 = 歌单/榜单（横滑卡片，点开走胶囊伸展壳进全屏列表）；
- *  小封面 = 单曲（内联行，点了直接播，无展开动效，也不弹播放页）。
+/** 探索 tab（布局抄 kanade 主页，2026-10-04）：精选推荐 / 猜你喜欢的好歌 / 雷达歌单 / 场景音乐。
+ *  精选推荐是功能卡横滑（图 + 左上角类型徽标 + 底部名称条），点开与歌单/榜单一样走
+ *  胶囊伸展壳进全屏列表；猜你喜欢是单曲竖列表，点了直接播、不弹播放页。
  *
  *  [onOpenPlayer] 只服务于**面板里的列表**（[HomePanelContent] / [HomeExpandShell] → TrackListScreen
- *  的「播放全部」）；小封面单曲行的点播不再需要它（2026-10-03 起点了只播、不进播放页）。 */
+ *  的「播放全部」）；单曲行的点播不再需要它（2026-10-03 起点了只播、不进播放页）。 */
 @Composable
 fun HomeScreen(
     onOpenPlayer: () -> Unit,
@@ -203,13 +202,12 @@ private fun HomeBodyUi(
     }
 }
 
-/** 探索页四个横滑列表的滚动状态，hoist 到 [HomeScreen]（见 [HomeRowStates] 注释）。 */
+/** 探索页三个横滑列表的滚动状态，hoist 到 [HomeScreen]（见 [HomeRowStates] 注释）。 */
 @Composable
 private fun rememberRowStates(): HomeRowStates = HomeRowStates(
-    playlists = rememberLazyListState(),
-    charts = rememberLazyListState(),
-    daily = rememberLazyGridState(),
-    recent = rememberLazyGridState(),
+    featured = rememberLazyListState(),
+    radar = rememberLazyListState(),
+    scene = rememberLazyListState(),
 )
 
 /** 官方容器变换版的面板内容：直接渲染曲目列表（面板外壳/关闭键/scrim 由 [ShellPanel] 负责）。
