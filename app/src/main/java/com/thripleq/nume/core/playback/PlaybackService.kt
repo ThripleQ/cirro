@@ -28,6 +28,9 @@ class PlaybackService : MediaSessionService() {
     private var playerListener: Player.Listener? = null
     private var notificationManager: NotificationManager? = null
 
+    /** 上次投递通知时的内容指纹，见 [notifKey]；只在主线程读写。 */
+    private var lastNotifKey: String? = null
+
     override fun onCreate() {
         super.onCreate()
         notificationManager = getSystemService(NotificationManager::class.java)
@@ -55,10 +58,17 @@ class PlaybackService : MediaSessionService() {
             buildNotification(player, session, activityIntent),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
         )
+        lastNotifKey = notifKey(player)
 
         // 随播放器事件刷新通知（标题/艺人/播放暂停）。只 notify，不再重复 startForeground。
+        // 先比内容指纹：onEvents 覆盖 buffering / 状态迁移等一大票事件，无差别重建会
+        // 每次都新建 PendingIntent + Builder + MediaStyle（还带一次跨进程通知投递）。
+        // 指纹没变就直接返回 —— 播放中高频事件不再反复重建同一张通知。
         val listener = object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) {
+                val key = notifKey(player)
+                if (key == lastNotifKey) return
+                lastNotifKey = key
                 notificationManager?.notify(NOTIF_ID, buildNotification(player, session, activityIntent))
             }
         }
@@ -78,6 +88,21 @@ class PlaybackService : MediaSessionService() {
             if (player.isPlaying) player.pause() else PlayerHolder.togglePlay(player)
         }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    /**
+     * 通知内容指纹。**只放真正影响这张通知长相的字段**：少一个会漏更新（`isPlaying`
+     * 同时决定 `setOngoing` 与播放/暂停按钮），多一个（如进度）会让去重直接失效。
+     * 标题/艺人在 [buildNotification] 里取自 mediaMetadata，所以必须参与指纹。
+     */
+    private fun notifKey(player: Player): String {
+        val meta = player.mediaMetadata
+        return buildString {
+            append(player.currentMediaItemIndex)
+            append('|').append(player.isPlaying)
+            append('|').append(meta.title)
+            append('|').append(meta.artist)
+        }
     }
 
     private fun buildNotification(

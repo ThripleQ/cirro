@@ -26,32 +26,47 @@ internal object PlaybackStateStore {
         val repeatMode: Int,
     )
 
+    // 队列序列化缓存。save() 由切歌/播放/暂停/READY 事件与 5s 进度轮询共同驱动，
+    // 但**队列本身**只在换歌单/增删队列时变 —— 其余时刻复用上次的 JSON 片段，
+    // 省掉每次 save 重建几百个 JSONObject 的开销。用内容比较而非引用：调用方
+    // 每次可能重新 map 出新 List，引用比较会一路失效。
+    private val cacheLock = Any()
+    private var cachedQueue: List<Track>? = null
+    private var cachedQueueJson: String? = null
+
     fun save(context: Context, snapshot: Snapshot) {
-        val root = JSONObject().apply {
-            put("index", snapshot.index)
-            put("position", snapshot.positionMs)
-            put("shuffle", snapshot.shuffle)
-            put("repeat", snapshot.repeatMode)
-            put(
-                "queue",
-                JSONArray().apply {
-                    snapshot.queue.forEach { t ->
-                        put(
-                            JSONObject().apply {
-                                put("id", t.id)
-                                put("name", t.name)
-                                put("artist", t.artist)
-                                put("art", t.artworkUrl ?: JSONObject.NULL)
-                                put("dur", t.durationMs)
-                                put("album", t.albumName)
-                            },
-                        )
-                    }
-                },
-            )
+        val queueJson = synchronized(cacheLock) {
+            if (cachedQueueJson == null || cachedQueue != snapshot.queue) {
+                cachedQueue = snapshot.queue
+                cachedQueueJson = queueJsonOf(snapshot.queue)
+            }
+            cachedQueueJson!!
         }
-        prefs(context).edit().putString(KEY_SNAPSHOT, root.toString()).apply()
+        // 手写拼接而不是再建一整棵 JSONObject：index/position/shuffle/repeat 都是
+        // 数值与布尔，直接内联没有转义风险；queue 那段用上面缓存好的字符串。
+        val json = "{\"index\":${snapshot.index}" +
+            ",\"position\":${snapshot.positionMs}" +
+            ",\"shuffle\":${snapshot.shuffle}" +
+            ",\"repeat\":${snapshot.repeatMode}" +
+            ",\"queue\":$queueJson}"
+        prefs(context).edit().putString(KEY_SNAPSHOT, json).apply()
     }
+
+    private fun queueJsonOf(queue: List<Track>): String =
+        JSONArray().apply {
+            queue.forEach { t ->
+                put(
+                    JSONObject().apply {
+                        put("id", t.id)
+                        put("name", t.name)
+                        put("artist", t.artist)
+                        put("art", t.artworkUrl ?: JSONObject.NULL)
+                        put("dur", t.durationMs)
+                        put("album", t.albumName)
+                    },
+                )
+            }
+        }.toString()
 
     fun load(context: Context): Snapshot? {
         val raw = prefs(context).getString(KEY_SNAPSHOT, null) ?: return null
