@@ -43,10 +43,20 @@ sealed interface HomeUiState {
          * `radar_private`，两者数据源不同、故意不重名。
          */
         val radar: List<PlaylistCard>?,
+        /**
+         * 「猜你喜欢的「XX」好歌」整块 —— 标题与歌曲都来自首页 block 流里的
+         * `HOMEPAGE_BLOCK_STYLE_RCMD`（见 [HomeRepository.homePage]）。
+         *
+         * 以前这块是自己拼的：`/api/tag/list/get` 取风格词当标题、`style-tag/home/song`
+         * 取几首歌。绕路不说，风格词还不是服务端真正给的那个，且任一环拿不到就整块
+         * 变空 —— 连带「私人漫游 / 相似艺人」两张功能卡的封面（它们借这块的歌曲封面）
+         * 一起空掉。现在直接吃 block 里的原数据。
+         */
+        val guessTitle: String? = null,
+        /** 猜你喜欢的单曲，**按页分组**（每页 3 首，横滑翻页，见 [HomeContent]）。 */
+        val guessPages: List<List<Track>> = emptyList(),
         /** 曲风标签总表（`/api/tag/list/get`），null = 还没拉到。 */
         val styles: List<StyleTag>? = null,
-        /** 首个曲风下的歌曲（`/api/style-tag/home/song`），null = 还没拉到。 */
-        val styleSongs: List<Track>? = null,
         /** 第二个曲风下的歌单（`/weapi/style-tag/home/playlist`）。 */
         val stylePlaylists: List<PlaylistCard>? = null,
         /**
@@ -59,24 +69,24 @@ sealed interface HomeUiState {
     ) : HomeUiState {
 
         /**
-         * 「猜你喜欢」区块标题：像 kanade 那样带上曲风词。风格词来自
-         * [styles]，拉不到就退回不带限定的通用文案。
+         * 「猜你喜欢」区块标题。**优先用服务端给的**（block 的 `uiElement.subTitle.title`，
+         * 形如「猜你喜欢的「日文」好歌」—— 那个风格词是按你口味算的，我们拼不出来），
+         * 服务端没给才用曲风表自己拼一句兜底。
          */
-        val guessTitle: String
-            get() {
-                val s = styles?.firstOrNull()?.name
-                return if (s.isNullOrBlank()) "猜你喜欢的好歌" else "猜你喜欢的「$s」好歌"
-            }
+        val guessHeadline: String
+            get() = guessTitle?.takeIf { it.isNotBlank() }
+                ?: styles?.firstOrNull()?.name?.takeIf { it.isNotBlank() }
+                    ?.let { "猜你喜欢的「$it」好歌" }
+                ?: "猜你喜欢的好歌"
 
         /**
-         * 「猜你喜欢」的歌曲：优先曲风歌（官方客户端同一套 style-tag 体系，
-         * 匿名也常能拿到），拿不到再回落每日推荐（需登录）。
+         * 「猜你喜欢」的全部单曲（拍平，供直接播放用）。
          * 返回 null 表示这块还没就绪，UI 不渲染标题。
          */
         val guessSongs: List<Track>?
             get() = when {
-                styleSongs == null && dailySongs == null -> null
-                !styleSongs.isNullOrEmpty() -> styleSongs
+                guessPages.isNotEmpty() -> guessPages.flatten()
+                dailySongs == null -> null
                 else -> dailySongs
             }
 
@@ -104,7 +114,7 @@ sealed interface HomeUiState {
          * | 2 | 每日推荐 | 符合你口味的新鲜好歌 | RECOMMEND_SONGS（需登录） |
          * | 3 | 私人漫游 | 多种听歌模式随心播放 | `/api/v1/radio/get`，点了直接播 |
          * | 4 | 私人雷达 | 从你喜欢的歌听起 | RECOMMEND_PLAYLISTS 里名称带「雷达」的那条 |
-         * | 5 | 相似艺人 | 从你喜欢的艺人听起 | 种子歌 → 歌手 → 热门歌（见 HomeRepository.artistRadio） |
+         * | 5 | 相似艺人 | 从你喜欢的艺人听起 | 种子歌 → 歌手 → **相似歌手**（`/api/discovery/simiArtist`）→ 他们的热门歌 |
          * | 6 | 「XX」日推 | 你喜欢的XX歌曲 | 曲风歌单（style-tag 体系，风格词随账号口味） |
          *
          * 我们没有 kanade 那套 OpenAPI（个人开发者需成年，暂不可用），所以按同一视觉
@@ -124,6 +134,16 @@ sealed interface HomeUiState {
             // 避免同一条歌单在一屏里出现两次（各区块 wire 不同只保证共享元素
             // 键唯一，视觉上还是会重复）。
             val used = radar.orEmpty().map { it.id }.toSet() + listOfNotNull(privateRadar?.id)
+            // 「私人漫游 / 相似艺人」不是歌单，没有自己的封面素材，卡面借猜你喜欢
+            // 那批单曲的封面（kanade 这两张卡用的是它自带的素材图）。
+            //
+            // **这两张卡过去经常是空封面**（用户实测反馈）：封面取自 guessSongs，
+            // 而当时的 guessSongs 是自己拿 `tag/list/get` + `style-tag/home/song`
+            // 拼的 —— 任何一环拿不到就整块空，封面跟着一起空。现在 guess 数据来自
+            // 首页 block 流（服务端直出，必有一批歌），再补一层兜底：万一还是空，
+            // 用推荐歌单封面顶上，卡面不留白块。
+            val guess = guessSongs
+            val fallbackCover = playlists?.firstOrNull()?.coverUrl
             buildList {
                 charts?.firstOrNull { it.name == "热歌榜" }?.let {
                     add(
@@ -143,7 +163,7 @@ sealed interface HomeUiState {
                 }
                 add(
                     FeaturedCard(
-                        "radio", guessSongs?.getOrNull(1)?.artworkUrl,
+                        "radio", guess?.getOrNull(1)?.artworkUrl ?: fallbackCover,
                         "私人漫游", "多种听歌模式随心播放", "radio", "",
                         playKind = HomeViewModel.PLAY_RADIO,
                     ),
@@ -158,7 +178,7 @@ sealed interface HomeUiState {
                 }
                 add(
                     FeaturedCard(
-                        "artist", guessSongs?.getOrNull(2)?.artworkUrl,
+                        "artist", guess?.getOrNull(2)?.artworkUrl ?: fallbackCover,
                         "相似艺人", "从你喜欢的艺人听起", "artist", "",
                         playKind = HomeViewModel.PLAY_ARTIST,
                     ),
@@ -269,7 +289,8 @@ class HomeViewModel @Inject constructor(
             val loggedInAsync = async { homeRepo.loggedIn() }
             val playlists = async { homeRepo.recommendPlaylists() }
             val charts = async { chartRepo.charts() }
-            val radar = async { homeRepo.radarPlaylists() }
+            // 首页 block 流：**一次请求喂两块** —— 雷达歌单 + 猜你喜欢的标题与单曲。
+            val homePage = async { homeRepo.homePage() }
             val styles = async { homeRepo.styleList() }
             // 场景音乐：先拿场景/情感标签，再为每个标签各取一张热门歌单当封面
             // （分类表里标签没有封面）。标签之间无依赖 → 并行。
@@ -299,18 +320,19 @@ class HomeViewModel @Inject constructor(
             ready = ready.copy(charts = ch)
             _uiState.value = ready
 
-            val rd = radar.await()
-            ready = ready.copy(radar = rd)
+            val hp = homePage.await()
+            ready = ready.copy(
+                radar = hp.radar,
+                guessTitle = hp.guessTitle,
+                guessPages = hp.guessPages,
+            )
             _uiState.value = ready
 
-            // 曲风两段有依赖：先拿 tag 列表，才能按 tagId 拉歌曲/歌单；
-            // 拉到 tag 之后这两块之间无依赖，并行发起。
+            // 曲风表：只为「XX日推」功能卡取风格词 / 该曲风下的歌单。
             val st = styles.await()
             ready = ready.copy(styles = st)
             _uiState.value = ready
-            val tag = st.firstOrNull()?.id
             val tag2 = st.getOrNull(1)?.id
-            val styleSongs = async { if (tag != null) homeRepo.styleSongs(tag, "6") else emptyList() }
             val stylePlaylists = async {
                 if (tag2 != null) homeRepo.stylePlaylists(tag2, "6") else emptyList()
             }
@@ -319,8 +341,6 @@ class HomeViewModel @Inject constructor(
             ready = ready.copy(dailySongs = da, loggedIn = loggedInAsync.await())
             _uiState.value = ready
 
-            ready = ready.copy(styleSongs = styleSongs.await())
-            _uiState.value = ready
             ready = ready.copy(stylePlaylists = stylePlaylists.await())
             _uiState.value = ready
             ready = ready.copy(scene = scene.await())
@@ -329,7 +349,7 @@ class HomeViewModel @Inject constructor(
                 ready.charts.isNullOrEmpty() &&
                 ready.radar.isNullOrEmpty() &&
                 ready.dailySongs.isNullOrEmpty() &&
-                ready.styleSongs.isNullOrEmpty() &&
+                ready.guessPages.isEmpty() &&
                 ready.stylePlaylists.isNullOrEmpty() &&
                 ready.scene.isNullOrEmpty()
             _uiState.value = if (allEmpty) HomeUiState.Error else ready

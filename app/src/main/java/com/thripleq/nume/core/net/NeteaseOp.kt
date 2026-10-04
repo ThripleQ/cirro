@@ -80,4 +80,14 @@ object NeteaseOp {
      * 而是这条通用 block 流里的一个 block（2026-10-04 探针实测）。
      */
     const val HOME_BLOCK_PAGE = 47
+
+    /**
+     * 相似歌手 `/weapi/discovery/simiArtist`（args: artistId）。
+     *
+     * 「相似艺人」功能卡的正经链路（kanade 源码里这张卡叫 `artist_fm`）：
+     * 种子歌 → 歌手 → **相似歌手** → 相似歌手的热门歌。以前我们拿「种子歌手
+     * 自己的热门歌」冒充相似艺人，播出来永远是同一个人的歌，语义不对。
+     * 字段名是 `artistid`（上游 module 原文）。
+     */
+    const val SIMI_ARTIST = 48
 }

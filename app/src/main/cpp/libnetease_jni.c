@@ -233,6 +233,9 @@ static ne_resp *dispatch(int op, int narg, const char *const a[]) {
         /* 47: 首页 block 流 /api/homepage/block/page（args: refresh, cursor）。
          * 「雷达歌单」区（HOMEPAGE_BLOCK_MGC_PLAYLIST）就藏在这条通用流里。 */
         case 47: return ne_homepage_block_page(A(0), A(1));
+        /* 48: 相似歌手 /weapi/discovery/simiArtist（args: artistId）。
+         * 「相似艺人」卡走这条：种子歌 → 歌手 → 相似歌手 → 他们的热门歌。 */
+        case 48: return ne_simi_artist(A(0));
         default: return NULL;
     }
 #undef A

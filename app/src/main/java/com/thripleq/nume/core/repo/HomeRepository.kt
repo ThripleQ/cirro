@@ -5,6 +5,9 @@ import com.thripleq.nume.BuildConfig
 import com.thripleq.nume.core.net.NetEaseGateway
 import com.thripleq.nume.core.net.NeteaseOp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -19,6 +22,30 @@ data class PlaylistCard(
     val playCount: Long,
     val trackCount: Long,
 )
+
+/** 一位相似歌手（`/api/discovery/simiArtist` 的一项）。 */
+data class SimiArtist(
+    val id: String,
+    val name: String,
+    val picUrl: String?,
+)
+
+/**
+ * 首页 block 流一次请求的解析结果（见 [HomeRepository.homePage]）。
+ *
+ * [guessPages] 是**分页**的：每一页 3 首，对应 kanade 主页那一栏「一屏 3 行、
+ * 左右翻页」的结构（`showType = HOMEPAGE_SLIDE_SONGLIST_ALIGN`）。不要把它拍平 ——
+ * 拍平就退化成一条纵向长列表，与 kanade 不像。
+ */
+data class HomePageBlocks(
+    val radar: List<PlaylistCard> = emptyList(),
+    /** 「猜你喜欢的「XX」好歌」的完整标题（风格词由服务端给）。 */
+    val guessTitle: String? = null,
+    val guessPages: List<List<Track>> = emptyList(),
+) {
+    /** 拍平后的全部单曲（播放入口用）。 */
+    val guessSongs: List<Track> get() = guessPages.flatten()
+}
 
 /**
  * Explore (Home) content source. 推荐歌单 / 雷达歌单 / 排行榜匿名可拉；每日推荐歌曲
@@ -59,37 +86,61 @@ class HomeRepository @Inject constructor(
     }
 
     /**
-     * 「雷达歌单」区（kanade 主页那排 私人雷达 / 新歌雷达 / 时光雷达 大卡）。
+     * 首页 block 流（`/api/homepage/block/page`）—— **一次请求喂两块内容**。
      *
-     * 数据源是首页 block 流里的**一个 block**，不是独立接口：
-     * `/api/homepage/block/page` → `data.blocks[blockCode == HOMEPAGE_BLOCK_MGC_PLAYLIST]`
-     * → `creatives[]`（实测稳定 6 张）。每张卡 `creativeId` 即歌单 id、
-     * `uiElement.mainTitle.title` 是名称、`uiElement.image.imageUrl` 是封面。
+     * 这条通用流里同时住着探索页的两个区块，原先各请求一次等于同一条流拉两遍，
+     * 现在一次解析、一起返回（见 [HomePageBlocks]）：
      *
-     * 曾经判定「weapi 拿不到雷达」并把整个区块删掉了：带 radar 字样的 7 个候选
-     * 路径全 404、api-enhanced 439 个 module 里也没有 radar module —— 因为它
-     * **从来不是独立端点**，服务端把雷达卡塞在通用 block 流里，按名字找永远找不到。
-     * 2026-10-04 复查 block 流才挖出来（见 .tmp/probe_radar2.py）。
+     * - `HOMEPAGE_BLOCK_MGC_PLAYLIST` → **雷达歌单** `creatives[]`（实测 6 张）。
+     *   每张卡 `creativeId` 即歌单 id、`uiElement.mainTitle.title` 是名称、
+     *   `uiElement.image.imageUrl` 是封面。曾经判定「weapi 拿不到雷达」并把整个
+     *   区块删掉：带 radar 字样的 7 个候选路径全 404、api-enhanced 439 个 module
+     *   里也没有 radar —— 因为它**从来不是独立端点**，服务端把雷达卡塞在这条通用流里，
+     *   按名字找永远找不到（2026-10-04 复查 block 流才挖出来）。
+     *
+     * - `HOMEPAGE_BLOCK_STYLE_RCMD` → **「猜你喜欢的「XX」好歌」**。标题在
+     *   `uiElement.subTitle.title`，风格词是服务端按口味给的（今天实测是「日文」），
+     *   所以这一栏看起来「没有固定标题」；内容 4 组 × 3 首 = 12 首单曲，
+     *   `showType = HOMEPAGE_SLIDE_SONGLIST_ALIGN` —— 它是**横滑翻页**的。
+     *
+     * refresh 传 false：首次进页走服务端当日缓存，不必每次重新出卡。
      */
-    suspend fun radarPlaylists(): List<PlaylistCard> = withContext(Dispatchers.IO) {
-        // refresh 传 false：首次进页走服务端当日缓存，不必每次重新出卡。
+    suspend fun homePage(): HomePageBlocks = withContext(Dispatchers.IO) {
         val r = gateway.call(NeteaseOp.HOME_BLOCK_PAGE, "false", "-1")
         dbg { "blockPage err=${r.err} len=${r.body.size}" }
-        if (r.err != 0 || r.body.isEmpty()) return@withContext emptyList()
+        if (r.err != 0 || r.body.isEmpty()) return@withContext HomePageBlocks()
         try {
             val blocks = JSONObject(String(r.body, Charsets.UTF_8))
                 .optJSONObject("data")?.optJSONArray("blocks")
-                ?: return@withContext emptyList()
+                ?: return@withContext HomePageBlocks()
+            var radar: List<PlaylistCard> = emptyList()
+            var guessTitle: String? = null
+            var guessPages: List<List<Track>> = emptyList()
             for (i in 0 until blocks.length()) {
                 val b = blocks.optJSONObject(i) ?: continue
-                if (b.optString("blockCode") != RADAR_BLOCK_CODE) continue
-                val cards = parseRadarCards(b.optJSONArray("creatives"))
-                dbg { "radarBlock cards=${cards.size} ${cards.map { it.name }}" }
-                return@withContext cards
+                when (b.optString("blockCode")) {
+                    RADAR_BLOCK_CODE -> {
+                        radar = parseRadarCards(b.optJSONArray("creatives"))
+                        dbg { "radarBlock cards=${radar.size} ${radar.map { it.name }}" }
+                    }
+                    GUESS_BLOCK_CODE -> {
+                        // 标题在 subTitle；个别皮肤把它放在 mainTitle，两个都试。
+                        val ui = b.optJSONObject("uiElement")
+                        guessTitle = ui?.optJSONObject("subTitle")?.optString("title")
+                            ?.takeIf { it.isNotBlank() }
+                            ?: ui?.optJSONObject("mainTitle")?.optString("title")
+                                ?.takeIf { it.isNotBlank() }
+                        guessPages = parseSongListCreatives(b.optJSONArray("creatives"))
+                        dbg {
+                            "guessBlock title=$guessTitle pages=${guessPages.map { it.size }} " +
+                                guessPages.flatten().joinToString { it.name }
+                        }
+                    }
+                }
             }
-            emptyList()
+            HomePageBlocks(radar, guessTitle, guessPages)
         } catch (_: Exception) {
-            emptyList()
+            HomePageBlocks()
         }
     }
 
@@ -211,37 +262,101 @@ class HomeRepository @Inject constructor(
         }
 
     /**
-     * 「相似艺人」卡的内容（kanade 对应 artist_fm「从你喜欢的艺人听起」）。
+     * 「相似艺人」卡的内容（kanade 源码里这张卡的标识就是 `artist_fm`）。
      *
-     * 官方的艺人 FM 我们没有（OpenAPI 不可用，weapi 侧没这个端点），所以走
-     * **三段拼**：拿一首你口味里的歌当种子 → `song/detail` 取它的歌手 →
-     * `artist/songs` 拉该歌手热门歌。任一段失败即返回空，调用方回落。
+     * **正经链路**（2026-10-04 换掉旧的三段拼）：
+     * ```
+     * 种子歌 ──song/detail──> 歌手 id ──/api/discovery/simiArtist──> 相似歌手（取前 3）
+     *        ──artist/songs(hot)──> 各拉一批热门歌 ──交替合并──> 播放
+     * ```
+     * 上游 `module/simi_artist.js` 就是 `/api/discovery/simiArtist`（weapi），
+     * NeteaseCloudMusicApi 的 `/simi/artist` 也是它。
+     *
+     * 旧实现止步于**种子歌手自己的热门歌** —— 播出来永远是同一个人的歌，与
+     * 「相似艺人」四个字正好相反。相似歌手拿不到时才退化成它（至少还有得听）。
      */
-    suspend fun artistRadio(seedSongId: String?): List<Track> =
-        withContext(Dispatchers.IO) {
-            val seed = seedSongId?.takeIf { it.isNotBlank() } ?: return@withContext emptyList()
-            val d = gateway.call(NeteaseOp.SONG_DETAIL, seed)
-            if (d.err != 0 || d.body.isEmpty()) return@withContext emptyList()
-            val artistId = try {
-                val root = JSONObject(String(d.body, Charsets.UTF_8))
-                val song = firstArray(root, "songs")?.optJSONObject(0)
-                val ar = song?.optJSONArray("artists") ?: song?.optJSONArray("ar")
-                ar?.optJSONObject(0)?.optLong("id", 0L) ?: 0L
-            } catch (_: Exception) {
-                0L
-            }
-            if (artistId <= 0L) return@withContext emptyList()
-            // 注意参数顺序是 (id, offset, limit, order) —— C 侧签名 offset 在 limit 前。
-            val r = gateway.call(NeteaseOp.ARTIST_SONGS, artistId.toString(), "0", "50", "hot")
-            dbg { "artistRadio artist=$artistId err=${r.err} len=${r.body.size}" }
-            if (r.err != 0 || r.body.isEmpty()) return@withContext emptyList()
-            try {
-                findTrackArray(JSONObject(String(r.body, Charsets.UTF_8)))?.let { parseTracks(it) }
-                    ?: emptyList()
-            } catch (_: Exception) {
-                emptyList()
-            }
+    suspend fun artistRadio(seedSongId: String?): List<Track> = withContext(Dispatchers.IO) {
+        val seed = seedSongId?.takeIf { it.isNotBlank() } ?: return@withContext emptyList()
+        val artistId = seedArtistId(seed) ?: return@withContext emptyList()
+        val simi = simiArtist(artistId).take(SIMI_ARTIST_TAKE)
+        if (simi.isEmpty()) return@withContext artistTopSongs(artistId)
+        // 相似歌手之间无依赖 → 并行拉；再**交替合并**，让前几首来自不同歌手，
+        // 而不是把第一个歌手的歌全播完才轮到第二个。
+        val lists = coroutineScope {
+            simi.map { a -> async { artistTopSongs(a.id, SIMI_SONGS_PER_ARTIST) } }.awaitAll()
         }
+        interleave(lists)
+    }
+
+    /** 种子歌 → 它的第一个歌手 id（`song/detail`）。 */
+    private suspend fun seedArtistId(songId: String): String? {
+        val d = gateway.call(NeteaseOp.SONG_DETAIL, songId)
+        if (d.err != 0 || d.body.isEmpty()) return null
+        return try {
+            val song = firstArray(JSONObject(String(d.body, Charsets.UTF_8)), "songs")
+                ?.optJSONObject(0)
+            val ar = song?.optJSONArray("artists") ?: song?.optJSONArray("ar")
+            ar?.optJSONObject(0)?.optLong("id", 0L)?.takeIf { it > 0L }?.toString()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 相似歌手（`/api/discovery/simiArtist`，args: artistId）。返回壳是 `artists[]`，
+     * 每项含 id / name / picUrl / albumSize。
+     */
+    suspend fun simiArtist(artistId: String): List<SimiArtist> = withContext(Dispatchers.IO) {
+        val r = gateway.call(NeteaseOp.SIMI_ARTIST, artistId)
+        dbg { "simiArtist artist=$artistId err=${r.err} len=${r.body.size} body=${String(r.body, Charsets.UTF_8).take(300)}" }
+        if (r.err != 0 || r.body.isEmpty()) return@withContext emptyList()
+        try {
+            val arr = firstArray(JSONObject(String(r.body, Charsets.UTF_8)), "artists", "data", "result")
+                ?: return@withContext emptyList()
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val id = o.optLong("id", 0L)
+                    val name = o.optString("name")
+                    if (id > 0L && name.isNotBlank()) {
+                        add(SimiArtist(id.toString(), name, httpsUrl(o.optString("picUrl"))))
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /** 某歌手的 50 首热门歌（`artist/songs`, order=hot）。注意 C 侧签名 offset 在 limit 前。 */
+    private suspend fun artistTopSongs(artistId: String, limit: Int = 50): List<Track> {
+        val r = gateway.call(NeteaseOp.ARTIST_SONGS, artistId, "0", limit.toString(), "hot")
+        if (r.err != 0 || r.body.isEmpty()) return emptyList()
+        return try {
+            findTrackArray(JSONObject(String(r.body, Charsets.UTF_8)))?.let { parseTracks(it) }
+                ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /** 交替合并多份列表（轮转取，各自耗尽即止）。 */
+    private fun interleave(lists: List<List<Track>>): List<Track> {
+        val out = ArrayList<Track>()
+        var i = 0
+        while (true) {
+            var added = false
+            for (l in lists) {
+                if (i < l.size) {
+                    out += l[i]
+                    added = true
+                }
+            }
+            if (!added) break
+            i++
+        }
+        return out
+    }
 
     /** 某曲风下的歌单（`style_playlist`）。返回壳是 `data.playlist`，封面键是
      *  `cover`（不是 picUrl）、曲目数是 `songCount`（不是 trackCount）。 */
@@ -404,6 +519,68 @@ private fun parseCards(root: JSONObject): List<PlaylistCard> {
 
 /** 首页 block 流里「雷达歌单」区的 blockCode（官方移动端固定值）。 */
 private const val RADAR_BLOCK_CODE = "HOMEPAGE_BLOCK_MGC_PLAYLIST"
+
+/**
+ * 首页 block 流里「猜你喜欢的「XX」好歌」区的 blockCode。
+ *
+ * 这一栏的用户可见标题是**服务端拼的**（`uiElement.subTitle.title`，风格词随口味
+ * 变化，实测「猜你喜欢的「日文」好歌」），所以用户会觉得它「没有固定标题」。
+ * 内容 4 组 × 3 首单曲，可左右翻页。
+ */
+private const val GUESS_BLOCK_CODE = "HOMEPAGE_BLOCK_STYLE_RCMD"
+
+/** 「相似艺人」取前几个相似歌手的歌。 */
+private const val SIMI_ARTIST_TAKE = 3
+
+/** 每位相似歌手取几首热门歌（3 × 8 = 24 首，够听完一轮）。 */
+private const val SIMI_SONGS_PER_ARTIST = 8
+
+/**
+ * 解析「猜你喜欢」区的 creatives：每个 `SONG_LIST_HOMEPAGE` creative 是**一页**，
+ * 内含 3 个 song 资源。返回分页结构而不是拍平 —— 见 [HomePageBlocks.guessPages]。
+ */
+private fun parseSongListCreatives(arr: JSONArray?): List<List<Track>> {
+    if (arr == null) return emptyList()
+    return buildList {
+        for (i in 0 until arr.length()) {
+            val page = parseBlockSongs(arr.optJSONObject(i)?.optJSONArray("resources"))
+            if (page.isNotEmpty()) add(page)
+        }
+    }
+}
+
+/**
+ * block 流里的 song 资源 → [Track]。
+ *
+ * 字段名与 `/song/detail` 那套完全不同，这里逐个对上（2026-10-04 探针实测）：
+ * `resourceId` = 歌曲 id、`uiElement.mainTitle.title` = 歌名、
+ * `uiElement.image.imageUrl` = 封面（给的是明文 http 协议，必须过 [httpsUrl]）、
+ * `resourceExtInfo.artists[0].name` = 首位艺人。block 里**没有时长**（实测全为
+ * null），给 0：播放器起来后会由播放引擎填真实时长，列表不显示时长不受影响。
+ */
+private fun parseBlockSongs(arr: JSONArray?): List<Track> {
+    if (arr == null) return emptyList()
+    return buildList {
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val id = o.optLong("resourceId", 0L)
+            if (id <= 0L) continue
+            val ui = o.optJSONObject("uiElement")
+            val name = ui?.optJSONObject("mainTitle")?.optString("title").orEmpty()
+            if (name.isBlank()) continue
+            val artists = o.optJSONObject("resourceExtInfo")?.optJSONArray("artists")
+            add(
+                Track(
+                    id = id.toString(),
+                    name = name,
+                    artist = artists?.optJSONObject(0)?.optString("name").orEmpty(),
+                    artworkUrl = httpsUrl(ui?.optJSONObject("image")?.optString("imageUrl")),
+                    durationMs = 0L,
+                ),
+            )
+        }
+    }
+}
 
 /**
  * 解析 block 流里 creative 卡片（结构见 [HomeRepository.radarPlaylists]）。

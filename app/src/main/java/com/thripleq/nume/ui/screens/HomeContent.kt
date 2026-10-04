@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -64,7 +65,7 @@ import com.thripleq.nume.ui.home.HomeViewModel
 import com.thripleq.nume.ui.theme.NumeShape
 
 /**
- * 探索页横滑列表的滚动状态（精选推荐 / 雷达歌单 / 场景音乐）。
+ * 探索页横滑列表的滚动状态（精选推荐 / 猜你喜欢 / 雷达歌单 / 场景音乐）。
  *
  * 必须 hoist 到 [HomeScreen]：开合面板走 [androidx.compose.animation.AnimatedContent]，
  * 关闭面板时网格会重新组合，写在 [HomeContent] 内的 `rememberLazyListState()` 会随组合树
@@ -72,6 +73,8 @@ import com.thripleq.nume.ui.theme.NumeShape
  */
 internal data class HomeRowStates(
     val featured: LazyListState,
+    /** 猜你喜欢的横向分页（一页 3 行，左右翻页）。 */
+    val guess: LazyListState,
     val radar: LazyListState,
     val scene: LazyListState,
 )
@@ -163,25 +166,26 @@ internal fun HomeContent(
             }
         }
 
-        // 猜你喜欢的好歌：竖列表（封面 + 歌名 + 歌手 - 专辑），点了直接播。
-        // kanade 的标题是「猜你喜欢的「风格」好歌」，风格词来自它的 styleList 接口。
-        // 2026-10-04 补齐：风格词改从 `/api/tag/list/get` 拿，歌曲优先用同体系的
-        // `/api/style-tag/home/song`（匿名也常能拿到），取不到才回落每日推荐。
-        val daily = data.guessSongs
-        if (daily != null) {
-            item(key = "h_guess") { NumeSectionHeader(data.guessTitle) }
-            if (daily.isNotEmpty()) {
-                itemsIndexed(
-                    daily.take(GUESS_ROW_COUNT),
-                    key = { i, t -> "guess_${t.id}_$i" },
-                ) { index, track ->
-                    NumeMediaRow(
-                        title = track.name,
-                        subtitle = guessSubtitle(track),
-                        coverUrl = track.artworkUrl,
-                        onClick = { onPlay(daily, index) },
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
-                    )
+        // 猜你喜欢：「猜你喜欢的「XX」好歌」—— **一屏 3 行、左右翻页**。
+        //
+        // 标题与分页都是首页 block 流 HOMEPAGE_BLOCK_STYLE_RCMD 的原生形态
+        // （`showType = HOMEPAGE_SLIDE_SONGLIST_ALIGN`，实测 4 组 × 3 首）：
+        // 标题里的「XX」由服务端按口味算（实测「日文」），所以这一栏看着
+        // 「没有固定标题」；内容一页 3 首、横滑换页，正是用户说的
+        // 「有一些单曲，能左右翻」。我们照原样渲染，而不是拍平成一条纵向长列表。
+        //
+        // 以前这里是纵向 3 行 + 自己拼的标题：分页丢了、风格词拼不准，歌曲还要靠
+        // `style-tag/home/song` 另取，拿不到就整块空 —— 那两张借它封面的功能卡
+        // （私人漫游 / 相似艺人）也跟着空。
+        val guessPages = data.guessPages.ifEmpty {
+            // 回落：block 没给内容（未登录 / 服务端不出卡）时，用每日推荐凑一页。
+            data.dailySongs?.take(GUESS_ROW_COUNT)?.let { listOf(it) }.orEmpty()
+        }
+        if (guessPages.isNotEmpty() || data.dailySongs != null) {
+            item(key = "h_guess") { NumeSectionHeader(data.guessHeadline) }
+            if (guessPages.isNotEmpty()) {
+                item(key = "row_guess") {
+                    GuessSongPager(guessPages, rowStates.guess, onPlay)
                 }
             } else {
                 item(key = "login_daily") { LoginPrompt(onWebLogin) }
@@ -194,8 +198,8 @@ internal fun HomeContent(
         // 这个样子，再叠一条名称条反而与它不像；行高因此比场景行矮 11dp（少一条名称条），
         // 不是因为卡更小。
         //
-        // 数据源见 HomeRepository.radarPlaylists：首页 block 流里的
-        // HOMEPAGE_BLOCK_MGC_PLAYLIST block。**它曾经被误判为"拿不到"而整区删除**
+        // 数据源见 HomeRepository.homePage：首页 block 流里的
+        // HOMEPAGE_BLOCK_MGC_PLAYLIST block（与「猜你喜欢」同一条流、同一次请求）。**它曾经被误判为"拿不到"而整区删除**
         // （搜 radar 字样的独立端点全 404、api-enhanced 里也没有 radar module）——
         // 因为它从来不是独立端点，服务端把雷达卡塞在通用 block 流里。
         val radarCards = data.radarCards
@@ -454,6 +458,47 @@ private fun KanadeCard(
 private fun guessSubtitle(track: Track): String =
     if (track.albumName.isBlank()) track.artist
     else "${track.artist} - ${track.albumName}"
+
+/**
+ * 「猜你喜欢」的横向分页列表：**一页 3 首单曲行，左右滑动换页**。
+ *
+ * 分页形状不是我们定的 —— 服务端 block（`HOMEPAGE_BLOCK_STYLE_RCMD`，其
+ * `showType = HOMEPAGE_SLIDE_SONGLIST_ALIGN`）本来就是每个 creative 3 首，
+ * kanade 主页实测也是「一屏 3 行、能左右翻」。所以这里按**页宽 = 容器宽**排，
+ * 一页独占一屏，滑到头才换下一批（而不是把 12 首排成一条长横滑）。
+ *
+ * 点任意一首，播放队列是**全部**猜你喜欢单曲而不是只有本页那 3 首 —— 连听不该
+ * 在三首后断掉；起点落在被点的那首。
+ */
+@Composable
+private fun GuessSongPager(
+    pages: List<List<Track>>,
+    state: LazyListState,
+    onPlay: (List<Track>, Int) -> Unit,
+) {
+    val all = remember(pages) { pages.flatten() }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val pageWidth = maxWidth
+        LazyRow(state = state, modifier = Modifier.fillMaxWidth()) {
+            itemsIndexed(pages, key = { i, _ -> "guess_page_$i" }) { _, page ->
+                Column(Modifier.width(pageWidth)) {
+                    page.forEach { track ->
+                        NumeMediaRow(
+                            title = track.name,
+                            subtitle = guessSubtitle(track),
+                            coverUrl = track.artworkUrl,
+                            onClick = {
+                                val i = all.indexOfFirst { it.id == track.id }
+                                onPlay(all, if (i >= 0) i else 0)
+                            },
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun LoginPrompt(onLogin: () -> Unit) {
