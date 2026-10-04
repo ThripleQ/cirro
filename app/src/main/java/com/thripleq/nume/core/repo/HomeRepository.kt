@@ -469,9 +469,12 @@ private fun firstArray(root: JSONObject, vararg keys: String): JSONArray? {
     return null
 }
 
-/** 候选数组的**轻量**判定：首元素是歌曲对象（id>0，与 [parseTrack] 同一判据）。 */
-private fun looksLikeSongs(arr: JSONArray): Boolean =
-    arr.optJSONObject(0)?.optLong("id", 0L)?.let { it > 0L } == true
+/**
+ * 候选数组的**轻量**判定：首元素是歌曲对象（id>0，与 [parseTrack] 同一判据）。
+ * 参数可空 —— 候选表本身就是 `JSONArray?`（[JSONObject.opt] 拿不到时塞 null）。
+ */
+private fun looksLikeSongs(arr: JSONArray?): Boolean =
+    arr?.optJSONObject(0)?.optLong("id", 0L)?.let { it > 0L } == true
 
 /** 找到第一个能解析出至少一首歌的数组（style-tag 端点嵌套不定）。 */
 private fun findTrackArray(root: JSONObject): JSONArray? {
