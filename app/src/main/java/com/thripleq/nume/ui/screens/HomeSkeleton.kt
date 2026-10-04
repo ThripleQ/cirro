@@ -54,7 +54,9 @@ internal fun HomeSkeleton(bottomPadding: Dp) {
         }
 
         // 内容圆角纸，与真内容的 LazyColumn 同形（区块顺序照 kanade 主页，2026-10-04）：
-        // 精选推荐大卡 → 猜你喜欢单曲行 → 雷达歌单大卡 → 场景音乐窄卡。
+        // 精选推荐大卡 → 猜你喜欢单曲行 → 雷达歌单方卡 → 场景音乐窄卡。
+        // 卡片尺寸直接引用真内容的 [KanadeCardSpec]，骨架与真内容不会走偏
+        // （雷达行是 110 方形、场景行是 110×121，两者不等高）。
         Column(
             Modifier
                 .fillMaxWidth()
@@ -65,31 +67,35 @@ internal fun HomeSkeleton(bottomPadding: Dp) {
                 .padding(bottom = bottomPadding),
         ) {
             NumeSectionHeaderSkeleton()
-            SkeletonCarousel(FeaturedCardSize)
+            SkeletonCarousel(FeaturedCardSpec)
 
             NumeSectionHeaderSkeleton()
             repeat(3) { NumeMediaRowSkeleton() }
 
-            // 区块顺序与 HomeContent 对齐：精选推荐 / 猜你喜欢 / 雷达歌单 / 场景音乐
-            // （雷达区数据来自首页 block 流，2026-10-04 恢复）。
             NumeSectionHeaderSkeleton()
-            SkeletonCarousel(FeaturedCardSize)
+            SkeletonCarousel(RadarCardSpec)
 
             NumeSectionHeaderSkeleton()
-            SkeletonCarousel(SceneCardSize)
+            SkeletonCarousel(SceneCardSpec)
         }
     }
 }
 
 @Composable
-private fun SkeletonCarousel(cardWidth: Dp) {
+private fun SkeletonCarousel(spec: KanadeCardSpec) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        // 间距与真内容一致（11dp，见 KanadeCardRow）。
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
-        repeat(3) { SkeletonBox(Modifier.size(cardWidth), NumeShape.Card) }
+        repeat(3) {
+            SkeletonBox(
+                Modifier.size(spec.width, spec.coverHeight + spec.stripHeight),
+                NumeShape.Card,
+            )
+        }
     }
 }
 

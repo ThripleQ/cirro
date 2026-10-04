@@ -138,7 +138,7 @@ internal fun HomeContent(
                             playKind = it.playKind,
                         )
                     },
-                    cardWidth = FeaturedCardSize,
+                    spec = FeaturedCardSpec,
                     state = rowStates.featured,
                     shared = shared,
                     avScope = avScope,
@@ -177,10 +177,11 @@ internal fun HomeContent(
             }
         }
 
-        // 雷达歌单：横滑大卡（146dp 方形封面）。**无徽标、无底部名称条** ——
-        // 官方雷达封面是程序生成的海报，图里自带「私人雷达」「新歌雷达」这类大字
-        // 标题（实测下载封面即带标题 + 网易云角标），kanade 卡面就是这个样子，
-        // 再叠一条名称条反而与它不像。
+        // 雷达歌单：横滑**110dp 方形纯封面**（与场景音乐同宽，见 [RadarCardSpec]）。
+        // **无徽标、无底部名称条** —— 官方雷达封面是程序生成的海报，图里自带「私人雷达」
+        // 「新歌雷达」这类大字标题（实测下载封面即带标题 + 网易云角标），kanade 卡面就是
+        // 这个样子，再叠一条名称条反而与它不像；行高因此比场景行矮 11dp（少一条名称条），
+        // 不是因为卡更小。
         //
         // 数据源见 HomeRepository.radarPlaylists：首页 block 流里的
         // HOMEPAGE_BLOCK_MGC_PLAYLIST block。**它曾经被误判为"拿不到"而整区删除**
@@ -194,11 +195,10 @@ internal fun HomeContent(
                     cards = radarCards.map {
                         KanadeCardModel(it.id, it.coverUrl, it.name, null, HomeViewModel.RADAR_WIRE, it.id)
                     },
-                    cardWidth = FeaturedCardSize,
+                    spec = RadarCardSpec,
                     state = rowStates.radar,
                     shared = shared,
                     avScope = avScope,
-                    showTitleBar = false,
                 ) { c, rect ->
                     // wire 必须原样带上（同下方场景区）：目标端共享键是
                     // `shell:<source>:<id>`，写成 "playlist" 就与源端
@@ -208,8 +208,8 @@ internal fun HomeContent(
             }
         }
 
-        // 场景音乐：横滑小卡（110dp 窄版，只有底部名称条 —— kanade 实测卡面就是
-        // 「封面 + 底部标签名」，日语弦歌 / 伤感 / 浪漫时光 这类词）。
+        // 场景音乐：横滑小卡（110×92dp 封面 + 29dp 名称条，见 [SceneCardSpec] ——
+        // kanade 这一区的封面**不是方形**，比宽矮 18dp）。
         //
         // kanade 这一区是 sceneTags（它那套 OpenAPI 的场景标签）。我们拿不到，
         // 但官方歌单分类（/weapi/playlist/catalogue）里 category 2 = 场景、
@@ -228,7 +228,7 @@ internal fun HomeContent(
                     cards = scene.map {
                         KanadeCardModel(it.playlistId, it.coverUrl, it.tag, null, "scene", it.playlistId)
                     },
-                    cardWidth = SceneCardSize,
+                    spec = SceneCardSpec,
                     state = rowStates.scene,
                     shared = shared,
                     avScope = avScope,
@@ -250,15 +250,7 @@ internal val HomeSheetRadius = 28.dp
  * `surface` 圆角纸的顶角会把容器色露出来。标题固定，内容在圆角纸里滚。
  */
 
-/**
- * kanade 式卡片（布局实测 2026-10-04，uiautomator 坐标 ÷ 3 = dp）：
- *
- * - **精选推荐**卡：方形封面 146dp（440px）+ 左上角白底圆角**类型徽标** + 底部浅灰名称条；
- * - **雷达歌单**卡：同宽同高的**纯封面**（[showTitleBar] = false）—— 官方雷达封面是
- *   程序生成的海报，图里自带「私人雷达」「新歌雷达」这类大字标题（下载封面实测确认），
- *   在 kanade 的 dump 里对应位置读不到文本节点，正因为那不是文本而是图；
- * - **场景音乐**卡：110dp（330px）窄版，只有底部名称条（这里的标签名确实是文本）。
- */
+/** kanade 式卡片的数据（尺寸见 [KanadeCardSpec]，视觉规格按区块选）。 */
 internal data class KanadeCardModel(
     val key: Any,
     val coverUrl: String?,
@@ -271,34 +263,59 @@ internal data class KanadeCardModel(
     val playKind: String? = null,
 )
 
-/** 精选推荐 / 雷达歌单卡宽（kanade 实测 440px ÷ 3）。 */
-internal val FeaturedCardSize = 146.dp
+/**
+ * 一种卡片规格（三处横滑行各一份）。
+ *
+ * 数值全部来自 kanade 主页的 uiautomator bounds（1080px 屏 ÷ 3 = dp），**别再凭感觉改**：
+ *
+ * | 行 | 卡宽 | 封面高 | 名称条 | 卡总高 |
+ * |---|---|---|---|---|
+ * | 精选推荐 | 146dp（440px） | 146（方形） | 37 | 183 |
+ * | 雷达歌单 | **110**（330px） | 110（方形，纯封面） | — | 110 |
+ * | 场景音乐 | 110（330px） | **92**（275px，不是方形） | 29（88px） | 121 |
+ *
+ * 【踩过的坑】雷达卡一开始跟着精选推荐用了 146dp —— 但 kanade 的雷达行与场景行
+ * 是同一档宽度（都是 330px），只有精选推荐是 440px。雷达行比场景行矮，是因为它
+ * **没有名称条**（雷达名印在封面海报上），而不是因为它更小。两组数字一混就会
+ * 得出「雷达卡 146 方 + 无条 = 110 高」这种自相矛盾的规格，看上去就是雷达区
+ * 比场景区大一圈、两者对不上。
+ */
+internal data class KanadeCardSpec(
+    val width: Dp,
+    /** 封面高度：只有场景音乐不是方形。 */
+    val coverHeight: Dp,
+    /** 底部名称条高度；[showTitleBar] = false 时忽略。 */
+    val stripHeight: Dp,
+    /** false = 纯封面卡（雷达歌单）：卡名在封面图上，不再画名称条。 */
+    val showTitleBar: Boolean,
+)
 
-/** 场景音乐卡宽（kanade 实测 330px ÷ 3）。 */
-internal val SceneCardSize = 110.dp
+/** 精选推荐：440×550px = 146.7×183.3dp（方形封面 146.7 + 名称条 36.7）。 */
+internal val FeaturedCardSpec = KanadeCardSpec(146.dp, 146.dp, 37.dp, showTitleBar = true)
+
+/** 雷达歌单：330×330px = 110dp 方形**纯封面**（名称条不画，雷达名是海报图的一部分）。 */
+internal val RadarCardSpec = KanadeCardSpec(110.dp, 110.dp, 0.dp, showTitleBar = false)
+
+/** 场景音乐：330×363px = 110×121dp（封面 110×91.7 + 名称条 29.3）。 */
+internal val SceneCardSpec = KanadeCardSpec(110.dp, 92.dp, 29.dp, showTitleBar = true)
 
 /** 猜你喜欢好歌展示行数（kanade 实测 3 行）。 */
 private const val GUESS_ROW_COUNT = 3
 
-/** 场景音乐展示张数（kanade 实测 3 张，我们多给几张可横滑）。 */
+/** 场景音乐展示张数（kanade 频道首屏 3 张，多给几张可横滑）。 */
 private const val SCENE_CARD_COUNT = 6
-
-/** 卡片底部名称条高度（kanade 卡高约 1/4）。 */
-private val CardStripHeight = 32.dp
 
 /** 卡片封面（上半部）圆角：与 [NumeShape.Card] 同半径，只用于共享元素内层的 clip。 */
 private val CardCoverRadius = 16.dp
 
-/** 横滑卡片行：精选推荐（带徽标 + 名称条）与雷达（纯封面）/ 场景（窄版 + 名称条）共用。 */
+/** 横滑卡片行：三处横滑行共用，视觉规格由 [spec] 决定。 */
 @Composable
 private fun KanadeCardRow(
     cards: List<KanadeCardModel>,
-    cardWidth: Dp,
+    spec: KanadeCardSpec,
     state: LazyListState,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
-    /** false = 纯封面卡（雷达歌单）：卡名在封面图上，不再画名称条。 */
-    showTitleBar: Boolean = true,
     onClick: (KanadeCardModel, Rect) -> Unit,
 ) {
     LazyRow(
@@ -307,7 +324,7 @@ private fun KanadeCardRow(
         horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         items(cards, key = { it.key }) { card ->
-            KanadeCard(card, cardWidth, shared, avScope, showTitleBar, onClick)
+            KanadeCard(card, spec, shared, avScope, onClick)
         }
     }
 }
@@ -315,16 +332,16 @@ private fun KanadeCardRow(
 @Composable
 private fun KanadeCard(
     card: KanadeCardModel,
-    cardWidth: Dp,
+    spec: KanadeCardSpec,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
-    showTitleBar: Boolean,
     onClick: (KanadeCardModel, Rect) -> Unit,
 ) {
+    val showTitleBar = spec.showTitleBar
     var rect by remember { mutableStateOf<Rect?>(null) }
     Column(
         Modifier
-            .width(cardWidth)
+            .width(spec.width)
             .clip(NumeShape.Card)
             .clickable { rect?.let { onClick(card, it) } },
     ) {
@@ -333,7 +350,7 @@ private fun KanadeCard(
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(cardWidth)
+                .height(spec.coverHeight)
                 .onGloballyPositioned { coords ->
                     rect = Rect(coords.localToWindow(Offset.Zero), coords.size.toSize())
                 }
@@ -380,7 +397,7 @@ private fun KanadeCard(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(CardStripHeight)
+                    .height(spec.stripHeight)
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {
