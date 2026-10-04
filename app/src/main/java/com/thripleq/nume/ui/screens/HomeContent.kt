@@ -184,7 +184,13 @@ internal fun HomeContent(
             item(key = "h_radar") { NumeSectionHeader("雷达歌单") }
             item(key = "row_radar") {
                 KanadeCardRow(
-                    cards = radar.map { KanadeCardModel(it.id, it.coverUrl, it.name, null, "playlist", it.id) },
+                    // source 用区块专属 wire "radar"：RECOMMEND_RESOURCE 与
+                    // personalized/playlist 是两个高度重叠的推荐池（同一条歌单两边都会
+                    // 出现，探针实测 id 3136952023 两边都有），若两边都注册
+                    // `shell:playlist:<id>` 就是两个源抢一个展开目标 —— 表现为动画错乱。
+                    // 每个区块一个 wire，键在整页内恒唯一；TrackListSource.from 对未知
+                    // wire 回落 PLAYLIST，取数不受影响。
+                    cards = radar.map { KanadeCardModel(it.id, it.coverUrl, it.name, null, "radar", it.id) },
                     cardWidth = FeaturedCardSize,
                     state = rowStates.radar,
                     shared = shared,
@@ -204,7 +210,8 @@ internal fun HomeContent(
             item(key = "h_scene") { NumeSectionHeader("场景音乐") }
             item(key = "row_scene") {
                 KanadeCardRow(
-                    cards = scene.map { KanadeCardModel(it.id, it.coverUrl, it.name, null, "playlist", it.id) },
+                    // source 用区块专属 wire "scene"，理由同上「雷达歌单」区。
+                    cards = scene.map { KanadeCardModel(it.id, it.coverUrl, it.name, null, "scene", it.id) },
                     cardWidth = SceneCardSize,
                     state = rowStates.scene,
                     shared = shared,

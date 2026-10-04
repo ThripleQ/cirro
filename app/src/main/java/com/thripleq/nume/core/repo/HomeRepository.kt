@@ -134,10 +134,23 @@ class HomeRepository @Inject constructor(
             buildList {
                 for (i in 0 until arr.length()) {
                     val o = arr.optJSONObject(i) ?: continue
-                    val id = o.optLong("id", 0L)
-                    val name = o.optString("name").ifBlank { o.optString("tagName") }
-                    if (id <= 0 || name.isBlank()) continue
-                    add(StyleTag(id.toString(), name))
+                    // wire 上字段是 tagId/tagName（不是 id/name，2026-10-04 探针实测，
+                    // 之前按 id/name 解析导致整表为空、曲风体系全体哑火）。
+                    // 有 childrenTags 的（如 流行 → 华语流行/粤语流行/…）优先收二级标签：
+                    // style-tag 端点吃的是二级 tagId，kanade 的「华语流行日推」也是二级词。
+                    val children = o.optJSONArray("childrenTags")
+                    if (children != null) {
+                        for (j in 0 until children.length()) {
+                            val c = children.optJSONObject(j) ?: continue
+                            val cid = c.optLong("tagId", 0L)
+                            val cname = c.optString("tagName")
+                            if (cid > 0 && cname.isNotBlank()) add(StyleTag(cid.toString(), cname))
+                        }
+                    } else {
+                        val id = o.optLong("tagId", o.optLong("id", 0L))
+                        val name = o.optString("tagName").ifBlank { o.optString("name") }
+                        if (id > 0 && name.isNotBlank()) add(StyleTag(id.toString(), name))
+                    }
                 }
             }
         } catch (_: Exception) {

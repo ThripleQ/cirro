@@ -67,7 +67,14 @@ sealed interface HomeUiState {
 
         /** 场景音乐：优先曲风歌单，否则用大众化推荐歌单顶位（视觉同是歌单卡）。 */
         val sceneCards: List<PlaylistCard>
-            get() = stylePlaylists?.takeIf { it.isNotEmpty() } ?: playlists.orEmpty()
+            get() {
+                // 雷达区已展示的歌单不再进场景区：RECOMMEND_RESOURCE 与
+                // personalized/playlist 是两个高度重叠的推荐池，同一条「今天从X听起|
+                // 私人雷达」两边都可能出现（探针实测 id 3136952023），视觉上重复。
+                val used = radar.orEmpty().filter { it.name.contains("雷达") }.map { it.id }.toSet()
+                val base = stylePlaylists?.takeIf { it.isNotEmpty() } ?: playlists.orEmpty()
+                return base.filter { it.id !in used }
+            }
 
         /**
          * 「精选推荐」横滑功能卡（布局抄 kanade 主页，2026-10-04）。
@@ -88,6 +95,10 @@ sealed interface HomeUiState {
          * 规格从**已有数据**组装等价物；拿不到就少一张，末尾用推荐歌单补位凑 6 张。
          */
         val featured: List<FeaturedCard> by lazy {
+            // 推荐池重叠去重：personalized/playlist 与 RECOMMEND_RESOURCE 高度重叠，
+            // 「今天从X听起|私人雷达」两边都有 —— 补位卡跳过雷达区已展示的条目，
+            // 避免同一条歌单在两个区块各出现一次（见 sceneCards 注释）。
+            val radarIds = radar.orEmpty().filter { it.name.contains("雷达") }.map { it.id }.toSet()
             buildList {
                 charts?.firstOrNull { it.name == "热歌榜" }?.let {
                     add(
@@ -115,13 +126,12 @@ sealed interface HomeUiState {
                 radar?.firstOrNull()?.let {
                     add(
                         FeaturedCard(
-                            // source 故意用 "radar" 而不是 "playlist"：下面「雷达歌单」
-                            // 区块的第一张就是同一条歌单，若两边都按 `shell:playlist:<id>`
-                            // 注册共享元素，展开时会有**两张源封面同时飞向同一个 banner**
-                            // （表现为动画错乱）。换一个 wire 让两端 key 各自唯一；
-                            // TrackListSource.from 对未知 wire 回落 PLAYLIST，数据照旧。
+                            // source 用 "fradar" 而不是 "radar"：下面「雷达歌单」区块
+                            // 用区块专属 wire "radar"，若这张卡也用 "radar"，同一条歌单
+                            // 又是两个源抢一个展开目标（见 HomeContent 雷达区注释）。
+                            // 各区块 wire 互不相同，整页共享键恒唯一。
                             "radar_private", it.coverUrl,
-                            "私人雷达", "从你喜欢的歌听起", "radar", it.id,
+                            "私人雷达", "从你喜欢的歌听起", "fradar", it.id,
                         ),
                     )
                 }
@@ -143,7 +153,7 @@ sealed interface HomeUiState {
                         ),
                     )
                 }
-                playlists.orEmpty().forEachIndexed { i, p ->
+                playlists.orEmpty().filter { it.id !in radarIds }.forEachIndexed { i, p ->
                     if (size < 6) {
                         add(
                             FeaturedCard(
@@ -194,10 +204,11 @@ class HomeViewModel @Inject constructor(
         /**
          * 歌单型功能卡的 wire：故意不叫 "playlist"。
          *
-         * 同一条歌单常常既在「精选推荐」又在下面「场景音乐」区块出现，共享元素的 key
-         * 是 `shell:<source>:<id>` —— 两边都用 "playlist" 就是**两个源抢一个目标**，
-         * 展开时两张封面一起飞。功能卡统一走这个 wire（TrackListSource 对未知 wire
-         * 回落 PLAYLIST，数据不受影响），保证一条歌单只有一个源扮演共享起点。
+         * 共享元素 key 是 `shell:<source>:<id>`，而推荐池之间高度重叠 —— 同一条歌单
+         * 会同时在「精选推荐」补位卡和下面某区块出现。各区块各用各的 wire
+         * （功能卡 fpl / 雷达卡 fradar / 雷达区 radar / 场景区 scene，见各处注释），
+         * 保证**整页范围内一个 key 只有一个源**；TrackListSource.from 对未知 wire
+         * 一律回落 PLAYLIST，取数完全不受影响。
          */
         const val FEATURED_PLAYLIST_WIRE = "fpl"
     }
