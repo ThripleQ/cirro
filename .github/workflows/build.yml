@@ -25,17 +25,32 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Accept Android SDK licenses
-        uses: android-actions/setup-android@v3
-
-      - name: Install NDK and CMake
-        # 显式装，别指望 AGP 临到用时再去下载：版本号与 app/build.gradle.kts 的
-        # ndkVersion / externalNativeBuild.version 必须逐字一致，否则 CMake 那步会
-        # 卡在下载上直到 job 超时。
+      - name: Install Android SDK components
+        # 别用 android-actions/setup-android：它在新版 ubuntu runner 上第 4 步就挂
+        # （仓库 147 号运行实测，19 秒失败，后面全 skipped）。runner 镜像自带
+        # Android SDK 和 cmdline-tools，直接用它自带的 sdkmanager 装缺的组件。
+        #   platforms;android-37 / build-tools  ← 与 libs.versions.toml 的
+        #     compileSdk 对齐；装不上也别炸，AGP 联网时自己会补。
+        #   ndk;27.2.12479018 / cmake;3.22.1   ← 必须与 app/build.gradle.kts 的
+        #     ndkVersion / externalNativeBuild.version 逐字一致，否则 CMake 那步会
+        #     卡在下载上直到 job 超时。这两个装不上就真跑不了，不吞错误。
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager --install "ndk;27.2.12479018" "cmake;3.22.1"
-          sdkmanager --list_installed | grep -E "ndk|cmake"
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+          SM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SM" ] || SM="$(command -v sdkmanager || true)"
+          if [ -z "$SM" ]; then echo "::error::sdkmanager not found"; exit 1; fi
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "sdkmanager=$SM"
+          # 接受 license：写哈希文件 + yes 双保险，任一生效即可
+          mkdir -p "$ANDROID_HOME/licenses"
+          printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\n' \
+            > "$ANDROID_HOME/licenses/android-sdk-license"
+          yes | "$SM" --licenses > /dev/null 2>&1 || true
+          "$SM" --install "platforms;android-37" || echo "::warning::platforms;android-37 未装上，交给 AGP"
+          "$SM" --install "build-tools;37.0.0" || echo "::warning::build-tools;37.0.0 未装上，交给 AGP"
+          "$SM" --install "ndk;27.2.12479018" "cmake;3.22.1"
+          "$SM" --list_installed | grep -E "ndk|cmake|platforms|build-tools"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -50,5 +65,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nume-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          # 用 glob 而不是写死文件名：AGP 改输出目录名时不至于让这一步变红
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
