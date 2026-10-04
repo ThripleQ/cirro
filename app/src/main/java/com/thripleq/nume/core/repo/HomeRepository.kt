@@ -119,6 +119,9 @@ class HomeRepository @Inject constructor(
      *   `showType = HOMEPAGE_SLIDE_SONGLIST_ALIGN` —— 它是**横滑翻页**的。
      *
      * refresh 传 false：首次进页走服务端当日缓存，不必每次重新出卡。
+     * **这个 "false" 曾经是假的**：C 层原先按「不等于 "0" 就算真」解析，于是它被判成
+     * true，等于每次进探索页都在强制服务端重新出卡（2026-10-05 在 `ne_homepage_block_page`
+     * 里改成「只有 "true"/"1" 算真」）。改 C 层时别把这里换成 "0" 来将就旧口径。
      */
     suspend fun homePage(): HomePageBlocks = withContext(Dispatchers.IO) {
         val r = gateway.call(NeteaseOp.HOME_BLOCK_PAGE, "false", "-1")
