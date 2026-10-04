@@ -1,0 +1,154 @@
+name: release
+
+# 只在 tag 推送时跑（v0.1.0 / v0.2.0-beta.1 …）。
+#
+# 为什么不复用 build.yml：那个工作流连 main 每次提交都跑，产物是 Actions 页面的
+# artifact —— 7 天过期、下载还要登录。这个工作流把包挂到 Releases 页，链接永久
+# 有效、不用登录就能下，手机上点链接直接装。
+#
+# 两个工作流互不重叠：`push: tags` 不会触发 build.yml（它只听 branch），所以打
+# tag 不会白跑两次构建。
+on:
+  push:
+    tags:
+      - 'v*'
+  # 手动重出：Actions → release → Run workflow，填一个 tag 名即可覆盖那次发布的
+  # APK（tag 不存在则会在当前 commit 上创建它）。
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 发布用 tag 名（形如 v0.1.0）
+        required: true
+        default: v0.1.0
+
+# 建 release、传 asset 都要写权限；默认的 readonly 会在最后一步 403
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # 不能是默认的 1：release notes 要按上次 tag 以来的提交生成，
+          # 浅克隆会让它退化成「整个仓库只有一个提交」。
+          fetch-depth: 0
+
+      - name: Resolve tag and version
+        id: meta
+        # 把 tag 名和 APK 名算成 outputs，后面几步直接用。是否预发布不在这里算 ——
+        # 见最后一步的 prerelease，理由那里写了。
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          [ -n "$TAG" ] || { echo "::error::拿不到 tag 名"; exit 1; }
+
+          # `|| true` 不能省：pipefail 下 grep 无匹配会让这行直接退出，
+          # 下面的友好报错就永远走不到，只剩一句没头没尾的 exit 1。
+          VNAME="$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1 || true)"
+          [ -n "$VNAME" ] || { echo "::error::没从 app/build.gradle.kts 读到 versionName"; exit 1; }
+
+          # 只告警不失败：tag 允许带后缀（v0.1.0-beta.1 的 versionName 仍是 0.1.0），
+          # 但版本号和 tag 对不上通常意味着忘记改 build.gradle.kts，提醒一句。
+          if [ "${TAG#v}" != "$VNAME" ]; then
+            echo "::warning::tag($TAG) 与 versionName($VNAME) 不一致，确认是否有意为之"
+          fi
+
+          {
+            echo "tag=$TAG"
+            echo "version=$VNAME"
+            echo "apk=nume-${TAG}.apk"
+          } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Android SDK components
+        # 与 build.yml 这段保持一致（两处都要改）。别用 android-actions/setup-android：
+        # 它在新版 ubuntu runner 上第 4 步就挂。runner 镜像自带 Android SDK 和
+        # cmdline-tools，直接用它自带的 sdkmanager 装缺的组件。
+        #   platforms;android-37 / build-tools  ← 与 libs.versions.toml 的 compileSdk
+        #     对齐；装不上也别炸，AGP 联网时自己会补。
+        #   ndk / cmake ← 必须与 app/build.gradle.kts 的 ndkVersion /
+        #     externalNativeBuild.version 逐字一致，否则 CMake 那步会卡在下载上
+        #     直到 job 超时。这两个装不上就真跑不了，不吞错误。
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+          SM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SM" ] || SM="$(command -v sdkmanager || true)"
+          if [ -z "$SM" ]; then echo "::error::sdkmanager not found"; exit 1; fi
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          mkdir -p "$ANDROID_HOME/licenses"
+          printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\n' \
+            > "$ANDROID_HOME/licenses/android-sdk-license"
+          yes | "$SM" --licenses > /dev/null 2>&1 || true
+          "$SM" --install "platforms;android-37" || echo "::warning::platforms;android-37 未装上，交给 AGP"
+          "$SM" --install "build-tools;37.0.0" || echo "::warning::build-tools;37.0.0 未装上，交给 AGP"
+          "$SM" --install "ndk;27.2.12479018" "cmake;3.22.1"
+          "$SM" --list_installed | grep -E "ndk|cmake|platforms|build-tools"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make wrapper executable
+        run: chmod +x gradlew
+
+      - name: Build release APK
+        # 只出 release：发布页上放 debug 包会让人装错（Compose 没优化、R8 没跑，
+        # 滚动和转场明显更卡）。要 debug 包去 build.yml 的 artifact 取。
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Verify and stage APK
+        # 签名校验这步不能省：release 复用仓库里的 debug.keystore（见
+        # app/build.gradle.kts 的注释），万一哪天 keystore 配错，CI 会产出
+        # unsigned 包 —— 挂到发布页上，用户下载、安装失败，才发现就太晚了。
+        run: |
+          set -euo pipefail
+          SRC="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$SRC" ]; then
+            echo "::error::没找到 release APK，实际产物："
+            find app/build/outputs/apk -type f || true
+            exit 1
+          fi
+
+          ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+          APKSIGNER="$(find "$ANDROID_HOME" -name apksigner -type f 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::找不到 apksigner，无法校验签名"
+            exit 1
+          fi
+          "$APKSIGNER" verify --print-certs "$SRC" || {
+            echo "::error::APK 未签名或签名无效，装上会失败，不发布"
+            exit 1
+          }
+
+          cp "$SRC" "${{ steps.meta.outputs.apk }}"
+          # 同一次发布里的旧 asset 名字不变，action-gh-release 会覆盖，不用手删
+          ls -lh "${{ steps.meta.outputs.apk }}"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.tag }}
+          files: ${{ steps.meta.outputs.apk }}
+          # 提交信息是本项目的中文 feat/fix/chore，直接当更新日志正好
+          generate_release_notes: true
+          # 必须用 contains() 算出真布尔，不能传字符串 "false"：action input 的
+          # "false" 是非空字符串，一旦被 Boolean() 包一层就变成 true —— 正式版会
+          # 被错标成预发布，也就顶不上 Releases 页的 Latest。判据是 tag 名带 `-`
+          # （v0.2.0-beta.1）。
+          prerelease: ${{ contains(steps.meta.outputs.tag, '-') }}
+          fail_on_unmatched_files: true
