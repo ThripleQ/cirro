@@ -36,6 +36,20 @@ android {
         }
     }
 
+    signingConfigs {
+        // 固定 debug keystore（仓库里的 app/debug.keystore）：AGP 默认会**每台机器
+        // 各自生成**一份，于是本机装的 APK 与 CI 产出的 APK 签名不同 —— 手机上装
+        // CI 版会直接报 INSTALL_FAILED_UPDATE_INCOMPATIBLE（必须先卸载，丢数据）。
+        // debug key 无安全价值（store/key 密码固定 android、别名 androiddebugkey），
+        // 把它签进仓库是官方推荐做法，release 签名配置仍不在仓库里。
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         debug {
             // Local debug only ever runs on the arm64 device; skipping the other

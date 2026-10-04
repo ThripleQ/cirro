@@ -33,3 +33,7 @@ keystore
 # Python（tools/ 下脚本）
 __pycache__/
 *.pyc
+
+# debug 签名密钥是有意提交的（无安全价值，密码固定 android）——
+# 固化它是为了让 CI 产出的 debug APK 与本地同签名，可直接覆盖安装。
+!app/debug.keystore

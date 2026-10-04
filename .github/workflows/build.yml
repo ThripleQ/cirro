@@ -4,6 +4,8 @@ on:
   push:
     branches: [main, beta]
   pull_request:
+  # 手动触发：Actions 页 → build → Run workflow。改了不推代码也能重出包。
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,6 +27,15 @@ jobs:
 
       - name: Accept Android SDK licenses
         uses: android-actions/setup-android@v3
+
+      - name: Install NDK and CMake
+        # 显式装，别指望 AGP 临到用时再去下载：版本号与 app/build.gradle.kts 的
+        # ndkVersion / externalNativeBuild.version 必须逐字一致，否则 CMake 那步会
+        # 卡在下载上直到 job 超时。
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "ndk;27.2.12479018" "cmake;3.22.1"
+          sdkmanager --list_installed | grep -E "ndk|cmake"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
