@@ -311,10 +311,10 @@ class PlayerDockState internal constructor(
         // 松手后这段落后被落位曲线吸收，读成「它自己滑进去」。
         // 只改 τ、不改端点映射，所以锚点与视觉终点严格对应：跟随器最终一定收敛到 raw。
         // 增长取 stickT 的 [Motion.DragFollowStickEase] 次幂（现为 7）：前一半几乎不生效，
-        // 最后一小段才陡然压住 —— 幂次 7 时「τ 涨 20%」的点落在 raw≈1.957，底边只剩 68px 给它涨。
-        // [Motion.DragFollowStickFrom] 取 0.88（raw = 1.76）与 [Motion.DragFollowMixFrom] 对齐——
-        // 两个效果同相：滞后开始积累的同一刻开始加压。取 0.80 时它铺满整段（底边 59% 行程），
-        // 用户 2026-10-03 报「下边高阻尼段还是太长了」。
+        // 最后一小段才陡然压住 —— 幂次 7 时「τ 涨 20%」的点落在 raw≈1.987，底边只剩 20px 给它涨。
+        // [Motion.DragFollowStickFrom] 取 0.964（raw = 1.987），沉段 20px。它**已不再**与
+        // [Motion.DragFollowMixFrom]（1.76）对齐：2026-10-04 用户要求「下边高阻力行程再缩 70%」，
+        // 只能靠后移起点 —— 惯量那条窗口收不得（短于 τ 量级就积累不起滞后），理由见该常数 KDoc。
         val stickT = ((raw / 2f - Motion.DragFollowStickFrom) / (1f - Motion.DragFollowStickFrom))
             .coerceIn(0f, 1f)
         val baseTauMs = when {
