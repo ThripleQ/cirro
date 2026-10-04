@@ -78,6 +78,7 @@ internal fun HomeContent(
     data: HomeUiState.Ready,
     bottomPadding: Dp,
     onPlay: (List<Track>, Int) -> Unit,
+    onPlayFeatured: (String) -> Unit,
     onExpand: (ExpandTarget) -> Unit,
     onWebLogin: () -> Unit,
     onRefresh: () -> Unit,
@@ -125,24 +126,38 @@ internal fun HomeContent(
             item(key = "row_featured") {
                 KanadeCardRow(
                     cards = featured.map {
-                        KanadeCardModel(it.key, it.coverUrl, it.title, it.badge, it.source, it.id)
+                        // 徽标 = 卡名，底部条 = 说明（kanade 实测两者的分工就是这样）。
+                        KanadeCardModel(
+                            key = it.key,
+                            coverUrl = it.coverUrl,
+                            title = it.caption,
+                            badge = it.label,
+                            source = it.source,
+                            id = it.id,
+                            playKind = it.playKind,
+                        )
                     },
                     cardWidth = FeaturedCardSize,
                     state = rowStates.featured,
                     shared = shared,
                     avScope = avScope,
                 ) { c, rect ->
-                    onExpand(ExpandTarget(c.source, c.id, c.title, c.coverUrl, rect))
+                    if (c.playKind != null) {
+                        onPlayFeatured(c.playKind)
+                    } else {
+                        onExpand(ExpandTarget(c.source, c.id, c.title, c.coverUrl, rect))
+                    }
                 }
             }
         }
 
         // 猜你喜欢的好歌：竖列表（封面 + 歌名 + 歌手 - 专辑），点了直接播。
-        // kanade 的标题是「猜你喜欢的「风格」好歌」，风格词来自它的 styleList 接口
-        // （OpenAPI 专属）；我们没有，故标题不带风格限定。
-        val daily = data.dailySongs
+        // kanade 的标题是「猜你喜欢的「风格」好歌」，风格词来自它的 styleList 接口。
+        // 2026-10-04 补齐：风格词改从 `/api/tag/list/get` 拿，歌曲优先用同体系的
+        // `/api/style-tag/home/song`（匿名也常能拿到），取不到才回落每日推荐。
+        val daily = data.guessSongs
         if (daily != null) {
-            item(key = "h_guess") { NumeSectionHeader("猜你喜欢的好歌") }
+            item(key = "h_guess") { NumeSectionHeader(data.guessTitle) }
             if (daily.isNotEmpty()) {
                 itemsIndexed(
                     daily.take(GUESS_ROW_COUNT),
@@ -182,8 +197,9 @@ internal fun HomeContent(
 
         // 场景音乐：横滑小卡（110dp 窄版，同样只有底部名称条）。
         // kanade 的场景音乐走 OpenAPI 的 scene/radio 接口（情绪/场景标签歌单）；
-        // 我们用大众化推荐歌单（RECOMMEND_PLAYLISTS）顶位，取前 6 张。
-        val scene = data.playlists.orEmpty().take(SCENE_CARD_COUNT)
+        // 2026-10-04 补齐：优先用 `/api/style-tag/home/playlist` 的曲风歌单，
+        // 拿不到再退回大众化推荐歌单（RECOMMEND_PLAYLISTS）顶位，取前 6 张。
+        val scene = data.sceneCards.take(SCENE_CARD_COUNT)
         if (scene.isNotEmpty()) {
             item(key = "h_scene") { NumeSectionHeader("场景音乐") }
             item(key = "row_scene") {
@@ -227,6 +243,8 @@ internal data class KanadeCardModel(
     val badge: String?,
     val source: String,
     val id: String,
+    /** 非空 = 点了直接播一批歌（漫游 / 艺人），不走列表壳。 */
+    val playKind: String? = null,
 )
 
 /** 精选推荐 / 雷达歌单卡宽（kanade 实测 440px ÷ 3）。 */
@@ -243,6 +261,9 @@ private const val SCENE_CARD_COUNT = 6
 
 /** 卡片底部名称条高度（kanade 卡高约 1/4）。 */
 private val CardStripHeight = 32.dp
+
+/** 卡片封面（上半部）圆角：与 [NumeShape.Card] 同半径，只用于共享元素内层的 clip。 */
+private val CardCoverRadius = 16.dp
 
 /** 横滑卡片行：精选推荐（带徽标）与雷达 / 场景（无徽标）共用。 */
 @Composable
@@ -290,11 +311,24 @@ private fun KanadeCard(
                     rect = Rect(coords.localToWindow(Offset.Zero), coords.size.toSize())
                 }
                 .then(
-                    if (shared != null && avScope != null) {
+                    // playKind 非空的卡（漫游 / 艺人）点了直接播、不展开面板 —— 没有
+                    // 对侧目标却挂共享元素，等于给转场注册一个孤儿 bounds，不挂。
+                    if (shared != null && avScope != null && card.playKind == null) {
                         Modifier.shellSharedCover(shared, avScope, "shell:${card.source}:${card.id}")
                     } else {
                         Modifier
                     },
+                )
+                // 圆角 clip 必须写在 sharedBounds **内层**（Modifier 链更靠后）：
+                // 转场时在 overlay 里飞的是 sharedBounds 圈住的这一份内容，圆角若只由
+                // 整卡 Column（外层）提供，那一份就是直角 —— 表现正是「动画中卡片圆角没了」。
+                // 旧 BigCoverCard 的 `.then(shared).clip()` 顺序也是这个道理。
+                // 只取上两角：封面下面紧接名称条，下两角由整卡 clip 收口。
+                .clip(
+                    RoundedCornerShape(
+                        topStart = CardCoverRadius,
+                        topEnd = CardCoverRadius,
+                    ),
                 ),
         ) {
             BigCoverVisual(card.coverUrl, card.title, Modifier.fillMaxSize())

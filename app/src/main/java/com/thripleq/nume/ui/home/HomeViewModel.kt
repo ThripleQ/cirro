@@ -8,6 +8,7 @@ import com.thripleq.nume.core.repo.Chart
 import com.thripleq.nume.core.repo.ChartRepository
 import com.thripleq.nume.core.repo.HomeRepository
 import com.thripleq.nume.core.repo.PlaylistCard
+import com.thripleq.nume.core.repo.StyleTag
 import com.thripleq.nume.core.repo.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -34,61 +35,145 @@ sealed interface HomeUiState {
         val charts: List<Chart>?,
         val dailySongs: List<Track>?,
         val radar: List<PlaylistCard>?,
+        /** 曲风标签总表（`/api/tag/list/get`），null = 还没拉到。 */
+        val styles: List<StyleTag>? = null,
+        /** 首个曲风下的歌曲（`/api/style-tag/home/song`），null = 还没拉到。 */
+        val styleSongs: List<Track>? = null,
+        /** 第二个曲风下的歌单（`/api/style-tag/home/playlist`），给场景音乐顶位。 */
+        val stylePlaylists: List<PlaylistCard>? = null,
     ) : HomeUiState {
+
+        /**
+         * 「猜你喜欢」区块标题：像 kanade 那样带上曲风词。风格词来自
+         * [styles]，拉不到就退回不带限定的通用文案。
+         */
+        val guessTitle: String
+            get() {
+                val s = styles?.firstOrNull()?.name
+                return if (s.isNullOrBlank()) "猜你喜欢的好歌" else "猜你喜欢的「$s」好歌"
+            }
+
+        /**
+         * 「猜你喜欢」的歌曲：优先曲风歌（官方客户端同一套 style-tag 体系，
+         * 匿名也常能拿到），拿不到再回落每日推荐（需登录）。
+         * 返回 null 表示这块还没就绪，UI 不渲染标题。
+         */
+        val guessSongs: List<Track>?
+            get() = when {
+                styleSongs == null && dailySongs == null -> null
+                !styleSongs.isNullOrEmpty() -> styleSongs
+                else -> dailySongs
+            }
+
+        /** 场景音乐：优先曲风歌单，否则用大众化推荐歌单顶位（视觉同是歌单卡）。 */
+        val sceneCards: List<PlaylistCard>
+            get() = stylePlaylists?.takeIf { it.isNotEmpty() } ?: playlists.orEmpty()
 
         /**
          * 「精选推荐」横滑功能卡（布局抄 kanade 主页，2026-10-04）。
          *
-         * kanade 的这个区块是**客户端侧的功能卡枚举**（14 种：热歌榜/每日推荐/私人漫游/
-         * 私人雷达/相似艺人/华语流行日推…），卡片文案固定、不来自接口。我们没有那套
-         * OpenAPI，所以按同一视觉规格（图 + 左上角类型标签 + 底部名称条）从**已有数据**
-         * 组装等价物，凑满 6 张，缺哪块就用推荐歌单调剂：
+         * kanade 的这一区是**客户端侧的功能卡枚举**，首屏 6 张，顺序与文案由 uiautomator
+         * 实测钉死（徽标 = 卡名，底部条 = 一句说明）：
          *
-         * | 卡 | 数据 | 徽标 |
-         * |---|---|---|
-         * | 热歌榜 / 飙升榜 / 新歌榜 | TOPLIST_DETAIL 按名取 | 榜单 |
-         * | 每日推荐 | RECOMMEND_SONGS（登录才有） | 每日推荐 |
-         * | 私人雷达 | RECOMMEND_RESOURCE 首条 | 雷达 |
-         * | 补位 | RECOMMEND_PLAYLISTS | 歌单 |
+         * | # | 徽标 | 底部说明 | 我们的数据 |
+         * |---|---|---|---|
+         * | 1 | 热歌榜 | 云音乐官方top排行榜 | TOPLIST 里名为「热歌榜」的那张 |
+         * | 2 | 每日推荐 | 符合你口味的新鲜好歌 | RECOMMEND_SONGS（需登录） |
+         * | 3 | 私人漫游 | 多种听歌模式随心播放 | `/api/v1/radio/get`，点了直接播 |
+         * | 4 | 私人雷达 | 从你喜欢的歌听起 | RECOMMEND_RESOURCE 首条 |
+         * | 5 | 相似艺人 | 从你喜欢的艺人听起 | 种子歌 → 歌手 → 热门歌（见 HomeRepository.artistRadio） |
+         * | 6 | 「XX」日推 | 你喜欢的XX歌曲 | 曲风歌单（style-tag 体系，风格词随账号口味） |
+         *
+         * 我们没有 kanade 那套 OpenAPI（个人开发者需成年，暂不可用），所以按同一视觉
+         * 规格从**已有数据**组装等价物；拿不到就少一张，末尾用推荐歌单补位凑 6 张。
          */
         val featured: List<FeaturedCard> by lazy {
             buildList {
                 charts?.firstOrNull { it.name == "热歌榜" }?.let {
-                    add(FeaturedCard("hot", it.name, "榜单", it.coverUrl, "chart", it.id))
+                    add(
+                        FeaturedCard(
+                            "hot", it.coverUrl, "热歌榜", "云音乐官方top排行榜",
+                            "chart", it.id,
+                        ),
+                    )
                 }
                 if (!dailySongs.isNullOrEmpty()) {
                     add(
                         FeaturedCard(
-                            "daily", "每日推荐", "每日推荐",
-                            dailySongs.first().artworkUrl, "daily", "",
+                            "daily", dailySongs.first().artworkUrl,
+                            "每日推荐", "符合你口味的新鲜好歌", "daily", "",
                         ),
                     )
                 }
+                add(
+                    FeaturedCard(
+                        "radio", guessSongs?.getOrNull(1)?.artworkUrl,
+                        "私人漫游", "多种听歌模式随心播放", "radio", "",
+                        playKind = HomeViewModel.PLAY_RADIO,
+                    ),
+                )
                 radar?.firstOrNull()?.let {
-                    add(FeaturedCard("radar", it.name, "雷达", it.coverUrl, "playlist", it.id))
+                    add(
+                        FeaturedCard(
+                            // source 故意用 "radar" 而不是 "playlist"：下面「雷达歌单」
+                            // 区块的第一张就是同一条歌单，若两边都按 `shell:playlist:<id>`
+                            // 注册共享元素，展开时会有**两张源封面同时飞向同一个 banner**
+                            // （表现为动画错乱）。换一个 wire 让两端 key 各自唯一；
+                            // TrackListSource.from 对未知 wire 回落 PLAYLIST，数据照旧。
+                            "radar_private", it.coverUrl,
+                            "私人雷达", "从你喜欢的歌听起", "radar", it.id,
+                        ),
+                    )
                 }
-                charts?.firstOrNull { it.name == "飙升榜" }?.let {
-                    add(FeaturedCard("rise", it.name, "榜单", it.coverUrl, "chart", it.id))
-                }
-                charts?.firstOrNull { it.name == "新歌榜" }?.let {
-                    add(FeaturedCard("new", it.name, "榜单", it.coverUrl, "chart", it.id))
+                add(
+                    FeaturedCard(
+                        "artist", guessSongs?.getOrNull(2)?.artworkUrl,
+                        "相似艺人", "从你喜欢的艺人听起", "artist", "",
+                        playKind = HomeViewModel.PLAY_ARTIST,
+                    ),
+                )
+                stylePlaylists?.firstOrNull()?.let { p ->
+                    val s = styles?.firstOrNull()?.name
+                    add(
+                        FeaturedCard(
+                            "style_daily", p.coverUrl,
+                            if (s.isNullOrBlank()) "曲风日推" else "${s}日推",
+                            if (s.isNullOrBlank()) "你喜欢的歌曲" else "你喜欢的${s}歌曲",
+                            HomeViewModel.FEATURED_PLAYLIST_WIRE, p.id,
+                        ),
+                    )
                 }
                 playlists.orEmpty().forEachIndexed { i, p ->
-                    if (size < 6) add(FeaturedCard("pl$i", p.name, "歌单", p.coverUrl, "playlist", p.id))
+                    if (size < 6) {
+                        add(
+                            FeaturedCard(
+                                "pl$i", p.coverUrl, "歌单", p.name,
+                                HomeViewModel.FEATURED_PLAYLIST_WIRE, p.id,
+                            ),
+                        )
+                    }
                 }
             }
         }
+
     }
 }
 
-/** 「精选推荐」一张功能卡：封面 + 左上角类型徽标 + 底部名称条。 */
+/**
+ * 「精选推荐」一张功能卡：方形封面 + 左上角白底徽标（卡名）+ 底部浅灰说明条。
+ * 与 kanade 实测一致：徽标是**卡名**，说明条是**一句描述**，不是歌单名。
+ */
 data class FeaturedCard(
     val key: String,
-    val title: String,
-    val badge: String,
     val coverUrl: String?,
+    /** 左上角白底圆角徽标。 */
+    val label: String,
+    /** 底部说明条。 */
+    val caption: String,
     val source: String,
     val id: String,
+    /** null = 点开列表壳；[HomeViewModel.PLAY_RADIO] / [PLAY_ARTIST] = 拉一批直接播。 */
+    val playKind: String? = null,
 )
 
 @HiltViewModel
@@ -98,6 +183,24 @@ class HomeViewModel @Inject constructor(
     private val playback: PlaybackLauncher,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
+
+    companion object {
+        /** [FeaturedCard.playKind]：点了拉 `/api/v1/radio/get` 直接播。 */
+        const val PLAY_RADIO = "radio"
+
+        /** [FeaturedCard.playKind]：点了播「种子歌所属艺人」的热门歌。 */
+        const val PLAY_ARTIST = "artist"
+
+        /**
+         * 歌单型功能卡的 wire：故意不叫 "playlist"。
+         *
+         * 同一条歌单常常既在「精选推荐」又在下面「场景音乐」区块出现，共享元素的 key
+         * 是 `shell:<source>:<id>` —— 两边都用 "playlist" 就是**两个源抢一个目标**，
+         * 展开时两张封面一起飞。功能卡统一走这个 wire（TrackListSource 对未知 wire
+         * 回落 PLAYLIST，数据不受影响），保证一条歌单只有一个源扮演共享起点。
+         */
+        const val FEATURED_PLAYLIST_WIRE = "fpl"
+    }
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -118,6 +221,7 @@ class HomeViewModel @Inject constructor(
             val playlists = async { homeRepo.recommendPlaylists() }
             val charts = async { chartRepo.charts() }
             val radar = async { homeRepo.radarPlaylists() }
+            val styles = async { homeRepo.styleList() }
             // account 慢只拖后 daily 一块，其余四块完全不受影响。
             val daily = async { if (loggedInAsync.await()) homeRepo.dailySongs() else emptyList() }
 
@@ -137,13 +241,32 @@ class HomeViewModel @Inject constructor(
             ready = ready.copy(radar = rd)
             _uiState.value = ready
 
+            // 曲风两段有依赖：先拿 tag 列表，才能按 tagId 拉歌曲/歌单；
+            // 拉到 tag 之后这两块之间无依赖，并行发起。
+            val st = styles.await()
+            ready = ready.copy(styles = st)
+            _uiState.value = ready
+            val tag = st.firstOrNull()?.id
+            val tag2 = st.getOrNull(1)?.id
+            val styleSongs = async { if (tag != null) homeRepo.styleSongs(tag, "6") else emptyList() }
+            val stylePlaylists = async {
+                if (tag2 != null) homeRepo.stylePlaylists(tag2, "6") else emptyList()
+            }
+
             val da = daily.await()
             ready = ready.copy(dailySongs = da, loggedIn = loggedInAsync.await())
+            _uiState.value = ready
+
+            ready = ready.copy(styleSongs = styleSongs.await())
+            _uiState.value = ready
+            ready = ready.copy(stylePlaylists = stylePlaylists.await())
 
             val allEmpty = ready.playlists.isNullOrEmpty() &&
                 ready.charts.isNullOrEmpty() &&
                 ready.radar.isNullOrEmpty() &&
-                ready.dailySongs.isNullOrEmpty()
+                ready.dailySongs.isNullOrEmpty() &&
+                ready.styleSongs.isNullOrEmpty() &&
+                ready.stylePlaylists.isNullOrEmpty()
             _uiState.value = if (allEmpty) HomeUiState.Error else ready
         }
     }
@@ -153,6 +276,25 @@ class HomeViewModel @Inject constructor(
     fun onPlayTrack(tracks: List<Track>, index: Int) {
         viewModelScope.launch {
             playback.play(context, tracks, index)
+        }
+    }
+
+    /**
+     * 「精选推荐」里点了直接播的卡（[FeaturedCard.playKind] 非空）。
+     *
+     * 这两类卡的共同点：内容不是一份可列的清单，而是**每次调用都不一样的一批歌**
+     * （漫游是服务端随口味出，艺人是按种子歌的歌手现拉），所以不进列表壳 ——
+     * 壳里那种「固定队列 + 播放全部」的语义对它们不成立。拉空就什么都不做，
+     * 避免把空队列塞给播放器。
+     */
+    fun onPlayFeatured(kind: String) {
+        viewModelScope.launch {
+            val seed = (_uiState.value as? HomeUiState.Ready)?.guessSongs?.firstOrNull()?.id
+            val tracks = when (kind) {
+                PLAY_ARTIST -> homeRepo.artistRadio(seed).ifEmpty { homeRepo.radioSongs("10") }
+                else -> homeRepo.radioSongs("10")
+            }
+            if (tracks.isNotEmpty()) playback.play(context, tracks, 0)
         }
     }
 }

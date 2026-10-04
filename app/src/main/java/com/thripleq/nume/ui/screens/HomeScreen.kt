@@ -78,6 +78,7 @@ fun HomeScreen(
     // 稳定的回调：开/关壳只改 expand，若 lambda 每次重组都新建会把整页列表（HomeContent）
     // 一起重组，产生尖峰帧。用 remember 固定后 expand 变化不会再重组底下列表。
     val onPlay = remember(vm) { vm::onPlayTrack }
+    val onPlayFeatured = remember(vm) { vm::onPlayFeatured }
     val onRefresh = remember(vm) { { vm.load() } }
     val onExpand = remember { { t: ExpandTarget -> expand = t } }
     val onDismiss = remember { { expand = null } }
@@ -112,6 +113,7 @@ fun HomeScreen(
                         listState = listState,
                         bottomPadding = bottomPad,
                         onPlay = onPlay,
+                        onPlayFeatured = onPlayFeatured,
                         onExpand = onExpand,
                         onWebLogin = onWebLogin,
                         onRefresh = onRefresh,
@@ -140,6 +142,7 @@ fun HomeScreen(
                 listState = listState,
                 bottomPadding = bottomPad,
                 onPlay = onPlay,
+                onPlayFeatured = onPlayFeatured,
                 onExpand = onExpand,
                 onWebLogin = onWebLogin,
                 onRefresh = onRefresh,
@@ -178,6 +181,7 @@ private fun HomeBodyUi(
     rowStates: HomeRowStates,
     bottomPadding: Dp,
     onPlay: (List<Track>, Int) -> Unit,
+    onPlayFeatured: (String) -> Unit,
     onExpand: (ExpandTarget) -> Unit,
     onWebLogin: () -> Unit,
     onRefresh: () -> Unit,
@@ -191,6 +195,7 @@ private fun HomeBodyUi(
             data = state,
             bottomPadding = bottomPadding,
             onPlay = onPlay,
+            onPlayFeatured = onPlayFeatured,
             onExpand = onExpand,
             onWebLogin = onWebLogin,
             onRefresh = onRefresh,
