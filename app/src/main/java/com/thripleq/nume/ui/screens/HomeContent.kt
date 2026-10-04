@@ -136,8 +136,11 @@ internal fun HomeContent(
         if (featured.isNotEmpty()) {
             item(key = "h_featured") { NumeSectionHeader("精选推荐") }
             item(key = "row_featured") {
-                KanadeCardRow(
-                    cards = featured.map {
+                // remember(featured)：卡片模型只在数据本身变时重建。否则每次重组都会新建
+                // 一整列 KanadeCardModel（12 个对象）—— 下游 KanadeCardRow 即便 key 相同，
+                // 收到的也是新 List 实例，跳过重组直接失效。
+                val cards = remember(featured) {
+                    featured.map {
                         // 徽标 = 卡名，底部条 = 说明（kanade 实测两者的分工就是这样）。
                         KanadeCardModel(
                             key = it.key,
@@ -148,7 +151,10 @@ internal fun HomeContent(
                             id = it.id,
                             playKind = it.playKind,
                         )
-                    },
+                    }
+                }
+                KanadeCardRow(
+                    cards = cards,
                     spec = FeaturedCardSpec,
                     state = rowStates.featured,
                     guard = guard,
@@ -206,10 +212,14 @@ internal fun HomeContent(
         if (radarCards.isNotEmpty()) {
             item(key = "h_radar") { NumeSectionHeader("雷达歌单") }
             item(key = "row_radar") {
-                KanadeCardRow(
-                    cards = radarCards.map {
+                // 同 row_featured：卡片模型按数据 remember，别每次重组重建（见那里的注释）。
+                val cards = remember(radarCards) {
+                    radarCards.map {
                         KanadeCardModel(it.id, it.coverUrl, it.name, null, HomeViewModel.RADAR_WIRE, it.id)
-                    },
+                    }
+                }
+                KanadeCardRow(
+                    cards = cards,
                     spec = RadarCardSpec,
                     state = rowStates.radar,
                     guard = guard,
@@ -240,15 +250,19 @@ internal fun HomeContent(
         if (scene.isNotEmpty()) {
             item(key = "h_scene") { NumeSectionHeader("场景音乐") }
             item(key = "row_scene") {
+                // 同 row_featured：卡片模型按数据 remember，别每次重组重建（见那里的注释）。
+                val cards = remember(scene) {
+                    scene.map {
+                        KanadeCardModel(it.playlistId, it.coverUrl, it.tag, null, "scene", it.playlistId)
+                    }
+                }
                 KanadeCardRow(
                     // source "scene" = 区块专属 wire，保证整页共享键唯一
                     // （见 HomeViewModel.FEATURED_PLAYLIST_WIRE 注释）。
                     // **ExpandTarget 必须原样带上这个 wire**：目标端 banner 的
                     // 共享键是 `shell:<source>:<id>`，这里再写 "playlist" 就会
                     // 与源端 `shell:scene:<id>` 对不上，morph 直接不触发。
-                    cards = scene.map {
-                        KanadeCardModel(it.playlistId, it.coverUrl, it.tag, null, "scene", it.playlistId)
-                    },
+                    cards = cards,
                     spec = SceneCardSpec,
                     state = rowStates.scene,
                     guard = guard,

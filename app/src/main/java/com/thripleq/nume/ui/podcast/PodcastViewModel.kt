@@ -7,6 +7,7 @@ import com.thripleq.nume.core.playback.PlaybackLauncher
 import com.thripleq.nume.core.repo.PodcastRepository
 import com.thripleq.nume.core.repo.Program
 import com.thripleq.nume.core.repo.RadioDetail
+import com.thripleq.nume.core.repo.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
@@ -106,13 +107,27 @@ class PodcastViewModel @Inject constructor(
      *  （2026-10-03 用户：「点一首歌进行播放不要进入播放页，就单纯开始播放就行」）。 */
     fun onPlayProgram(program: Program) {
         val songId = program.songId ?: return
-        val queue = _uiState.value.programs.mapNotNull { it.toTrack() }
+        val programs = _uiState.value.programs
+        // 节目列表 → 可播队列的转换按列表实例缓存：连点同一批里的第二期时直接复用，
+        // 不必再为上百期节目逐个 toTrack 新建对象。列表只在加载/翻页时换实例，
+        // 所以引用比较就够；换实例就重算，语义与原来一致。
+        val queue = if (cachedPrograms === programs) {
+            cachedQueue
+        } else {
+            programs.mapNotNull { it.toTrack() }.also {
+                cachedPrograms = programs
+                cachedQueue = it
+            }
+        }
         val index = queue.indexOfFirst { it.id == songId }
         if (index < 0) return
         viewModelScope.launch {
             playback.play(context, queue, index)
         }
     }
+
+    private var cachedPrograms: List<Program>? = null
+    private var cachedQueue: List<Track> = emptyList()
 
     private companion object {
         const val PAGE_SIZE = 30

@@ -469,6 +469,10 @@ private fun firstArray(root: JSONObject, vararg keys: String): JSONArray? {
     return null
 }
 
+/** 候选数组的**轻量**判定：首元素是歌曲对象（id>0，与 [parseTrack] 同一判据）。 */
+private fun looksLikeSongs(arr: JSONArray): Boolean =
+    arr.optJSONObject(0)?.optLong("id", 0L)?.let { it > 0L } == true
+
 /** 找到第一个能解析出至少一首歌的数组（style-tag 端点嵌套不定）。 */
 private fun findTrackArray(root: JSONObject): JSONArray? {
     val candidates = mutableListOf<JSONArray?>()
@@ -481,6 +485,11 @@ private fun findTrackArray(root: JSONObject): JSONArray? {
         }
     }
     collect(root)
+    // 先按轻量判据挑，**只对命中的那一个**真正解析。原写法
+    // `firstOrNull { parseTracks(it).isNotEmpty() }` 会把每个候选整数组都完整构造成
+    // Track 再丢掉 —— 这些端点常同时带 playlists / artists 等大数组，白解析几百个对象。
+    candidates.firstOrNull { looksLikeSongs(it) }?.let { return it }
+    // 首元素字段异常（老端点变体）时保留原路径，避免把行为收窄。
     return candidates.firstOrNull { parseTracks(it).isNotEmpty() }
 }
 
