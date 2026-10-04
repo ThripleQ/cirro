@@ -91,5 +91,7 @@ internal fun formatTime(ms: Long): String {
     val total = ms.coerceAtLeast(0L) / 1000
     val m = total / 60
     val s = total % 60
-    return "%d:%02d".format(m, s)
+    // 手写拼接，不用 "%d:%02d".format()：String.format 每次调用都要建一个 Formatter
+    // 再走一遍格式串解析，而进度行左右两个时间是 250ms 一次的稳定热点。
+    return if (s < 10) "$m:0$s" else "$m:$s"
 }

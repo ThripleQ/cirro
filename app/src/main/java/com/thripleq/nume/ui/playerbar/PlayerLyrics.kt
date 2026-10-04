@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -65,11 +66,15 @@ internal fun currentLyricIndex(lines: List<LyricLine>, positionMs: Long): Int {
  * 歌词面板：随播放进度自动滚动 + 高亮当前行，点某行跳到该行时间。
  * 用户手动滚动后暂停自动滚动 4s，避免和阅读抢（用 [LazyListState.isScrollInProgress]
  * 分辨，本组件自己触发的滚动用 programmatic 标记排除）。
+ *
+ * **[positionState] 收的是 State 而不是 Long**：进度是 250ms 一次的轮询，若在调用方解包成
+ * Long 传进来，那份值的变化会落在调用方的重组作用域里（播放页内容区整块陪跑）。
+ * 解包点放在本组件内部 —— 只有歌词面板在场时才会有这个订阅。
  */
 @Composable
 internal fun LyricsView(
     uiState: LyricsUiState,
-    positionMs: Long,
+    positionState: State<Long>,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -80,6 +85,7 @@ internal fun LyricsView(
         LyricsUiState.Empty -> LyricsMessage("暂无歌词", modifier)
 
         is LyricsUiState.Ready -> {
+            val positionMs = positionState.value
             val lines = uiState.lyrics.lines
             val currentIndex = currentLyricIndex(lines, positionMs)
             val listState = rememberLazyListState()

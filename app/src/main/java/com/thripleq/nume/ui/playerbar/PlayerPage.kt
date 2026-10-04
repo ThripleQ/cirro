@@ -49,6 +49,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -84,6 +86,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import com.thripleq.nume.core.playback.PlayerHolder
 import com.thripleq.nume.ui.components.FadingMarqueeText
+import com.thripleq.nume.ui.components.quantizedFontSize
 import kotlinx.coroutines.flow.collect
 
 /**
@@ -490,8 +493,6 @@ internal fun PlayerPageContent(
     onComments: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var seekPending by remember { mutableStateOf(false) }
-    var dragMs by remember { mutableLongStateOf(0L) }
     var queueOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
     var lyricsOpen by remember { mutableStateOf(false) }
@@ -503,14 +504,18 @@ internal fun PlayerPageContent(
     LaunchedEffect(lyricsOpen, state.trackId) {
         if (lyricsOpen) lyricsVm.load(state.trackId)
     }
-    // 进度是高频状态：单独订阅（拖动时冻结，避免轮询跟手指打架）。
-    val positionMs by rememberPlayerPosition(player) { seekPending }
-    val rangeMax = state.durationMs.toFloat().coerceAtLeast(1f)
-    // 拖动中途若曲目结束/切歌使 durationMs 归零，Slider 会被移除、onValueChangeFinished 不再触发，
-    // seekPending 会永久卡住（进度轮询被冻结在拖动值）。这里兜底复位。
-    LaunchedEffect(seekPending, state.durationMs) {
-        if (seekPending && state.durationMs <= 0L) seekPending = false
-    }
+    // 拖动进度条期间冻结轮询（否则播放器回报的位置会和手指打架）。这个标志跨两个组件用
+    //（写入发生在 [PlayerProgressRow] 的拖动回调里、读取发生在下面的订阅里），所以单列一个
+    // State 传下去，而不是留在本作用域 —— 它一变就重组内容区的话，拖动每一下都要赔上整页。
+    val seekFrozen = remember { mutableStateOf(false) }
+    // 进度是高频状态：**在这里只创建 State，绝不 `by` 解包**。
+    //
+    // `positionMs` 每 250ms 变一次（[rememberPlayerPosition] 的轮询）。在本函数体解包的话，
+    // 这个变化会落在本组件的重组作用域里 —— 而 Compose 的作用域是**函数级**的：封面、跑马
+    // 标题、控制行、功能胶囊全都会跟着每 250ms 重跑一遍（不是「只有进度条重组」）。
+    // 解包点必须下沉到真正消费它的那几行：进度行（[PlayerProgressRow]）与歌词面板。
+    // 这与 PlayerDock 把 positionState 一路传到迷你进度条内部才取 `.value` 是同一套做法。
+    val positionState = rememberPlayerPosition(player) { seekFrozen.value }
 
     val density = LocalDensity.current
     // 上限放到 1 以上（[Motion.ContentOvershootMax]）：内容跟随器是欠阻尼的，收尾会越过一点
@@ -539,8 +544,21 @@ internal fun PlayerPageContent(
     val sideBtnDim = androidx.compose.ui.unit.lerp(26.dp, 34.dp, sc)
     // 2026-10-03 用户：「标题字号太大」——全屏档 28sp → 24sp（卡片档 21sp 不动）。
     // 与右侧红心/评论（[TitleActionIcon] = 28dp）一起收，两者最终高度相当。
-    val titleFont = androidx.compose.ui.unit.lerp(21.sp, 24.sp, sc)
-    val artistFont = androidx.compose.ui.unit.lerp(14.sp, 16.sp, sc)
+    //
+    // 量化到 0.25sp：字号是**文本重排的输入**，它一变跑马组件就要重新 measure —— 那是本页
+    // 最贵的一项，一次展开能跑出几十上百次。量化后只在跨档时重排；3x 屏上 0.25sp 合
+    // 0.75px 字号差，肉眼看不出来。
+    val titleFont = androidx.compose.ui.unit.lerp(21.sp, 24.sp, sc).quantizedFontSize()
+    val artistFont = androidx.compose.ui.unit.lerp(14.sp, 16.sp, sc).quantizedFontSize()
+    // 文本样式跟着量化后的字号走：只在跨档时重建，档内直接复用同一份 TextStyle
+    //（跑马组件以 style 为 remember key，对象换了就要重排）。
+    val typography = MaterialTheme.typography
+    val titleStyle = remember(typography, titleFont) {
+        typography.headlineSmall.copy(fontSize = titleFont)
+    }
+    val artistStyle = remember(typography, artistFont) {
+        typography.bodyMedium.copy(fontSize = artistFont)
+    }
     val titleColor = lerp(
         MaterialTheme.colorScheme.onSurface,
         MaterialTheme.colorScheme.primary,
@@ -580,7 +598,7 @@ internal fun PlayerPageContent(
             if (lyricsOpen) {
                 LyricsView(
                     uiState = lyricsState,
-                    positionMs = positionMs,
+                    positionState = positionState,
                     onSeek = { PlayerHolder.seekTo(player, it) },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -625,7 +643,7 @@ internal fun PlayerPageContent(
             ) {
                 FadingMarqueeText(
                     text = state.title.ifEmpty { "暂无播放" },
-                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = titleFont),
+                    style = titleStyle,
                     color = titleColor,
                     // 权重：图标行贴右端、歌名占剩下的宽度（跑马按容器宽判定）。
                     modifier = Modifier.weight(1f),
@@ -671,7 +689,7 @@ internal fun PlayerPageContent(
                 Spacer(Modifier.height(4.dp))
                 FadingMarqueeText(
                     text = state.artist,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = artistFont),
+                    style = artistStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -679,51 +697,16 @@ internal fun PlayerPageContent(
 
         Spacer(Modifier.weight(1f))
 
-        // 进度条之上不再画东西：原来这里有一条 1dp 分割线（上下各 16dp 内缩，共占 33dp），
-        // 用户：「歌手下边的分割线删掉」。整块撤掉之后把这 33dp 原样挪到三键之下
-        // （见 [TransportBottomGap]）—— 进度条与三键因此整体上移 33dp，而整列总高不变。
-        if (state.durationMs > 0) {
-            Slider(
-                value = if (seekPending) dragMs.toFloat() else positionMs.toFloat(),
-                onValueChange = { dragMs = it.toLong(); seekPending = true },
-                onValueChangeFinished = {
-                    PlayerHolder.seekTo(player, dragMs)
-                    seekPending = false
-                },
-                valueRange = 0f..rangeMax,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        } else {
-            // 暂无播放：只画一条干净的静态轨道 —— M3 disabled Slider 会留一个悬浮 thumb
-            // 和端点小圆点，像坏掉；这里用同样的轨道高度/内缩，但去掉 thumb。
-            Box(
-                modifier = Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 16.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(NumeShape.Track)
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = NumeFade.TRACK)),
-                )
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                formatTime(positionMs),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                formatTime(state.durationMs),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        // 进度行：滑块 + 两侧时间整块挪进独立组件 —— 它是全页**唯一解包进度值**的地方，
+        // 250ms 的轮询与拖动的逐帧写入因此只重组这一行，不再牵着内容区陪跑。
+        // 位置不变：进度条之上不再画东西（原来那条 1dp 分割线已按用户要求删掉，
+        // 省下的 33dp 原样挪到三键之下，见 [TransportBottomGap]）。
+        PlayerProgressRow(
+            player = player,
+            positionState = positionState,
+            seekFrozen = seekFrozen,
+            durationMs = state.durationMs,
+        )
 
         Spacer(Modifier.height(ctrlGap))
 
@@ -833,5 +816,74 @@ internal fun PlayerPageContent(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+}
+
+/** 进度行：滑块 + 左右两个时间。**播放页里唯一解包 [positionState] 的地方**。
+ *
+ *  为什么单列一个组件：进度是 250ms 一次的轮询，拖动进度条时更是逐帧写入。这些读取若留在
+ *  [PlayerPageContent] 的函数体里，按 Compose「重组作用域是函数级」的规则，整块内容区
+ *  （封面、跑马标题、控制行、功能胶囊）都会跟着重跑一遍 —— 而它们与进度无关。收进这里之后，
+ *  高频写入的重组范围就只剩这一行。
+ *
+ *  @param seekFrozen 「拖动中」标志：本组件写入、进度订阅方读取。拖动期间必须冻结那个
+ *    250ms 轮询，否则播放器回报的真实位置会与手指的位置打架。
+ */
+@Composable
+private fun PlayerProgressRow(
+    player: Player,
+    positionState: State<Long>,
+    seekFrozen: MutableState<Boolean>,
+    durationMs: Long,
+) {
+    var dragMs by remember { mutableLongStateOf(0L) }
+    val seekPending = seekFrozen.value
+    val positionMs = positionState.value
+    // 拖动中途若曲目结束/切歌使 durationMs 归零，Slider 会被移除、onValueChangeFinished
+    // 不再触发，seekPending 会永久卡住（进度轮询被冻结在拖动值）。这里兜底复位。
+    LaunchedEffect(durationMs) {
+        if (durationMs <= 0L) seekFrozen.value = false
+    }
+    if (durationMs > 0) {
+        Slider(
+            value = if (seekPending) dragMs.toFloat() else positionMs.toFloat(),
+            onValueChange = { dragMs = it.toLong(); seekFrozen.value = true },
+            onValueChangeFinished = {
+                PlayerHolder.seekTo(player, dragMs)
+                seekFrozen.value = false
+            },
+            valueRange = 0f..durationMs.toFloat().coerceAtLeast(1f),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    } else {
+        // 暂无播放：只画一条干净的静态轨道 —— M3 disabled Slider 会留一个悬浮 thumb
+        // 和端点小圆点，像坏掉；这里用同样的轨道高度/内缩，但去掉 thumb。
+        Box(
+            modifier = Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(NumeShape.Track)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = NumeFade.TRACK)),
+            )
+        }
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            formatTime(positionMs),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            formatTime(durationMs),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
@@ -28,8 +30,11 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.ceil
+import kotlin.math.roundToInt
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -45,10 +50,12 @@ import kotlinx.coroutines.launch
  *    第二份被压成一个字，那个残缺的开头正是「标题开头不对」的来源。
  * 2. **单向循环**：始终向左匀速滚过「文本宽 + 空档」，滚到第二份的行首正好落在容器左缘时，
  *    与第一份的行首逐像素重合 —— 无缝接回开头、不反向、不跳。
- * 3. **尺寸一变就复位**：内容宽 / 容器宽 / 空档 任一变化都重新从行首起滚（AOSP 用
- *    `snapshotFlow` + `collectLatest`，这里用 `LaunchedEffect` 的 key 达到同一效果）。
- *    播放页的标题块在展开壳里逐帧变字号与可用宽度，靠这条保证「一进播放页先看到开头」，
- *    而不是让相位停在半路、把开头埋在屏幕外。
+ * 3. **只在文本或滚动状态变化时复位**：内容宽 / 容器宽 / 空档的变化**不打断**当前这一圈
+ *    （宽度每圈重取，只影响下一圈的时长）。曾经照抄 AOSP 的做法，把内容宽/容器宽写进
+ *    `LaunchedEffect` 的 key，结果在**播放页展开时每帧重启**：effect 开头那句
+ *    `snapTo(0f)` + `delay(initialDelay)` 被反复执行，整个展开过程里文字都钉在行首、
+ *    一圈都滚不起来（用户读成「标题迟迟不滚」）。复位只该发生在「刚拿到一句新词」那一下 ——
+ *    那一下要保证看到开头，而不是让相位停在半路、把开头埋在屏幕外；之后尺寸怎么变都别动它。
  * 4. **停顿只在行首**（AOSP 的 repeatDelay 语义）：每轮从行首静置起步，末尾不停留。
  *
  * 行首位置可证：第一份的行首 x = -offset，`offset = 0` 时恰为容器左缘。空档的意义是让
@@ -61,6 +68,18 @@ import kotlinx.coroutines.launch
  * @param fadeMillis 遮罩淡入/淡出的过渡时长。
  * @param spacingSpaces 首尾之间的空档 = 同字体下几个空格字符宽（「首尾之间加一些空格」）；0 = 两份硬贴。
  */
+
+/** 文本测量的字号量化步进（sp）：理由见 [FadingMarqueeText] 内 `measureStyle` 处。 */
+internal const val FontQuantStep = 0.25f
+
+/** 把字号量化到 [FontQuantStep] 的整数倍 —— **只用于 sp**（本项目的字号全是 sp，
+ *  这里不做单位判断，好避开各 Compose 版本间 `TextUnit.isSp` 的可用性差异）。
+ *
+ *  调用方也该先过这一道（见 [com.thripleq.nume.ui.playerbar.PlayerPageContent] 的 titleFont）：
+ *  字号连续变时先在源头量化，本组件里连每帧 `style.copy()` 那一次分配都省了。 */
+internal fun TextUnit.quantizedFontSize(): TextUnit =
+    (value / FontQuantStep).roundToInt().let { (it * FontQuantStep).sp }
+
 @Composable
 fun FadingMarqueeText(
     text: String,
@@ -77,10 +96,16 @@ fun FadingMarqueeText(
     // 标题/歌手来自接口，首尾空白不参与展示与测量 —— 否则行首会先顶出一段空白。
     val label = remember(text) { text.trim() }
     val measurer = rememberTextMeasurer()
-    val layout = remember(label, style) {
+    // 字号量化后再当测量 key：调用方可能把 style 逐帧连续变（播放页的标题/歌手字号就是随
+    // 展开进度 lerp 的），直接拿 style 当 key 等于**每帧重排一次文本**（120Hz × 本组件 3 次
+    // measure）。量化到 0.25sp 后只在跨档时重测 —— 真机 3x 屏上合 0.75px 字号差，肉眼不可见。
+    // 测量与绘制共用这份量化 style：否则「量出来的宽度」与「画出来的字」不是一回事。
+    val qFontSize = style.fontSize.quantizedFontSize()
+    val measureStyle = if (qFontSize == style.fontSize) style else style.copy(fontSize = qFontSize)
+    val layout = remember(label, measureStyle) {
         measurer.measure(
             text = AnnotatedString(label),
-            style = style,
+            style = measureStyle,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Clip,
@@ -94,10 +119,10 @@ fun FadingMarqueeText(
     // 高度按实测写死：本组件自己画文本（不再由 Text 组合撑高），别让行高跟 Text 版不一致。
     val textHeight = with(density) { layout.size.height.toDp() }
     // 一个空格的实际宽度 = w("| |") - w("||")：直接量 "    " 会因行尾空白被裁而量成 0。
-    val spacePx = remember(style, density) {
+    val spacePx = remember(measureStyle, density) {
         fun widthOf(s: String) = measurer.measure(
             text = AnnotatedString(s),
-            style = style,
+            style = measureStyle,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Clip,
@@ -115,8 +140,17 @@ fun FadingMarqueeText(
         // 1 = 两侧完全淡出，0 = 不淡出。只在滚动相位里抬到 1。
         val fade = remember { Animatable(0f) }
 
+        // 循环里要用的宽度与滚动状态：**不进 effect key**，改为每圈读最新值。
+        //
+        // 这是本组件最容易踩的坑：内容宽与容器宽在展开动画里是逐帧变的（字号 lerp + 外边距
+        // lerp），若把它们写进 key，effect 会**每帧取消重启** —— 而 effect 体开头是
+        // `snapTo(0f)` + `delay(initialDelay)`，于是整个展开过程里 offset 都被按在行首，
+        // 滚动一次都跑不起来（展开结束、尺寸稳定后才终于开始，观感是「标题迟迟不滚」）。
+        // 现在 key 只留「真正该复位」的三样：文本、是否处于滚动、速度/时长常量。
+        val liveLoopWidth by rememberUpdatedState((contentPx + spacingPx).toFloat())
+
         LaunchedEffect(
-            label, contentPx, containerPx, spacingPx, velocityPx,
+            label, scrolling, velocityPx,
             initialDelayMillis, repeatDelayMillis, fadeMillis,
         ) {
             if (!scrolling || velocityPx <= 0f) {
@@ -124,13 +158,14 @@ fun FadingMarqueeText(
                 fade.snapTo(0f)
                 return@LaunchedEffect
             }
-            // 一份「文本 + 空档」：滚过它就等于把下一份文本带到行首。
-            val loopWidth = (contentPx + spacingPx).toFloat()
-            val duration = ceil(loopWidth / (velocityPx / 1000f)).toInt().coerceAtLeast(1)
             offset.snapTo(0f)
             fade.snapTo(0f)
             delay(initialDelayMillis.toLong())
             while (true) {
+                // 一份「文本 + 空档」：滚过它就等于把下一份文本带到行首。
+                // 每圈重新取宽度：字号/容器宽在动画中变了也只影响下一圈的时长，不打断当前这圈。
+                val loopWidth = liveLoopWidth.coerceAtLeast(1f)
+                val duration = ceil(loopWidth / (velocityPx / 1000f)).toInt().coerceAtLeast(1)
                 // 起滚的同时淡入：两条动画并行，读完即到终点（第二份文本刚好对齐行首）。
                 coroutineScope {
                     launch { fade.animateTo(1f, tween(durationMillis = fadeMillis)) }

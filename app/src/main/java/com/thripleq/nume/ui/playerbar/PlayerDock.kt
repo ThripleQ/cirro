@@ -93,6 +93,17 @@ import kotlinx.coroutines.flow.collectLatest
  * 一个组件、一份 [state]：收起时只露底部 dock（拉手+迷你播放条+操作行+导航），
  * 迷你条**上滑 1:1** 跟手把全屏播放面从底部拉出盖满屏；点击直接整页弹出。
  * 全屏面只在 draw（graphicsLayer）读 progress，绝不因动画数值重组/挂载（上次翻车的坑）。
+ *
+ * ⚠️ 上面这句说的是**本组件（dock 这一侧）**：圆角、阴影、透明度全在 `graphicsLayer {}` 的
+ * block 里算，动画数值再快也不会让 dock 重组。**别把它推广到全屏面** —— `PlayerPage` 的
+ * 壳几何与内容版式必须每帧参与布局（封面尺寸、字号、边距都要按壳的真实宽高排版），它的
+ * progress 就是在组合期读的，**每帧重组是设计的一部分，不是待修的 bug**。
+ * 那一侧的纪律是另外三条：
+ *   ① 能下沉到 draw 的量必须下沉（阴影速度项、内容 alpha 都在 `graphicsLayer` 里读）；
+ *   ② 每帧路径上不许有昂贵操作 —— 文本重测、对象分配、协程重启（`FadingMarqueeText` 曾把
+ *      逐帧变的宽度写进 `LaunchedEffect` 的 key，于是整个展开过程一圈都滚不起来）；
+ *   ③ 高频值（进度）的解包点要压在最小消费作用域里（`PlayerProgressRow` / 歌词面板），
+ *      绝不在内容区函数体里 `by` —— 重组作用域是函数级的，一解包就是整页陪跑。
  */
 @Composable
 fun PlayerDock(
