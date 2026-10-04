@@ -30,19 +30,35 @@ fun httpsUrl(url: String?): String? = url
         }
     }
 
-/** Parses a standard netease song object (`songs`/`tracks` entries, ar/al shape). */
+/**
+ * Parses a netease song object. **两套字段都要认**：
+ *
+ * | 用途 | 新格式（v6/web、`songs`/`tracks`） | 老格式（`/api/v1/radio/get`、部分 dj 端点） |
+ * |---|---|---|
+ * | 专辑 | `al`（`al.picUrl` / `al.name`） | `album` |
+ * | 歌手 | `ar` | `artists` |
+ * | 时长 | `dt` | `duration` |
+ *
+ * 只认新格式的代价是**整批歌静默丢封面**：私人漫游（`/api/v1/radio/get`）返回的就是
+ * 老格式，`al` 不存在 → `artworkUrl = null`、`albumName = ""`、`durationMs = 0`。
+ * 表现正是「点漫游这一类直接播放的卡片，播放时没有封面，副标题也少了专辑」
+ * （2026-10-05 探针实测确认：radio 的歌曲顶层键是 `album`/`artists`/`duration`）。
+ *
+ * 歌手那一行本来就兼容了 `ar`/`artists`，另外两项当时漏了。
+ */
 fun parseTrack(o: JSONObject?): Track? {
     if (o == null) return null
     val id = o.optLong("id", 0L)
     if (id <= 0) return null
-    val al = o.optJSONObject("al")
+    val al = o.optJSONObject("al") ?: o.optJSONObject("album")
     return Track(
         id = id.toString(),
         name = o.optString("name"),
         artist = o.optJSONArray("ar")?.optJSONObject(0)?.optString("name")
             ?: o.optJSONArray("artists")?.optJSONObject(0)?.optString("name") ?: "",
         artworkUrl = httpsUrl(al?.optString("picUrl")),
-        durationMs = o.optLong("dt", 0L),
+        // dt 有时给 0（老端点），那种情况下才看 duration。
+        durationMs = o.optLong("dt", 0L).takeIf { it > 0L } ?: o.optLong("duration", 0L),
         albumName = al?.optString("name") ?: "",
     )
 }
