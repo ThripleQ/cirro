@@ -257,9 +257,12 @@ fun PlayerDock(
                     )
                     clip = true
                     shadowElevation = 2.dp.toPx() * (1f - t0)
-                    // 卡片档（p≤HALF_ANCHOR_P）dock 完整可见；只有从卡片继续拉向全屏才淡出。
-                    alpha = if (p <= HALF_ANCHOR_P) 1f
-                    else ((2f - p) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
+                    // dock **不淡出**（2026-10-05 用户：「dock不要变透明」）。
+                    // 它本来也不需要淡：p>1 之后 dock 已经翻到壳下面（见上面的 zIndex），
+                    // 壳的底边一路压下来、把 dock 从顶往下逐帧盖住；末端阻尼让底边多留一截，
+                    // 那截露出的正好是**实心的 dock 底色**，读成「壳还压在它上面」。
+                    // 早先那条 `alpha = (2-p)/(2-HALF_ANCHOR_P)` 会让这截透出下层内容 ——
+                    // 壳底边还没扫到的地方直接看见探索页的列表，像 dock 破了个洞。
                 }
                 .background(MaterialTheme.colorScheme.surfaceContainer)
                 .onSizeChanged { dockHeightPx = it.height },
