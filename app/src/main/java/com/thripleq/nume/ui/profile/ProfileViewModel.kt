@@ -1,15 +1,12 @@
 package com.thripleq.nume.ui.profile
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.thripleq.nume.core.net.NetEaseGateway
-import com.thripleq.nume.core.playback.PlaybackLauncher
 import com.thripleq.nume.core.repo.Account
 import com.thripleq.nume.core.repo.ProfileData
 import com.thripleq.nume.core.repo.ProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,12 +20,17 @@ sealed interface ProfileUiState {
     data class Error(val message: String) : ProfileUiState
 }
 
+/**
+ * 「我的」页状态。
+ *
+ * 不持有播放能力：页内的可播内容都走全屏面板（`TrackListScreen` 自己的 VM 负责取数与起播），
+ * 所以这里没有 `PlaybackLauncher` —— 2026-10-05 已购改成"壳里点一下 → 全屏曲目列表"后，
+ * 原先那条「内联铺歌、点了直接播」的 `playPurchased(index)` 连它的依赖一起删掉了。
+ */
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val repository: ProfileRepository,
     private val gateway: NetEaseGateway,
-    private val playback: PlaybackLauncher,
-    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)
@@ -90,13 +92,8 @@ class ProfileViewModel @Inject constructor(
     }
 
     /**
-     * 「已购 → 单曲」内联列表的行点击：**从 [index] 起播，队列是完整已购**。
-     *
-     * 队列不能只给内联展开的那一截：内联列表有展示上限（[PurchasedInlineCap]），
-     * 拿可见那段当队列，播到第 50 首就没了 —— 而用户以为自己播的是"我的已购"。
+     * 「已购 → 单曲」现在是**全屏曲目列表**（面板里的 `TrackListScreen`，source = "purchased"），
+     * 播放交给它自己的 VM —— 本页不再有「内联铺歌、点了直接播」那条路，所以原来为它准备的
+     * `playPurchased(index)`（队列 = 完整已购）随之删掉：留着就是一个没有调用方的死接口。
      */
-    fun playPurchased(index: Int) {
-        val songs = (_uiState.value as? ProfileUiState.LoggedIn)?.data?.purchasedSongs ?: return
-        playback.play(context, songs, index)
-    }
 }

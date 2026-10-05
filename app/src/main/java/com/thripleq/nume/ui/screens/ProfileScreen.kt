@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -45,13 +44,14 @@ import com.thripleq.nume.ui.components.rememberSharedSourceGuard
 import com.thripleq.nume.ui.profile.ProfileUiState
 import com.thripleq.nume.ui.profile.ProfileViewModel
 import com.thripleq.nume.ui.theme.Motion
+import com.thripleq.nume.ui.theme.NumeShape
 
 /**
- * 我的页：账号抬头 + 「喜欢的音乐」全宽横幅 + 「已购」原地展开卡 + 创建/收藏两张行卡。
+ * 我的页：账号抬头 + 「喜欢的音乐」全宽横幅 + 「已购」原地撑开的壳卡 + 创建/收藏两张行卡。
  * 横幅与行卡点开都是「大卡 → 全屏面板」，封面 morph 到内容里的 banner 封面。
  * 喜欢的音乐是曲目列表；创建 / 收藏是歌单网格面板，点网格内的歌单再进入该歌单的曲目列表。
- * 「已购」不打开面板：原地展开出「单曲」（再展开一层、原地铺曲目）与
- * 「专辑」（进全屏 2 列大卡网格，点某张进该专辑曲目列表）。
+ * 「已购」**不直接打开面板**：点一下原地撑开成一只壳，壳里是「单曲」「专辑」两个入口，
+ * 各自再点一下才进**全屏**（单曲 → 曲目列表，专辑 → 2 列大卡网格）。
  *
  * 两条壳实现并存、由 [Motion.SharedShellEnabled] 切换：
  * - 官方共享元素：[ShellPanel] + shellSharedCover（与探索页/歌手头像同一套语义，只转封面）。
@@ -132,7 +132,6 @@ fun ProfileScreen(
                         onOpenPanel = onOpenPanel,
                         onWebLogin = onWebLogin,
                         onRetry = onRetry,
-                        onPlayPurchased = vm::playPurchased,
                         shared = shared,
                         avScope = scope,
                         bottomPadding = panelBottomPad,
@@ -164,7 +163,6 @@ fun ProfileScreen(
                 onOpenPanel = onOpenPanel,
                 onWebLogin = onWebLogin,
                 onRetry = onRetry,
-                onPlayPurchased = vm::playPurchased,
                 shared = null,
                 avScope = null,
                 bottomPadding = panelBottomPad,
@@ -194,8 +192,6 @@ private fun ProfileBodyUi(
     onOpenPanel: (ProfilePanel, Rect?, morphable: Boolean) -> Unit,
     onWebLogin: () -> Unit,
     onRetry: () -> Unit,
-    /** 已购内联列表的行点击（index 为在**完整已购**里的下标，见 ProfileViewModel.playPurchased）。 */
-    onPlayPurchased: (Int) -> Unit,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
     bottomPadding: Dp,
@@ -223,7 +219,7 @@ private fun ProfileBodyUi(
             Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .clip(RoundedCornerShape(topStart = HomeSheetRadius, topEnd = HomeSheetRadius))
+                .clip(NumeShape.SheetTop)
                 .background(MaterialTheme.colorScheme.surface)
                 // 视口 = 这张纸的裁切边界。**必须挂在 `.padding(...)` 之前**：
                 // onGloballyPositioned 量的是它所在链条位置的尺寸，放到 padding 之后
@@ -243,7 +239,6 @@ private fun ProfileBodyUi(
                     data = s.data,
                     onOpenTracks = onOpenTracks,
                     onOpenPanel = onOpenPanel,
-                    onPlayPurchased = onPlayPurchased,
                     shared = shared,
                     avScope = avScope,
                     guard = guard,
