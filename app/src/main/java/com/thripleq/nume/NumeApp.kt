@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
@@ -37,14 +36,11 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.thripleq.nume.core.playback.PlayerHolder
-import com.thripleq.nume.core.repo.TrackCollection
 import com.thripleq.nume.ui.components.RevealLayer
 import com.thripleq.nume.ui.playerbar.BottomTab
 import com.thripleq.nume.ui.playerbar.PlayerDock
 import com.thripleq.nume.ui.playerbar.rememberPlayerDockState
 import com.thripleq.nume.ui.profile.ProfileViewModel
-import com.thripleq.nume.ui.profile.TrackListUiState
-import com.thripleq.nume.ui.profile.TrackListViewModel
 import com.thripleq.nume.ui.screens.ArtistScreen
 import com.thripleq.nume.ui.screens.CommentsScreen
 import com.thripleq.nume.ui.screens.HomeScreen
@@ -171,13 +167,10 @@ fun NumeApp() {
     }
     val selectedTab = currentTab ?: lastTab
 
-    // 列表详情页（榜单/歌单/专辑/喜欢/已购）的滚动操作行：
-    // TrackListScreen 上报三按钮是否滑出视口，供 dock 内切换为操作行。
-    var listActionsOffscreen by remember { mutableStateOf(false) }
-    var listCollection by remember { mutableStateOf<TrackCollection?>(null) }
-    var listPlayAll by remember { mutableStateOf<(() -> Unit)?>(null) }
-    val isListDetail = destination?.hasRoute<TrackListDestination>() == true ||
-        destination?.hasRoute<ChartDestination>() == true
+    // 列表详情页的应用栏与 dock 之间**不再有联动**：原先这里维护「头部按钮是否滑出视口」
+    // 的三个状态，供 dock 中间那行操作行（收藏 / 播放全部 / 评论）显隐 —— 2026-10-05
+    // 用户「dock 中间那一行删掉」后该行已从 PlayerDock 移除，这套上报/接力状态随之删除，
+    // 详情页也不再需要把自己的 collection 与 onPlayAll 交给上层。
     // 网页登录是全屏页：不挂 dock，否则迷你条/底部导航会盖住官方登录页、挡住底部操作。
     val isWebLogin = destination?.hasRoute<WebLogin>() == true
 
@@ -317,27 +310,12 @@ fun NumeApp() {
                         progress = revealProgress,
                         onFirstLayout = armReveal,
                     ) {
-                    val listVm: TrackListViewModel = hiltViewModel()
-                    val listState by listVm.uiState.collectAsStateWithLifecycle()
-                    val listCol = (listState as? TrackListUiState.Ready)?.collection
-                    LaunchedEffect(listCol) { listCollection = listCol }
-                    LaunchedEffect(listCol) {
-                        listPlayAll = { listCol?.let(listVm::onPlayAll) }
-                    }
-                    DisposableEffect(Unit) {
-                        onDispose {
-                            listCollection = null
-                            listPlayAll = null
-                            listActionsOffscreen = false
-                        }
-                    }
                     TrackListScreen(
                         source = "chart",
                         id = args.chartId,
                         title = args.name,
                         onBack = { goBack() },
                         onOpenPlayer = ::openPlayer,
-                        onActionsOffscreen = { listActionsOffscreen = it },
                     )
                     }
                 }
@@ -395,27 +373,12 @@ fun NumeApp() {
                         progress = revealProgress,
                         onFirstLayout = armReveal,
                     ) {
-                    val listVm: TrackListViewModel = hiltViewModel()
-                    val listState by listVm.uiState.collectAsStateWithLifecycle()
-                    val listCol = (listState as? TrackListUiState.Ready)?.collection
-                    LaunchedEffect(listCol) { listCollection = listCol }
-                    LaunchedEffect(listCol) {
-                        listPlayAll = { listCol?.let(listVm::onPlayAll) }
-                    }
-                    DisposableEffect(Unit) {
-                        onDispose {
-                            listCollection = null
-                            listPlayAll = null
-                            listActionsOffscreen = false
-                        }
-                    }
                     TrackListScreen(
                         source = args.source,
                         id = args.id,
                         title = args.title,
                         onBack = { goBack() },
                         onOpenPlayer = ::openPlayer,
-                        onActionsOffscreen = { listActionsOffscreen = it },
                     )
                     }
                 }
@@ -481,9 +444,7 @@ fun NumeApp() {
                         restoreState = true
                     }
                 },
-                actionVisible = isListDetail && listActionsOffscreen,
                 navVisible = !shellOpen,
-                onPlayAll = { listPlayAll?.invoke() },
                 onPlaceholderAction = {
                     android.widget.Toast.makeText(context, "开发中", android.widget.Toast.LENGTH_SHORT).show()
                 },

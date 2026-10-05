@@ -241,7 +241,6 @@ fun TrackListScreen(
     title: String,
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
-    onActionsOffscreen: (Boolean) -> Unit = {},
     /**
      * 是否由本屏画左上角返回键。作为 **nav 详情页**时 true；作为**胶囊壳内容**时 false——
      * 壳自带关闭键（同位、同浮层语言），再画一个就重叠了。
@@ -281,12 +280,10 @@ fun TrackListScreen(
     val state by vm.uiState.collectAsStateWithLifecycle()
     val src = remember(source) { TrackListSource.from(source) }
 
-    // 操作区（头部三胶囊）的滚动位置：滚到接近视口顶（即将看不见）时上报，触发底部操作浮岛。
+    // 列表滚动状态（吸顶、糊底退场进度都读它）。
+    // 原先把头部三胶囊的滚动位置上报给 dock 中间那条操作行（头部按钮滚出视口时由它顶替），
+    // 2026-10-05 用户「dock 中间那一行删掉」后该行已不存在，上报链条整体删除。
     val listState = rememberLazyListState()
-    var actionsTop by remember { mutableFloatStateOf(Float.POSITIVE_INFINITY) }
-    val actionsThresholdPx = with(LocalDensity.current) { 90.dp.toPx() }
-    val actionsOffscreen by remember { derivedStateOf { actionsTop < actionsThresholdPx } }
-    LaunchedEffect(actionsOffscreen) { onActionsOffscreen(actionsOffscreen) }
 
     // 加载与壳展开**并行**：动画一开始就发起请求，数据在后台拉取。但**切到列表**（LazyColumn +
     // 图片首次组合）推迟到壳展开动画**完全结束**之后：数据/封面一旦被缓存，重开时若允许在中途
@@ -534,7 +531,7 @@ fun TrackListScreen(
                                             // 骨架还在时共享元素挂骨架（见 skeletonGone），避免同 key 双宿主。
                                             coverSharedModifier =
                                                 if (skeletonGone) coverSharedModifier else Modifier,
-                                        ) { actionsTop = it }
+                                        )
                                     }
                                 }
                                 // 面板：从「播放全部」行起，往下都是不透明面（糊底只在头部透出来）。
@@ -1004,7 +1001,6 @@ private fun TrackListHeader(
     exit: State<Float>,
     onPlaceholder: () -> Unit,
     coverSharedModifier: Modifier = Modifier,
-    onActionsTop: (Float) -> Unit,
 ) {
     // 展开动画期间 hero 正顶着封面：本封面与 hero 互补，避免两层重影（见 LocalShellHeroAlpha）。
     val heroAlpha = LocalShellHeroAlpha.current
@@ -1110,11 +1106,9 @@ private fun TrackListHeader(
             }
         }
         Spacer(Modifier.height(16.dp))
-        // 三枚等宽操作胶囊。
+        // 三枚等宽操作胶囊（分享 / 评论 / 收藏，均为占位）。
         Row(
-            Modifier
-                .fillMaxWidth()
-                .onGloballyPositioned { onActionsTop(it.positionInWindow().y) },
+            Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             TrackListAction(

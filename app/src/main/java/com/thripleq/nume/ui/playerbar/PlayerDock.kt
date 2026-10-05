@@ -38,8 +38,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
@@ -53,7 +51,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -69,7 +66,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -95,7 +91,7 @@ import kotlinx.coroutines.flow.collectLatest
 /**
  * 常驻底部 dock + 全屏播放页（合体）。
  *
- * 一个组件、一份 [state]：收起时只露底部 dock（拉手+迷你播放条+操作行+导航），
+ * 一个组件、一份 [state]：收起时只露底部 dock（拉手+迷你播放条+导航行，两段），
  * 迷你条**上滑 1:1** 跟手把全屏播放面从底部拉出盖满屏；点击直接整页弹出。
  * 全屏面只在 draw（graphicsLayer）读 progress，绝不因动画数值重组/挂载（上次翻车的坑）。
  *
@@ -116,13 +112,11 @@ fun PlayerDock(
     state: PlayerDockState,
     selected: BottomTab,
     onSelectTab: (BottomTab) -> Unit,
-    /** 列表详情页操作行是否顶替迷你条上方的空间。 */
-    actionVisible: Boolean = false,
     /** 是否显示底部导航行：展开壳看列表时收起，只保留迷你播放条。 */
     navVisible: Boolean = true,
-    onPlayAll: () -> Unit = {},
+    /** 全屏播放页里的占位动作（尚未接通的入口统一给「开发中」）。 */
     onPlaceholderAction: () -> Unit = {},
-    /** 评论按钮：打开当前曲目的评论页（携带按钮窗口矩形作浮现起点）。 */
+    /** 全屏播放页的评论键：打开当前曲目的评论页（携带按钮窗口矩形作浮现起点）。 */
     onComments: (Rect) -> Unit = {},
     /** dock 总高（dp）实时上报，供上层内容避让/Profile 展开壳让位。 */
     onIslandHeightChange: (Float) -> Unit = {},
@@ -136,7 +130,6 @@ fun PlayerDock(
     // 只在跨过 p=1 时翻转，derivedStateOf 保证不因每帧 progress 变化而重组。
     val isFullscreen by remember { derivedStateOf { state.progress > 1f } }
     val barHeight = 68.dp
-    val actionHeight = 57.dp
 
     // 全屏播放面需盖满整个窗口（含状态栏/导航栏）：用根布局实测高度（edge-to-edge 下
     // 才是真正的物理屏高），screenHeightDp 不含系统栏，会短一截、底部露背景。
@@ -148,7 +141,7 @@ fun PlayerDock(
     }
 
     // 总高上报：实际测量 dock 高度（含底部手势条 inset）。
-    // 导航/操作行是 AnimatedVisibility：其 200ms 收放会让 dockHeightPx **每帧变化**，若每帧
+    // 底部导航行是 AnimatedVisibility：其 200ms 收放会让 dockHeightPx **每帧变化**，若每帧
     // 上报，父级 islandHeight→各屏底部 padding 会跟着每帧重组/重排（展开壳时尤其明显）。
     // collectLatest 把「最后一帧之后的稳定值」延迟一小段再上报——动画期间只发一次稳态值。
     var dockHeightPx by remember { mutableIntStateOf(0) }
@@ -289,43 +282,13 @@ fun PlayerDock(
                     .padding(horizontal = 10.dp, vertical = 6.dp),
             )
 
-            // 列表详情页操作行（滚动把头部按钮顶出视口时显示）。
-            // 统一走 [Motion.MicroMs]：原先这里 180ms、下方导航行 enter 200ms，
-            // 两者是**同一事件驱动的成对切换**（操作行进、导航行退），时长不同 ⇒ 换行时
-            // 有 20ms 相位差，看着就是「不齐」。弹性 spec 也不用——显隐要利落。
-            AnimatedVisibility(
-                visible = actionVisible,
-                enter = expandVertically(
-                    expandFrom = Alignment.Top,
-                    animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
-                ) + fadeIn(animationSpec = tween(Motion.MicroMs, easing = Motion.Standard)),
-                exit = shrinkVertically(
-                    shrinkTowards = Alignment.Top,
-                    animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
-                ) + fadeOut(animationSpec = tween(Motion.MicroMs, easing = Motion.Standard)),
-            ) {
-                Column(Modifier.fillMaxWidth().height(actionHeight)) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp)
-                            .height(1.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant),
-                    )
-                    ActionNavRow(
-                        onPlayAll = onPlayAll,
-                        onPlaceholderAction = onPlaceholderAction,
-                        onComments = onComments,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                    )
-                }
-            }
-
             // 分隔线 + 底部导航行：展开壳看列表时整体收起（保留迷你播放条）。
-            // 与上方操作行**完全同 spec**（同 [Motion.MicroMs] + 同曲线）：二者是同一次
-            // 滚动触发的成对换行，只有同相位才不会各走各的。
+            //
+            // 2026-10-05 用户：「dock 中间那一行删掉」—— 原先把列表详情页的操作行
+            // （收藏 / 播放全部 / 评论三枚胶囊）插在迷你条与导航行之间，头部按钮滚出视口
+            // 时显示。删掉后 dock 永远只有「迷你条 + 导航行」两段，任何页面都不再多长一行；
+            // 代价是滚离头部后不再有「随时播放全部」的入口（头部那三枚胶囊里有，
+            // 但会随头部滚走），评论页也只剩播放页那个入口。
             AnimatedVisibility(
                 visible = navVisible,
                 enter = expandVertically(
@@ -599,18 +562,17 @@ internal fun SpectrumPlaceholder() {
     }
 }
 
-/** 导航 / 操作胶囊的**视觉**高度（未选中时只是一圈描边图标位）。 */
+/** 导航胶囊的**视觉**高度（未选中时只是一圈描边图标位）。 */
 private val NavPillHeight = 40.dp
 
 /**
- * 导航 / 操作胶囊的**触摸槽**高度（48dp = Material 最小可点尺寸）。
+ * 导航胶囊的**触摸槽**高度（48dp = Material 最小可点尺寸）。
  *
  * 胶囊视觉仍是 [NavPillHeight]，触摸槽比它高 8dp、并且**撑满整格宽**，于是点在胶囊
  * 四周的空白上也命中（见 [DockNavPill]）。
  *
- * 两行各自把上下内缩收 4dp 抵消这 8dp 增量，**总高不变**：导航行 8×2 + 48 = 64dp
- * （与 `navRowReservePx` 的 65dp 口径一致）、操作行 4×2 + 48 = 56dp（与 `actionHeight`
- * 的 57dp 口径一致）—— dock 几何与播放页的手势行程都不受影响。
+ * 导航行把上下内缩收到 8dp 抵消这 8dp 增量，**总高不变**：8×2 + 48 = 64dp
+ * （与 `navRowReservePx` 的 65dp 口径一致）—— dock 几何与播放页的手势行程都不受影响。
  */
 private val NavSlotHeight = 48.dp
 
@@ -619,7 +581,6 @@ private val NavSlotHeight = 48.dp
  * （不是官方经典导航栏那种"图标套小胶囊、文字在下方"）；未选 = 只留描边图标。
  * 参考作品：Rhythm（Material You 播放器）的浮动底栏。胶囊里带标签，才读得出"这是当前项、
  * 且是一颗按钮"。宽高用填充色 transition，切换时胶囊在格内淡入/展开。
- * [label] 为 null 时用于操作行（纯图标）。
  *
  * ## 触摸槽 vs 视觉胶囊（2026-10-05 用户：「按钮点击范围调大一些」）
  *
@@ -636,7 +597,7 @@ private fun DockNavPill(
     selected: Boolean,
     icon: ImageVector,
     contentDescription: String,
-    label: String?,
+    label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -668,9 +629,8 @@ private fun DockNavPill(
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        // 视觉胶囊：[modifier] 挂在它身上 —— 调用方的测量（操作行「评论」按钮上报自己的
-        // 窗口矩形做浮现起点）必须是**胶囊**的矩形，不能变成整格的（一格有 1/3 屏宽，
-        // 拿它当起点，评论页面会从一块宽盒子长出来）。
+        // 视觉胶囊：[modifier] 挂在它身上 —— 调用方（导航项）的 modifier 若带测量，
+        // 量到的必须是**胶囊**的矩形，不能变成整格的（一格有 1/3 屏宽）。
         Row(
             modifier = modifier
                 .height(NavPillHeight)
@@ -689,18 +649,16 @@ private fun DockNavPill(
                     tint = contentColor,
                     modifier = Modifier.size(24.dp),
                 )
-                if (label != null) {
-                    AnimatedVisibility(visible = selected) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = contentColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Clip,
-                            )
-                        }
+                AnimatedVisibility(visible = selected) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = contentColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Clip,
+                        )
                     }
                 }
             }
@@ -735,56 +693,6 @@ internal fun NavRow(
                     },
                 )
             }
-        }
-    }
-}
-
-/** 列表操作行：与 [NavRow] 同构的 Expressive 胶囊（纯图标、无标签）。
- *  播放 = 选中实底胶囊；收藏 / 评论 = 透明描边图标。
- *  上下内缩 4dp 容纳 [NavSlotHeight] 的触摸槽（48 + 4×2 = 56dp，与原来总高一致）。 */
-@Composable
-internal fun ActionNavRow(
-    onPlayAll: () -> Unit,
-    onPlaceholderAction: () -> Unit,
-    onComments: (Rect) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val haptics = LocalHapticFeedback.current
-    var commentRect by remember { mutableStateOf(Rect.Zero) }
-    Row(
-        modifier = modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            DockNavPill(
-                selected = false,
-                icon = Icons.Filled.Add,
-                contentDescription = "收藏",
-                label = null,
-                onClick = onPlaceholderAction,
-            )
-        }
-        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            DockNavPill(
-                selected = true,
-                icon = Icons.Filled.PlayArrow,
-                contentDescription = "播放",
-                label = null,
-                onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onPlayAll()
-                },
-            )
-        }
-        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            DockNavPill(
-                selected = false,
-                icon = Icons.Filled.Chat,
-                contentDescription = "评论",
-                label = null,
-                onClick = { onComments(commentRect) },
-                modifier = Modifier.onGloballyPositioned { commentRect = it.boundsInWindow() },
-            )
         }
     }
 }
