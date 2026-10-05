@@ -87,6 +87,7 @@ import com.thripleq.nume.ui.components.swallowPointerInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * 常驻底部 dock + 全屏播放页（合体）。
@@ -210,9 +211,9 @@ fun PlayerDock(
     // 组合与否由锚点状态驱动：迷你条一拖动（offset>0）就组合播放面；
     // 完全落回 dock 锚点（settled）才卸载。替代手搓的 beginDrag。
     LaunchedEffect(state.sheetState) {
-        snapshotFlow { state.sheetState.offset }.collect { offset ->
-            if (offset > 1f) state.open = true
-        }
+        snapshotFlow { state.sheetState.offset > 1f }
+            .distinctUntilChanged()
+            .collect { moved -> if (moved) state.open = true }
     }
     LaunchedEffect(state.sheetState) {
         snapshotFlow { state.sheetState.settledValue }.collect { v ->
@@ -228,18 +229,11 @@ fun PlayerDock(
         // ---- 底部常驻 dock ----
         // 展开/分裂档（p≤1）时 dock 叠在气泡之上：气泡底边向下包住 dock 的圆角，
         // 背景基底不会从圆角漏出；全屏档（p>1）气泡反过来盖住 dock。
-        Column(
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .zIndex(if (isFullscreen) -1f else 1f)
-                // 漏风补漏（2026-10-05 用户：「点 dock 栏，点到按钮外面会穿透到下层内容，
-                // 造成误触」）：dock 自己只有一块底色、不是指针命中目标，于是点在**按钮之外**
-                // 的空白处（迷你条上下的留白、导航行两格之间、分隔线一带）时，事件会继续落到
-                // 底下正在滚动的列表上 —— 观感就是"点了一下 dock，底下那行却被点开了"。
-                // 这里让 dock 整块接住指针（子节点先处理，见 [swallowPointerInput]），
-                // 漏下去的那部分就到此为止。
-                .swallowPointerInput()
                 .graphicsLayer {
                     // dock 顶圆角随「扩展→分裂→断开」连续变化：
                     // 扩展段顶角收平（26→0，母细胞顶边与气泡连成一线）；
@@ -270,55 +264,80 @@ fun PlayerDock(
                 .background(MaterialTheme.colorScheme.surfaceContainer)
                 .onSizeChanged { dockHeightPx = it.height },
         ) {
-            // 迷你播放条：点击进播放页；上滑 1:1 拉出播放页；左右滑切歌。
-            PlayerBar(
-                state = state,
-                playerState = playerState,
-                positionState = positionState,
-                player = player,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(barHeight)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-            )
-
-            // 分隔线 + 底部导航行：展开壳看列表时整体收起（保留迷你播放条）。
+            // 漏风补漏（2026-10-05 用户：「点 dock 栏，点到按钮外面会穿透到下层内容，造成
+            // 误触」）：dock 自己只有一块底色、不是指针命中目标，于是点在**按钮之外**的空白处
+            // （迷你条上下的留白、导航行两格之间、分隔线一带）时，事件会继续落到底下正在滚动的
+            // 列表上 —— 观感就是"点了一下 dock，底下那行却被点开了"。
             //
-            // 2026-10-05 用户：「dock 中间那一行删掉」—— 原先把列表详情页的操作行
-            // （收藏 / 播放全部 / 评论三枚胶囊）插在迷你条与导航行之间，头部按钮滚出视口
-            // 时显示。删掉后 dock 永远只有「迷你条 + 导航行」两段，任何页面都不再多长一行；
-            // 代价是滚离头部后不再有「随时播放全部」的入口（头部那三枚胶囊里有，
-            // 但会随头部滚走），评论页也只剩播放页那个入口。
-            AnimatedVisibility(
-                visible = navVisible,
-                enter = expandVertically(
-                    expandFrom = Alignment.Top,
-                    animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
-                ) + fadeIn(animationSpec = tween(Motion.MicroMs, easing = Motion.Standard)),
-                exit = shrinkVertically(
-                    shrinkTowards = Alignment.Top,
-                    animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
-                ) + fadeOut(animationSpec = tween(Motion.MicroMs, easing = Motion.Standard)),
-            ) {
-                Column(Modifier.fillMaxWidth()) {
-                    // 分隔线 = 播放条与导航之间的分隔线（内缩与胶囊对齐）。
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp)
-                            .height(1.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant),
-                    )
-                    NavRow(
-                        selected = selected,
-                        onSelect = onSelectTab,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
+            // 【必须与迷你条/导航行**平级**、垫在它们下面（声明在前 = 画在下、命中测试在后）】
+            // 最初是把 [swallowPointerInput] 挂在**外层 Column 上**（= 迷你条的祖先）：那一层每帧
+            // 把 Main 阶段的 change 全消费掉，而任何靠 `awaitPointerSlopOrCancellation` 起步的手势
+            // （`anchoredDraggable`、各类 drag detector）在**未越过 touch slop** 时会在 Final 阶段
+            // 复核「有没有别人消费过」，一被消费就 `return null` 取消 —— 于是竖拖只剩"单个事件里
+            // 就跨过 slop"（= 甩）能活，慢拖在第一帧就被掐掉。**这是源码级可推的风险**（该复核分支
+            // 见 `awaitPointerSlopOrCancellation` 的 `awaitPointerEvent(Final)`），2026-10-05 那批
+            // 从 `74e4767` 起的包（含 987f31b / 662adc2）都带着它。
+            //
+            // 注意别把它说成"用户慢拖症状的唯一真凶"：真机实测（K40）显示，**慢拖拉不出来在更早
+            // 的包上就已经存在**，那条是落档门槛造成的（详见 [SheetFlingBehavior.CARD_COMMIT_FRAC]）；
+            // 本层是**另一条**会让慢拖彻底死掉的路径，两条一起修才对得上用户描述的全部现象。
+            //
+            // 平级之后：手指落在胶囊/导航格上时，命中测试停在它们自己身上，本层不进命中路径
+            // （真机实测：慢拖、横滑、整格点按都正常）；只有落在真正的空白处才由本层接住
+            // （真机实测：点 dock 左侧空白，内容区 0 像素变化 = 没穿透）。见 [swallowPointerInput]。
+            Box(Modifier.matchParentSize().swallowPointerInput())
 
-            // 手势条 inset 始终占位：导航收起时也保证播放条不压到系统导航区。
-            Box(Modifier.fillMaxWidth().navigationBarsPadding())
+            Column(Modifier.fillMaxWidth()) {
+                // 迷你播放条：点击进播放页；上滑 1:1 拉出播放页；左右滑切歌。
+                PlayerBar(
+                    state = state,
+                    playerState = playerState,
+                    positionState = positionState,
+                    player = player,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(barHeight)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+
+                // 分隔线 + 底部导航行：展开壳看列表时整体收起（保留迷你播放条）。
+                //
+                // 2026-10-05 用户：「dock 中间那一行删掉」—— 原先把列表详情页的操作行
+                // （收藏 / 播放全部 / 评论三枚胶囊）插在迷你条与导航行之间，头部按钮滚出视口
+                // 时显示。删掉后 dock 永远只有「迷你条 + 导航行」两段，任何页面都不再多长一行；
+                // 代价是滚离头部后不再有「随时播放全部」的入口（头部那三枚胶囊里有，
+                // 但会随头部滚走），评论页也只剩播放页那个入口。
+                AnimatedVisibility(
+                    visible = navVisible,
+                    enter = expandVertically(
+                        expandFrom = Alignment.Top,
+                        animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
+                    ) + fadeIn(animationSpec = tween(Motion.MicroMs, easing = Motion.Standard)),
+                    exit = shrinkVertically(
+                        shrinkTowards = Alignment.Top,
+                        animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
+                    ) + fadeOut(animationSpec = tween(Motion.MicroMs, easing = Motion.Standard)),
+                ) {
+                    Column(Modifier.fillMaxWidth()) {
+                        // 分隔线 = 播放条与导航之间的分隔线（内缩与胶囊对齐）。
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp)
+                                .height(1.dp)
+                                .background(MaterialTheme.colorScheme.outlineVariant),
+                        )
+                        NavRow(
+                            selected = selected,
+                            onSelect = onSelectTab,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+
+                // 手势条 inset 始终占位：导航收起时也保证播放条不压到系统导航区。
+                Box(Modifier.fillMaxWidth().navigationBarsPadding())
+            }
         }
 
         // ---- 全屏播放面（最上层）：open 才组合；p=0 整块沉在屏下（不可见/不可点）----
@@ -338,13 +357,21 @@ fun PlayerDock(
     }
 }
 
-/** Mini player bar: cover + metadata + tap/vertical-drag/horizontal-swipe.
+/** 迷你播放条：视觉本体 + 三套手势。**视觉本体另有一份**（[PlayerBarContent]，播放页低进度时
+ *  共用），本函数只负责把手势挂上去。
  *
- * 手势仲裁（单 pointerInput，手动 awaitEachGesture）：
- * - 未过 touch slop 就抬手 → 点击（开全屏播放页）
- * - 竖向为主 → 1:1 拉起播放页，松手按进度/甩速吸附
- * - 横向为主 → 不消费，交给横滑切歌
- * - 子节点已消费（播放/暂停按钮）→ 立即退出，不当作点击
+ * 三套手势各自独立 detector，全挂在同一个节点的同一条 modifier chain 上：
+ * - `anchoredDraggable` → 竖向 1:1 拉起播放面，松手按位置/甩速落档（[SheetFlingBehavior]）；
+ * - 本文件那颗 `pointerInput` → 横向切歌；
+ * - `clickable` → 点击展开（拖动已被消费时不会触发）。
+ *
+ * **同一节点链上的多个 detector 是"谁先跨过自己的 slop 谁消费当帧"**，被消费的那一帧会让
+ * 另一方 `awaitPointerSlopOrCancellation` 直接 `return null` —— 也就是说胜负一旦靠先后就
+ * 变成看运气，所以横滑那颗用**方向判据**把胜负定死（横向必须明确压过纵向才接管）。
+ *
+ * ⚠️ 还有一条链**外侧**的约束：胶囊外那圈留白（`padding(10dp, 6dp)`）不在手势区内 ——
+ * 所有 pointer 修饰符都在 padding 之内。那一圈与导航行格间空白由 dock 的拦截层负责接住
+ * （见 [com.thripleq.nume.ui.components.swallowPointerInput] 的「不要当祖先」）。
  */
 @Composable
 internal fun PlayerBar(
@@ -391,13 +418,29 @@ internal fun PlayerBar(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) { state.openByTap() }
-            // 横滑切歌：独立 detector；与竖向 anchoredDraggable 方向正交，互不干扰。
+            // 横滑切歌：独立 detector；与竖向 anchoredDraggable 方向正交。
+            //
+            // 【别再改写它 —— 2026-10-05 真机实测的结论】
+            // 我一度把它换成手写的"方向占优仲裁"（理由：怀疑拇指上滑带横向漂移时，横向先过
+            // slop 会把竖拖掐死）。**那是错的，而且是有害的**：换成手写版之后，「带漂移的弧线
+            // 慢拉」就再也拉不出卡片了（真机实测：竖拖压根没启动、offset 恒 0），而同一操作
+            // 在内置版上是能拉出来的。三条证据：
+            //  1. 源码：`awaitPointerSlopOrCancellation` / `TouchSlopDetector.getPostSlopOffset`
+            //     只按**主轴**判 slop（`finalChange.mainAxis()`），**交叉轴再大也不取消**；
+            //  2. 源码：内置 `detectHorizontalDragGestures` 的 KDoc 明说它与竖向 detector
+            //     "coordinate … only vertical or horizontal dragging is locked, but not both"，
+            //     协调由框架负责（横纵互斥锁定），不是"谁先到 slop 谁赢"的抢；
+            //  3. 真机：旧包（内置版）上直线上拉与带漂移弧线上拉**都能**拉出卡片。
+            // 手写版的问题：一旦 `dx > slop && dx > dy` 就把整条流判成横滑并 consume，
+            // 竖拖随即被取消 —— 恰好制造出用户描述的那个症状。
+            // 真机复现手法：`input motionevent DOWN/MOVE.../UP` 打一条前几帧横向为主的弧线。
             .pointerInput(player) {
                 var accumulated = 0f
                 detectHorizontalDragGestures(
                     onDragStart = { accumulated = 0f },
                     onDragEnd = {
                         when {
+                            // 左滑 → 下一首；右滑 → 上一首。
                             accumulated <= -swipeThresholdPx -> {
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 PlayerHolder.skipNext(player)
