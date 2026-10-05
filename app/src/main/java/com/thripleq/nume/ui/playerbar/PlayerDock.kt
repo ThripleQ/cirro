@@ -5,6 +5,9 @@ import com.thripleq.nume.ui.theme.NumeShape
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -19,6 +22,7 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,6 +87,7 @@ import coil.request.ImageRequest
 import com.thripleq.nume.Profile
 import com.thripleq.nume.core.playback.PlayerHolder
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
+import com.thripleq.nume.ui.components.swallowPointerInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
@@ -235,6 +240,13 @@ fun PlayerDock(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .zIndex(if (isFullscreen) -1f else 1f)
+                // 漏风补漏（2026-10-05 用户：「点 dock 栏，点到按钮外面会穿透到下层内容，
+                // 造成误触」）：dock 自己只有一块底色、不是指针命中目标，于是点在**按钮之外**
+                // 的空白处（迷你条上下的留白、导航行两格之间、分隔线一带）时，事件会继续落到
+                // 底下正在滚动的列表上 —— 观感就是"点了一下 dock，底下那行却被点开了"。
+                // 这里让 dock 整块接住指针（子节点先处理，见 [swallowPointerInput]），
+                // 漏下去的那部分就到此为止。
+                .swallowPointerInput()
                 .graphicsLayer {
                     // dock 顶圆角随「扩展→分裂→断开」连续变化：
                     // 扩展段顶角收平（26→0，母细胞顶边与气泡连成一线）；
@@ -587,12 +599,37 @@ internal fun SpectrumPlaceholder() {
     }
 }
 
+/** 导航 / 操作胶囊的**视觉**高度（未选中时只是一圈描边图标位）。 */
+private val NavPillHeight = 40.dp
+
+/**
+ * 导航 / 操作胶囊的**触摸槽**高度（48dp = Material 最小可点尺寸）。
+ *
+ * 胶囊视觉仍是 [NavPillHeight]，触摸槽比它高 8dp、并且**撑满整格宽**，于是点在胶囊
+ * 四周的空白上也命中（见 [DockNavPill]）。
+ *
+ * 两行各自把上下内缩收 4dp 抵消这 8dp 增量，**总高不变**：导航行 8×2 + 48 = 64dp
+ * （与 `navRowReservePx` 的 65dp 口径一致）、操作行 4×2 + 48 = 56dp（与 `actionHeight`
+ * 的 57dp 口径一致）—— dock 几何与播放页的手势行程都不受影响。
+ */
+private val NavSlotHeight = 48.dp
+
 /**
  * M3 **Expressive** 导航项：选中 = 一颗品牌色实底胶囊，**图标 + 文字一起装进胶囊**
  * （不是官方经典导航栏那种"图标套小胶囊、文字在下方"）；未选 = 只留描边图标。
  * 参考作品：Rhythm（Material You 播放器）的浮动底栏。胶囊里带标签，才读得出"这是当前项、
  * 且是一颗按钮"。宽高用填充色 transition，切换时胶囊在格内淡入/展开。
  * [label] 为 null 时用于操作行（纯图标）。
+ *
+ * ## 触摸槽 vs 视觉胶囊（2026-10-05 用户：「按钮点击范围调大一些」）
+ *
+ * 视觉上那颗胶囊只有图标+文字的宽度（~64dp），而它在导航行里占的格是 **1/3 屏宽**。
+ * 原来点击区就是胶囊本身 —— 点在旁边那圈明显的空白上没有任何反应。现在把**整格**做成
+ * 触摸目标（[NavSlotHeight] 高 × 整格宽），胶囊仍然居中、尺寸不变：
+ * - 触摸面撑满整格后 ripple 会铺满一整格，反馈"太重"且不再对应那颗胶囊，故改用
+ *   **按压回弹**（按到 0.94、spring 弹回）—— 反馈落在胶囊上，命中区是整格。
+ * - 槽高取 [NavSlotHeight]（48dp，Material 最小触摸尺寸）：配合导航行把上下内缩从
+ *   12dp 收到 8dp，导航行总高仍是 64dp，dock 几何/手势行程不受影响。
  */
 @Composable
 private fun DockNavPill(
@@ -604,6 +641,13 @@ private fun DockNavPill(
     modifier: Modifier = Modifier,
 ) {
     val pill = NumeShape.Pill
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "dockPillPress",
+    )
     val containerColor by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
         animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
@@ -615,35 +659,48 @@ private fun DockNavPill(
         animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
         label = "navContentColor",
     )
-    Row(
-        modifier = modifier
-            .height(40.dp)
-            .clip(pill)
-            .background(containerColor, pill)
-            .clickable(onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
+    // 触摸槽（整格）：`fillMaxWidth` 让命中区吃掉整格宽（调用方每格是 weight(1f)，
+    // 约束是确定值），`height(NavSlotHeight)` 给足竖向尺寸；胶囊在槽里居中、尺寸不变。
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(NavSlotHeight)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
+        // 视觉胶囊：[modifier] 挂在它身上 —— 调用方的测量（操作行「评论」按钮上报自己的
+        // 窗口矩形做浮现起点）必须是**胶囊**的矩形，不能变成整格的（一格有 1/3 屏宽，
+        // 拿它当起点，评论页面会从一块宽盒子长出来）。
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = modifier
+                .height(NavPillHeight)
+                .graphicsLayer { scaleX = scale; scaleY = scale }
+                .clip(pill)
+                .background(containerColor, pill),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = contentColor,
-                modifier = Modifier.size(24.dp),
-            )
-            if (label != null) {
-                AnimatedVisibility(visible = selected) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = contentColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Clip,
-                        )
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = contentDescription,
+                    tint = contentColor,
+                    modifier = Modifier.size(24.dp),
+                )
+                if (label != null) {
+                    AnimatedVisibility(visible = selected) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = contentColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Clip,
+                            )
+                        }
                     }
                 }
             }
@@ -651,7 +708,8 @@ private fun DockNavPill(
     }
 }
 
-/** The tab row: three equal slots, each a [DockNavPill]（仅选中项展开出文字）。 */
+/** The tab row: three equal slots, each a [DockNavPill]（仅选中项展开出文字）。
+ *  上下内缩 8dp 是为容纳 [NavSlotHeight] 的触摸槽（48 + 8×2 = 64dp，与原来总高一致）。 */
 @Composable
 internal fun NavRow(
     selected: BottomTab,
@@ -660,7 +718,7 @@ internal fun NavRow(
 ) {
     val haptics = LocalHapticFeedback.current
     Row(
-        modifier = modifier.padding(horizontal = 10.dp, vertical = 12.dp),
+        modifier = modifier.padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         BottomTab.entries.forEach { tab ->
@@ -682,7 +740,8 @@ internal fun NavRow(
 }
 
 /** 列表操作行：与 [NavRow] 同构的 Expressive 胶囊（纯图标、无标签）。
- *  播放 = 选中实底胶囊；收藏 / 评论 = 透明描边图标。 */
+ *  播放 = 选中实底胶囊；收藏 / 评论 = 透明描边图标。
+ *  上下内缩 4dp 容纳 [NavSlotHeight] 的触摸槽（48 + 4×2 = 56dp，与原来总高一致）。 */
 @Composable
 internal fun ActionNavRow(
     onPlayAll: () -> Unit,
@@ -693,7 +752,7 @@ internal fun ActionNavRow(
     val haptics = LocalHapticFeedback.current
     var commentRect by remember { mutableStateOf(Rect.Zero) }
     Row(
-        modifier = modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+        modifier = modifier.padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {

@@ -45,7 +45,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -390,16 +389,11 @@ fun ExpandableShell(
         // 触摸拦截层（在壳之下、底下页面之上）：吃掉所有落在壳外的指针事件。
         // 否则展开动画期间壳还小，手指会穿透去滑动底下的列表；底下页面一滚，收起时
         // fromRect（进入时捕获的卡片位置）就与实际位置错位了。
+        // 与 dock 的那层是同一个 [swallowPointerInput]（2026-10-05 提取共用）。
         Box(
             Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            awaitPointerEvent().changes.forEach { it.consume() }
-                        }
-                    }
-                },
+                .swallowPointerInput(),
         )
         // 壳：位置/宽高全由**同一个 t** 插值驱动（显式宽高 + layout 阶段平移）。
         // 壳顶越过状态栏一直长到屏幕顶（0），状态栏那段就是壳本身；底到屏底。
