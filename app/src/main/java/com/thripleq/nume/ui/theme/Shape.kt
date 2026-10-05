@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
  * | CardSmall | 12  | 次级卡、行级 ripple 收敛、骨架箱        |
  * | Chip      | 8   | 小按钮、骨架线                          |
  * | Track     | 2   | 进度/滑块等功能性细圆角                 |
+ * | SheetTop  | 28  | 页面内容圆角纸的顶角（上两角）           |
  *
  * 使用约定：新代码禁止再写裸 `RoundedCornerShape(<magic>.dp)`（动态插值与
  * 仅顶/底角场景除外），一律引用本 token，保证全局可一处调形。
@@ -41,6 +42,21 @@ object NumeShape {
 
     /** 展开壳顶角基准（dock 顶角动画终值同源；壳动画内部动态插值，不直接引用）。 */
     val ShellTop = 26.dp
+
+    /**
+     * 内容圆角纸的顶角半径 = **28dp**。
+     *
+     * 站内所有「容器色标题条 + 下方圆角纸」的页面共用这一个值：探索 / 搜索 / 我的三个
+     * tab 页，以及详情页（歌单 / 榜单 / 专辑，见 `TrackListMetrics.SheetCorner`）。
+     * 以前它叫 `HomeSheetRadius` 且定义在 `HomeContent.kt` 里，另外三处 import 过来用 ——
+     * 名字写着"探索页"，实际是全站规格，放错了地方（2026-10-05 迁到这里）。
+     *
+     * 三张纸的圆角差一档并排看就歪，故禁止再各写一份 `RoundedCornerShape(28.dp)`。
+     */
+    val SheetRadius = 28.dp
+
+    /** 内容圆角纸的**顶角**形状（只有上两角圆，下沿接屏底）。 */
+    val SheetTop = RoundedCornerShape(topStart = SheetRadius, topEnd = SheetRadius)
 }
 
 /** M3 组件默认 shape 对齐本体系（Card/Button/TextField 等未显式指定 shape 时生效）。 */

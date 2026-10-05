@@ -6,7 +6,6 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,6 +51,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thripleq.nume.ui.components.NumePageTitleBar
 import com.thripleq.nume.ui.search.SearchViewModel
+import com.thripleq.nume.ui.theme.NumeShape
 
 /**
  * 搜索 tab：落地页给「语种 / 风格 / 场景」标签，提交后按
@@ -95,7 +95,7 @@ fun SearchScreen(
             Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .clip(RoundedCornerShape(topStart = HomeSheetRadius, topEnd = HomeSheetRadius))
+                .clip(NumeShape.SheetTop)
                 .background(MaterialTheme.colorScheme.surface),
         ) {
             SearchField(

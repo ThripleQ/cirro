@@ -105,6 +105,7 @@ import com.thripleq.nume.ui.components.NumeEmptyState
 import com.thripleq.nume.ui.components.NumeErrorState
 import com.thripleq.nume.ui.components.NumeArtwork
 import com.thripleq.nume.ui.components.NumeArt
+import com.thripleq.nume.ui.components.NumeTitleBarHeight
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
 import com.thripleq.nume.ui.components.numeEntrySurface
@@ -166,10 +167,11 @@ object TrackListMetrics {
     /**
      * 面板首行（「播放全部」）吸顶停靠线 = 顶部标题条（`TrackListTitleBar`）的下沿。
      *
-     * 2026-10-03 照抄搜索页后标题条**高度跟着文字走**（headlineSmall + 行高裁剪，不再
-     * 是固定 56dp），随用户字体缩放变化 —— 停靠线不再是常量：运行时由标题条
-     * `onSizeChanged` 测出（stickyTopPx），列表内缩与头部内缩共用该值；头部封面落点
-     * 仍是 [HeroCoverTop]，差额记在头部自己的上内缩里。
+     * 2026-10-03 照抄搜索页后标题条**高度跟着字体走**（headlineSmall + 行高裁剪，不再是
+     * 固定 56dp）；2026-10-05 与三个 tab 页统一到同一个 [NumeTitleBarHeight]（站内一份）。
+     * 停靠线仍由标题条 `onSizeChanged` 运行时测出（stickyTopPx）—— 值现在是确定的，但
+     * 让它跟着实测走，将来标题条再改也不会与列表内缩脱节；列表内缩与头部内缩共用该值，
+     * 头部封面落点仍是 [HeroCoverTop]，差额记在头部自己的上内缩里。
      */
 
     /**
@@ -208,11 +210,11 @@ object TrackListMetrics {
     /**
      * 内容圆角纸的顶角半径。
      *
-     * 与探索 / 搜索页那张纸**同一个半径**（[HomeSheetRadius]）：详情页从 2026-10-03 起也走
-     * 「容器色条 + 圆角纸」这套关系（见 [TrackListScreen] 里的圆角纸层），半径必须同源，
-     * 否则站内三张纸的圆角不一致。
+     * **站内一份**：[NumeShape.SheetRadius]（28dp）—— 与探索 / 搜索 / 我的三张纸同源。
+     * 详情页从 2026-10-03 起也走「容器色条 + 圆角纸」这套关系（见 [TrackListScreen] 里的
+     * 圆角纸层），半径必须同一个值，否则站内几张纸的圆角并排看就是不齐。
      */
-    val SheetCorner = HomeSheetRadius
+    val SheetCorner = NumeShape.SheetRadius
 
     /** 「播放全部」圆钮直径。 */
     val DiscSize = 40.dp
@@ -420,8 +422,8 @@ fun TrackListScreen(
             // 即上报修正（跳变发生在壳动画/骨架期，不可见）。
             var stickyTopPx by remember { mutableIntStateOf(0) }
             val stickyTopDp = with(density) { stickyTopPx.toDp() }
-            // 纸的顶角半径（原来给独立纸层，现在给壳子）。半径同源：SheetCorner = HomeSheetRadius，
-            // 与探索 / 搜索页三张纸一致。
+            // 纸的顶角半径（原来给独立纸层，现在给壳子）。半径同源：SheetCorner = NumeShape.SheetRadius，
+            // 与探索 / 搜索 / 我的几张纸一致。
             val paperShape = remember {
                 RoundedCornerShape(
                     topStart = TrackListMetrics.SheetCorner,
@@ -1237,7 +1239,10 @@ private fun TrackListTitleBar(
         derivedStateOf { ((reveal.value - 0.35f) / 0.35f).coerceIn(0f, 1f) }
     }
     // 2026-10-03 照抄 SearchTitleBar 的写法：headlineSmall + 行高居中裁剪
-    // （LineHeightStyle Center / Trim.Both）+ 粗体，高度跟着文字走 —— 不再固定 56dp。
+    // （LineHeightStyle Center / Trim.Both）+ 粗体。
+    // 2026-10-05：高度不再"由文字撑"，改为共用 [NumeTitleBarHeight]（= headlineSmall 行高）
+    // —— 与探索 / 搜索 / 我的三页的标题条同一份规格，详情页的圆角纸顶边因此与三个 tab 页
+    // 落在同一条线上；取值仍是字体行高，所以系统字体放大时标题不会被裁。
     // 两条 Text 的 style 同源，交叉淡变时行盒不变、不跳。
     val barStyle = MaterialTheme.typography.headlineSmall.copy(
         lineHeightStyle = LineHeightStyle(
@@ -1248,6 +1253,7 @@ private fun TrackListTitleBar(
     Box(
         modifier
             .fillMaxWidth()
+            .height(NumeTitleBarHeight)
             .padding(start = textStart, end = textEnd),
     ) {
         Text(

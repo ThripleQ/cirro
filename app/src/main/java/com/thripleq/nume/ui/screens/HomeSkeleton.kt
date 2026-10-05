@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -22,6 +21,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.thripleq.nume.ui.components.NumeMediaRowSkeleton
 import com.thripleq.nume.ui.components.NumeSectionHeaderSkeleton
+import com.thripleq.nume.ui.components.NumeTitleBarHeight
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
 import com.thripleq.nume.ui.theme.NumeShape
@@ -39,12 +39,13 @@ internal fun HomeSkeleton(bottomPadding: Dp) {
             .background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
         // 标题条骨架与 [NumePageTitleBar] 同构：透明铺在容器色上、statusBarsPadding、
+        // 高度取同一个 [NumeTitleBarHeight]（纸顶必须与真内容同高，否则加载完成时整张纸跳一下）、
         // 左内缩 24dp、右侧 28dp 圆钮槽。
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .height(28.dp)
+                .height(NumeTitleBarHeight)
                 .padding(start = 24.dp, end = 8.dp, top = 0.dp, bottom = 0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -61,7 +62,7 @@ internal fun HomeSkeleton(bottomPadding: Dp) {
             Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .clip(RoundedCornerShape(topStart = HomeSheetRadius, topEnd = HomeSheetRadius))
+                .clip(NumeShape.SheetTop)
                 .background(MaterialTheme.colorScheme.surface)
                 .shimmer()
                 .padding(bottom = bottomPadding),

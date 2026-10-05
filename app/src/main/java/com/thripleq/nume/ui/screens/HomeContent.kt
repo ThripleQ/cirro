@@ -119,7 +119,7 @@ internal fun HomeContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .clip(RoundedCornerShape(topStart = HomeSheetRadius, topEnd = HomeSheetRadius))
+                .clip(NumeShape.SheetTop)
                 .background(MaterialTheme.colorScheme.surface)
                 // 视口 = 这张纸的裁切边界（列表就在纸里，标题条在纸外）。
                 .then(guard.viewportModifier()),
@@ -289,8 +289,7 @@ internal fun HomeContent(
     }
 }
 
-/** 内容圆角纸的顶角半径（状态栏容器色会从两角露出）。 */
-internal val HomeSheetRadius = 28.dp
+/** 内容圆角纸的顶角半径见 [com.thripleq.nume.ui.theme.NumeShape.SheetTop]（站内一份，不再本地定义）。 */
 
 /**
  * 钉在顶部的「探索」大标题条由 [NumePageTitleBar] 担当（与搜索页 / 我的页共用一份实现）。
