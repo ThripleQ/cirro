@@ -12,6 +12,24 @@ import kotlin.math.abs
 /** 判定「这是一次甩动」的最小速度（px/s）；低于它按当前位置就近落档。 */
 private const val MIN_FLING_VELOCITY = 400f
 
+/**
+ * 从**收起档**向上起手时，认卡片档所需的位移比例（相对卡片锚点）。
+ *
+ * 用户 2026-10-05 的原话把这条规则该管什么说得很清楚：「需要快速拉才会出现卡片，
+ * 慢慢拉卡片不会出现」—— 是**同样的拉动距离、快慢结果不同**，不是"出现后又弹回"。
+ * 原先低速一律按「最近锚点」判，门槛 = 卡片锚点的一半 = **屏幕可滑行程的 42%**；
+ * 而卡片锚点本身在 0.83 倍可滑行程处（[HALF_ANCHOR_P] × travelPx，见 PlayerDock 的
+ * 锚点注册）。于是手指快一点（> [MIN_FLING_VELOCITY]）按「向前取下一档」直接给卡片，
+ * 慢一点就落回"还没过半"的收起档 —— 读起来就成了「只有甩才能拉开」。
+ *
+ * 现在取 0.25：**慢拉也只要滑过卡片行程的 1/4**（travelPx≈984px 时约 410px、屏高 1/6）
+ * 松手，卡片就留下。只作用于**低速 + 从收起档向上、且还没越过卡片锚点**这一种情形：
+ * - 甩动（速度 > [MIN_FLING_VELOCITY]）仍按原逻辑「向前取下一档」；
+ * - 从卡片档继续上拖（越过卡片锚点）仍按最近锚点，不会把全屏误判成卡片；
+ * - 下落 / 收起方向完全不动。
+ */
+private const val CARD_COMMIT_FRAC = 0.25f
+
 private val SHEET_ORDER = listOf(PlayerSheet.Closed, PlayerSheet.Half, PlayerSheet.Full)
 
 /**
@@ -116,6 +134,15 @@ internal class SheetFlingBehavior(
                 .filter { if (forward) it.second > from else it.second < from }
             val next = if (forward) ahead.minByOrNull { it.second } else ahead.maxByOrNull { it.second }
             if (next != null) return next.first
+        }
+        // 从收起档向上起手：拖过卡片行程的 [CARD_COMMIT_FRAC] 就认卡片档（用户 2026-10-05：
+        // 「上拖播放条拉出卡片有点难拉出来」）。只在**还没越过卡片锚点**时接管 ——
+        // 越过之后该按最近锚点在「卡片↔全屏」之间判，guard 见常量注释。
+        if (state.settledValue == PlayerSheet.Closed &&
+            anchors.hasPositionFor(PlayerSheet.Half)
+        ) {
+            val half = anchors.positionOf(PlayerSheet.Half)
+            if (from >= half * CARD_COMMIT_FRAC && from <= half) return PlayerSheet.Half
         }
         return anchors.closestAnchor(from) ?: PlayerSheet.Closed
     }
