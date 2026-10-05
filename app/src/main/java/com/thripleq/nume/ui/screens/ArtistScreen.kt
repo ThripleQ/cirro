@@ -17,14 +17,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -62,7 +60,7 @@ import com.thripleq.nume.ui.components.NumeArt
 import com.thripleq.nume.ui.components.NumeArtwork
 import com.thripleq.nume.ui.components.NumeMediaRow
 import com.thripleq.nume.ui.components.NumeMediaRowSkeleton
-import com.thripleq.nume.ui.components.NumeScreenTopBar
+import com.thripleq.nume.ui.components.NumePaperPage
 import com.thripleq.nume.ui.components.NumeSectionHeader
 import com.thripleq.nume.ui.components.NumeSectionHeaderSkeleton
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
@@ -122,8 +120,11 @@ fun ArtistScreen(
 
     val ready = state as? ArtistUiState.Ready
 
-    Column(Modifier.fillMaxSize()) {
-        NumeScreenTopBar(title = ready?.profile?.name ?: "歌手", onBack = onBack)
+    // 顶部换成站内统一的那一份（[NumePaperPage]）：容器色条 + 大标题 + 圆角纸，
+    // 右上角一颗浮层收起键。原来这里是左上角返回箭头 + 小一号的 `titleLarge` 标题、
+    // 且没有圆角纸 —— 与其它页并排看就是两套语言（2026-10-05 用户：
+    // 「改成一模一样的，返回按钮也是一模一样」）。
+    NumePaperPage(title = ready?.profile?.name ?: "歌手", onClose = onBack) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = bottomPadding),

@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -23,11 +22,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,7 +51,7 @@ import com.thripleq.nume.ui.components.NumeArtwork
 import com.thripleq.nume.ui.components.NumeEmptyState
 import com.thripleq.nume.ui.components.NumeErrorState
 import com.thripleq.nume.ui.components.NumeLoadMoreIndicator
-import com.thripleq.nume.ui.components.NumeScreenTopBar
+import com.thripleq.nume.ui.components.NumePaperPage
 import com.thripleq.nume.ui.components.NumeSectionHeader
 import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.SkeletonBox
@@ -80,11 +77,13 @@ fun CommentsScreen(
     val bottomPadding = (islandHeight + 16f).dp
     val listState = rememberLazyListState()
 
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        NumeScreenTopBar(
-            title = if (state.total > 0) "评论 ${state.total}" else "评论",
-            onBack = onBack,
-        )
+    // 顶部换成站内统一的那一份（[NumePaperPage]）：容器色条 + 大标题 + 圆角纸，
+    // 右上角一颗浮层收起键。原来这里是左上角返回箭头 + 小一号的 `titleLarge` 标题、
+    // 且没有圆角纸（2026-10-05 用户：「改成一模一样的，返回按钮也是一模一样」）。
+    NumePaperPage(
+        title = if (state.total > 0) "评论 ${state.total}" else "评论",
+        onClose = onBack,
+    ) {
         when {
             state.loading -> CommentsSkeleton()
             state.error -> NumeErrorState(text = "评论加载失败，点此重试", onRetry = vm::retry)

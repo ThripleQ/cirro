@@ -28,7 +28,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -38,7 +37,6 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Sort
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -98,8 +96,10 @@ import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.core.repo.TrackCollection
 import com.thripleq.nume.ui.components.BannerCoverSize
 import com.thripleq.nume.ui.components.BigCoverVisual
+import com.thripleq.nume.ui.components.CloseButtonRaise
 import com.thripleq.nume.ui.components.LocalShellHeroAlpha
 import com.thripleq.nume.ui.components.LocalShellSettled
+import com.thripleq.nume.ui.components.NumeCloseButton
 import com.thripleq.nume.ui.components.NumeContainer
 import com.thripleq.nume.ui.components.NumeEmptyState
 import com.thripleq.nume.ui.components.NumeErrorState
@@ -108,6 +108,8 @@ import com.thripleq.nume.ui.components.NumeArt
 import com.thripleq.nume.ui.components.NumeTitleBarHeight
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
+import com.thripleq.nume.ui.components.TitleBarCloseInset
+import com.thripleq.nume.ui.components.TitleBarStartInset
 import com.thripleq.nume.ui.components.numeEntrySurface
 import com.thripleq.nume.ui.components.rememberCoverAccent
 import com.thripleq.nume.ui.profile.TrackListSource
@@ -155,7 +157,14 @@ object TrackListMetrics {
     /** 头部方封面边长。 */
     val CoverSize = 98.dp
 
-    /** 浮层键（左上返回 / 右上收起）那一行的净高（控件 48dp + 上下各 4dp 余量）。 */
+    /**
+     * 头部空档的**基准高度**（头部封面落点 [HeroCoverTop] 的口径，不是标题条高度）。
+     *
+     * 2026-10-05 起标题条两条路径都统一成 [com.thripleq.nume.ui.components.NumeTitleBarHeight]，
+     * 本值不再是「返回栏 / 收起键那一行」的净高；它只作为 [HeroCoverTop] 的基数存在，
+     * 保证 nav 与壳两条路径的**头部封面落在同一屏上位置**。真正的空档由
+     * `HeroCoverTop - 标题条实测高度` 记在头部 item 自己的上内缩里（见 LazyColumn 的头部 item）。
+     */
     val TopBarHeight = 56.dp
 
     /** 头部与返回栏（壳路径则是壳顶空档）之间的间距。 */
@@ -175,37 +184,37 @@ object TrackListMetrics {
      */
 
     /**
-     * 标题条文字的起始内缩 —— **只在 nav 路径**（本屏自己画左上返回键，`showBackButton = true`）
-     * 时用：让开那颗 48dp 触控盒 + 4dp 内缩（见 `TrackListBackButton`），与它同排但不叠。
+     * 标题条文字的起始内缩 —— 与探索页 / 搜索页 / 我的页的大标题左起**逐像素齐平**。
      *
-     * 壳路径**不用这个值**：收起键已经从左上挪到了右上（2026-10-03 用户原话：「歌单上边的标题
-     * 不要给收起按钮让位，收起按钮放右上角」），标题直接对齐站内那三个大标题 —— 用
-     * [TitleBarTextAligned]。
+     * 2026-10-03 用户：「标题的内缩去看搜索页面和探索，和他们保持一致」——那几页的标题条都
+     * 是 `padding(start = 24.dp)`（[com.thripleq.nume.ui.components.NumePageTitleBar]），
+     * 本屏原先走 [SideInset]（当时 20dp），比它们少，三页并排看就是不齐。
+     *
+     * **不复用 [SideInset]，两个值本来就不该相等**：探索页也是「标题 24dp / 内容 16dp」这组
+     * 关系（[NumePageTitleBar] 的 24 与下方列表的 16）。大标题比内容多缩一档、压在内容竖线外
+     * 一点，是站内共用的排版关系；把标题拉到 16 反而会与探索页错开。
+     *
+     * 2026-10-05 起 **nav / 壳两条路径同用本值**（用户：详情页顶部「跟探索页不一样，改成
+     * 一样的」）—— nav 路径原先要给左上角的返回键让到 64dp，现在那颗键翻到了右上角。
+     *
+     * 2026-10-05 晚：这个数不再本地写死，改引 [TitleBarStartInset]（站内一份）。
      */
-    val TitleBarTextStart = TopBarHeight + 8.dp
+    val TitleBarTextAligned = TitleBarStartInset
 
     /**
-     * 标题条文字的起始内缩 —— **壳路径**用：与探索页 / 搜索页的大标题左起**逐像素齐平**。
+     * 标题条文字在**右侧**让开右上角那颗 36dp 圆键的那一档：36dp 圆 + 12dp 外边距 + 8dp 缝
+     * = 56dp。
      *
-     * 2026-10-03 用户：「标题的内缩去看搜索页面和探索，和他们保持一致」——那两页的标题条都是
-     * `padding(start = 24.dp)`（`HomeTopBar` / `SearchTitleBar`），歌单页壳路径原先走 [SideInset]
-     * （当时 20dp），比它们少，三页并排看就是不齐。
-     *
-     * **不复用 [SideInset]，两个值本来就不该相等**：探索页也是「标题 24dp / 内容 16dp」这组关系
-     * （[HomeTopBar] 的 24 与下方列表的 16）。大标题比内容多缩一档、压在内容竖线外一点，
-     * 是站内三页共用的排版关系；把标题拉到 16 反而会与探索页错开。
-     */
-    val TitleBarTextAligned = 24.dp
-
-    /**
-     * 标题条文字在**右侧**让开右上角收起键的那一档：36dp 圆键 + 12dp 外边距 + 8dp 缝 = 56dp。
-     *
-     * 与 [TitleBarTextStart] 是一对 —— 让位是从左边**翻到**右边，不是取消让位：收起键是浮层、
+     * 与 [TitleBarTextAligned] 是一对 —— 让位是从左边**翻到**右边，不是取消让位：键是浮层、
      * 就压在这一排上，标题再长也不能钻到它下面去（标题是 `maxLines = 1` + Ellipsis，收在键之前）。
      *
-     * 只在**壳路径**用；nav 路径右端没有键，右侧回到 [SideInset]。
+     * 两条路径同用：壳路径的键由壳画（[ShellPanel] / `CoverExpandShell`），nav 路径的键由本屏
+     * 画（[NumeCloseButton]，同位同规格）—— 键都在右上角，让位方向自然也一致。
+     *
+     * 2026-10-05 晚：改引站内共用的 [TitleBarCloseInset]，与歌手 / 播客 / 评论三页
+     * （[NumePaperPage]）同一份 —— 那三页的键也从左上翻到了右上角。
      */
-    val TitleBarTextEnd = 56.dp
+    val TitleBarTextEnd = TitleBarCloseInset
 
     /**
      * 内容圆角纸的顶角半径。
@@ -242,8 +251,10 @@ fun TrackListScreen(
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
     /**
-     * 是否由本屏画左上角返回键。作为 **nav 详情页**时 true；作为**胶囊壳内容**时 false——
-     * 壳自带关闭键（同位、同浮层语言），再画一个就重叠了。
+     * 是否由本屏画顶部那颗键（**右上角**，[NumeCloseButton]，与壳路径那颗同规格同位置）。
+     *
+     * 作为 **nav 详情页**时 true（本屏自己画）；作为**面板壳内容**时 false——
+     * 壳自带同一颗键（同位、同浮层语言），再画一个就重叠了。
      */
     showBackButton: Boolean = true,
     /**
@@ -281,8 +292,6 @@ fun TrackListScreen(
     val src = remember(source) { TrackListSource.from(source) }
 
     // 列表滚动状态（吸顶、糊底退场进度都读它）。
-    // 原先把头部三胶囊的滚动位置上报给 dock 中间那条操作行（头部按钮滚出视口时由它顶替），
-    // 2026-10-05 用户「dock 中间那一行删掉」后该行已不存在，上报链条整体删除。
     val listState = rememberLazyListState()
 
     // 加载与壳展开**并行**：动画一开始就发起请求，数据在后台拉取。但**切到列表**（LazyColumn +
@@ -419,14 +428,10 @@ fun TrackListScreen(
             // 即上报修正（跳变发生在壳动画/骨架期，不可见）。
             var stickyTopPx by remember { mutableIntStateOf(0) }
             val stickyTopDp = with(density) { stickyTopPx.toDp() }
-            // 纸的顶角半径（原来给独立纸层，现在给壳子）。半径同源：SheetCorner = NumeShape.SheetRadius，
-            // 与探索 / 搜索 / 我的几张纸一致。
-            val paperShape = remember {
-                RoundedCornerShape(
-                    topStart = TrackListMetrics.SheetCorner,
-                    topEnd = TrackListMetrics.SheetCorner,
-                )
-            }
+            // 纸的顶角形状：**直接引用站内那一份 token**（[NumeShape.SheetTop]）—— 与探索 /
+            // 搜索 / 我的三页那张纸是**同一个对象**，不再本地拼一份同参数的 RoundedCornerShape
+            // （那样 token 以后调整半径，详情页会静默留在旧值）。token 是常量，不必 remember。
+            val paperShape = NumeShape.SheetTop
             // 「播放全部」这一行的**面**：四角都是普通圆角，半径与纸同源
             // [TrackListMetrics.SheetCorner] —— 吸顶时上边两角正好与壳子裁出来的纸角重合
             // （角外露容器色条），下边两角则切进**面板自己的底色**里。
@@ -458,29 +463,22 @@ fun TrackListScreen(
             //     右边才让开那颗键（[TrackListMetrics.TitleBarTextEnd]）；
             //   · **nav 路径**：左上仍是本屏自己画的返回键（站内详情页的统一语言，见 `ScreenTopBar`），
             //     左右内缩反过来。
+            // 标题条与顶部那颗键**不分路径**（2026-10-05 用户：「屏幕顶部的标题、圆角纸
+            // 跟探索页不一样，改成一样的」）：内缩、字形、让位方向两条路径同一份，于是
+            // 「详情页顶栏」与「探索 / 搜索 / 我的」三页的大标题逐像素齐平，纸顶也落在同一条线。
+            //
+            // 唯一按路径分的是**键在哪一侧**：nav 路径的键是浮层（见本屏外层 Box 里的
+            // [NumeCloseButton]，与壳路径那颗同位同规格），壳路径的键由壳自己画（[ShellPanel]
+            // / [com.thripleq.nume.ui.components.CoverExpandShell]），本屏不重复画。
             Box {
                 TrackListTitleBar(
                     label = src.label,
                     title = title,
                     reveal = washExit,
-                    textStart = if (showBackButton) {
-                        TrackListMetrics.TitleBarTextStart
-                    } else {
-                        TrackListMetrics.TitleBarTextAligned
-                    },
-                    textEnd = if (showBackButton) {
-                        TrackListMetrics.SideInset
-                    } else {
-                        TrackListMetrics.TitleBarTextEnd
-                    },
+                    textStart = TrackListMetrics.TitleBarTextAligned,
+                    textEnd = TrackListMetrics.TitleBarTextEnd,
                     modifier = Modifier.onSizeChanged { stickyTopPx = it.height },
                 )
-                // 返回键压在最上层：不被列表滚走、不参与浮现淡入（骨架期也能退出）。
-                // 键必须常驻标题条区 —— 吸顶行会滚，键不能跟着滚走；壳路径的关闭键
-                // 同位（两者语言一致）。
-                if (showBackButton) {
-                    TrackListBackButton(onBack, Modifier.align(Alignment.TopStart))
-                }
             }
             // 壳子：搜索页同款「clip(顶角) + background(surface)」的纸。糊底 / 列表 /
             // 骨架全部装在里面，由壳子统一裁角。
@@ -643,6 +641,30 @@ fun TrackListScreen(
                         )
                     }
             }
+        }
+
+        // 顶部那颗键（**只在 nav 路径**）：与壳路径那颗 [NumeCloseButton] **同位同规格**
+        // —— 36dp 圆 + 黑底白下箭头、右上角、12dp 外边距、上提一档让圆心压在标题条中线上。
+        //
+        // ## 为什么它跑到右上角、又为什么必须浮在这一层
+        //
+        // 1. 右上角：左上放返回箭头时，标题得给它让出一档内缩（左起 64dp），而探索页的大标题
+        //    左起 24dp —— 并排看就是「标题位置不一样」。把键翻到右端后两处标题左起同一根线，
+        //    让位翻到右边，与壳路径也统一了（2026-10-05 用户：「改成一样的」）。
+        // 2. 浮在这一层：36dp 的圆比标题条（[com.thripleq.nume.ui.components.NumeTitleBarHeight]）
+        //    高，塞进上面那个标题条 Box 会把它撑到 36dp，**下方的圆角纸整体下移** —— 纸顶又与
+        //    探索页错开。浮层不参与 Column 测量，纸顶只由标题条决定。
+        //
+        // 键常驻这里：吸顶行会滚走，键不能跟着滚（骨架期也要能退出）。
+        if (showBackButton) {
+            NumeCloseButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .offset(y = -CloseButtonRaise)
+                    .padding(12.dp),
+            )
         }
     }
 }
@@ -1178,23 +1200,6 @@ private fun TrackListAction(
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
-        )
-    }
-}
-
-/**
- * 左上角返回键：浮在糊底 / 标题条上、不随列表滚。
- *
- * 只走 **nav 路径**（站内详情页统一在左上放返回键，见 `ScreenTopBar`）；**壳路径**那颗收起键
- * 2026-10-03 挪到了右上角（不再是「同位」），标题条按路径把内缩反过来用，见 [TrackListTitleBar]。
- */
-@Composable
-private fun TrackListBackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
-    IconButton(onClick = onBack, modifier = modifier.padding(4.dp)) {
-        Icon(
-            Icons.AutoMirrored.Filled.ArrowBack,
-            contentDescription = "返回",
-            tint = MaterialTheme.colorScheme.onSurface,
         )
     }
 }

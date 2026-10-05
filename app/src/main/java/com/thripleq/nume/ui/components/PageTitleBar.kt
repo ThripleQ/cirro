@@ -45,21 +45,53 @@ val NumeTitleBarHeight: Dp
     }
 
 /**
+ * 标题条文字的**左**内缩：比内容的 16dp 多一档 —— 大标题压在内容竖线外一点，这是站内约定
+ * （见探索页 24 / 内容 16、搜索页同）；标题**不**为了对齐内容而缩到 16，那反而会与别的页错开。
+ *
+ * 站内两张标题条的实现（本文件的 [NumePageTitleBar]、详情页的 `TrackListTitleBar`）
+ * 都引这一个值 —— 2026-10-05 用户原话「那里各种布局参数也应该一样」，所以连这个数也
+ * 收成一处，免得以后只改了一边、标题又不在同一根竖线上。
+ */
+val TitleBarStartInset = 24.dp
+
+/**
+ * 标题条右侧的**默认**内缩：右端至多摆一颗 28dp 的小键（探索页那颗刷新键）。
+ *
+ * 大标题是 `weight(1f)`，所以这个值直接决定「标题最长能画到离右边缘多远」——
+ * 键是 28dp、贴右端 8dp，标题最右也就停在 36dp 处，不会压到键上。
+ */
+val TitleBarEndInset = 8.dp
+
+/**
+ * 标题条右侧的**详情页**内缩：让开右上角那颗 36dp 浮层收起键
+ * （36dp 圆 + 12dp 外边距 + 8dp 缝 = 56dp）。
+ *
+ * 与 [TitleBarEndInset] 是一对 —— 详情页的键从左上**翻到**右端，让位方向跟着翻，
+ * 不是取消让位：键是浮层、就压在这一排上，标题（`maxLines = 1` + Ellipsis）必须收在它之前。
+ *
+ * **为什么两个值不该相等**：一级页面右端只有一颗 28dp 的刷新键、贴边 8dp，标题自然可以
+ * 画到 8dp 处；详情页右端是 36dp 的收起键、还要离边 12dp，标题就得退到 56dp。
+ * 反过来把一级页面的内缩也拉成 56dp，会把探索页那颗刷新键推到离边 56dp 的空中
+ * （它和标题同在一个 `Row` 里，共用一个右内缩）。
+ */
+val TitleBarCloseInset = 56.dp
+
+/**
  * 一级页面的大标题条 —— 取代探索 / 搜索 / 我的三份逐字节相同的标题条
  * （原 `HomeTopBar` / `SearchTitleBar`）。
  *
- * 与 [NumeScreenTopBar] 的分工：那个是**详情页**顶栏（左返回键 + `titleLarge`）；
- * 这个是**底部 tab 的一级页面**顶栏（无返回键 + `headlineSmall` 大标题），尾部可追加
- * [actions]（探索页的刷新键就走这里）。
+ * 与 [NumePaperPage] 的分工：那个是**详情页**的整套骨架（标题条 + 内容圆角纸 + 右上角收起键，
+ * 歌手 / 播客 / 评论 / 歌单 / 榜单 / 专辑都走它）；这个是**底部 tab 的一级页面**顶栏
+ * （没有收起键，尾部可追加 [actions]——探索页的刷新键就走这里）。
  *
  * 规范（三页共用，改这里就是三页一起改）：
  * - 让开状态栏；
  * - 高度锁定为 [NumeTitleBarHeight]（= `headlineSmall` 行高）—— 右侧有没有动作键都一样高，
  *   于是三页的圆角纸顶边落在同一条水平线上；[actions] 里的 `IconButton` 自带 48dp 最小
  *   交互尺寸，只在探索页有，不锁高度就会把那一页的纸整整压低 16dp；
- * - 左内缩 **24dp**，比内容的 16dp 多一档 —— 大标题压在内容竖线外一点，这是站内约定
- *   （见探索页 24 / 内容 16、搜索页同）；标题 **不**为了对齐内容而缩到 16，那反而会
- *   与另外两页错开；
+ * - 左内缩 [TitleBarStartInset]（24dp，比内容的 16dp 多一档，详情页的标题条同引此值）；
+ * - 右内缩按端上的键分档：[endInset] 默认 [TitleBarEndInset]（28dp 小键），详情页传
+ *   [TitleBarCloseInset]（让开 36dp 浮层收起键）；
  * - 标题 `headlineSmall` 粗体 + `Trim.Both`：去掉行高上下多余的 leading，让字的上沿
  *   贴到状态栏（否则字上方还留着一条空隙）；
  * - 右侧 [actions] 贴右端、垂直居中。
@@ -71,6 +103,8 @@ val NumeTitleBarHeight: Dp
 fun NumePageTitleBar(
     title: String,
     modifier: Modifier = Modifier,
+    /** 标题文字右侧让位宽度：见 [TitleBarEndInset] / [TitleBarCloseInset]。 */
+    endInset: Dp = TitleBarEndInset,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
@@ -78,7 +112,7 @@ fun NumePageTitleBar(
             .fillMaxWidth()
             .statusBarsPadding()
             .height(NumeTitleBarHeight)
-            .padding(start = 24.dp, end = 8.dp),
+            .padding(start = TitleBarStartInset, end = endInset),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
