@@ -1,12 +1,15 @@
 package com.thripleq.nume.ui.profile
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.thripleq.nume.core.net.NetEaseGateway
+import com.thripleq.nume.core.playback.PlaybackLauncher
 import com.thripleq.nume.core.repo.Account
 import com.thripleq.nume.core.repo.ProfileData
 import com.thripleq.nume.core.repo.ProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +27,8 @@ sealed interface ProfileUiState {
 class ProfileViewModel @Inject constructor(
     private val repository: ProfileRepository,
     private val gateway: NetEaseGateway,
+    private val playback: PlaybackLauncher,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)
@@ -82,5 +87,16 @@ class ProfileViewModel @Inject constructor(
                 if (data != null) _uiState.value = ProfileUiState.LoggedIn(data)
             }
         }
+    }
+
+    /**
+     * 「已购 → 单曲」内联列表的行点击：**从 [index] 起播，队列是完整已购**。
+     *
+     * 队列不能只给内联展开的那一截：内联列表有展示上限（[PurchasedInlineCap]），
+     * 拿可见那段当队列，播到第 50 首就没了 —— 而用户以为自己播的是"我的已购"。
+     */
+    fun playPurchased(index: Int) {
+        val songs = (_uiState.value as? ProfileUiState.LoggedIn)?.data?.purchasedSongs ?: return
+        playback.play(context, songs, index)
     }
 }

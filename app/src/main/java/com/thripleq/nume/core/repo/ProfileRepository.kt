@@ -45,6 +45,11 @@ data class ProfileData(
     /** 喜欢的音乐代表封面 = 首首喜欢曲目的专辑封面（与面板 banner 同源，展开时封面不换图）。 */
     val likedCoverUrl: String?,
     val purchasedSongCount: Int,
+    /**
+     * 已购单曲本体。**「我的」页内联展开（已购 → 单曲）直接用这份**，不再打网络；
+     * [loadProfile] 本来就 await 了它，只是以前只取 size，列表本身白白扔掉。
+     */
+    val purchasedSongs: List<Track>,
     /** 已购代表封面 = 首首已购曲目的专辑封面（与面板 banner 同源）。 */
     val purchasedCoverUrl: String?,
     val purchasedAlbums: List<Album>,
@@ -154,6 +159,7 @@ class ProfileRepository @Inject constructor(
             likedCount = likedList.size,
             likedCoverUrl = likedList.firstOrNull()?.artworkUrl,
             purchasedSongCount = purchasedSongList.size,
+            purchasedSongs = purchasedSongList,
             purchasedCoverUrl = purchasedSongList.firstOrNull()?.artworkUrl,
             purchasedAlbums = purchasedAlbums.await(),
             subscribedPlaylists = subscribedPlaylists,

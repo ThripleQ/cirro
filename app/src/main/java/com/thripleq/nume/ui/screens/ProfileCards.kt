@@ -8,13 +8,15 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -47,28 +49,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.toSize
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.thripleq.nume.core.repo.Account
+import com.thripleq.nume.core.repo.Album
 import com.thripleq.nume.core.repo.ProfileData
+import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.ui.components.ArtistAvatarSize
 import com.thripleq.nume.ui.components.BigCoverVisual
 import com.thripleq.nume.ui.components.NumeArt
 import com.thripleq.nume.ui.components.NumeArtwork
+import com.thripleq.nume.ui.components.NumeMediaRow
 import com.thripleq.nume.ui.components.SharedSourceGuard
 import com.thripleq.nume.ui.components.shellSharedCover
 import com.thripleq.nume.ui.theme.Motion
@@ -76,21 +75,20 @@ import com.thripleq.nume.ui.theme.NumeFade
 import com.thripleq.nume.ui.theme.NumeShape
 
 /* ──────────────────────────────────────────────────────────────────
- * 「我的」页 v2 —— 个人主页杂志版式（2026-10 重设计）
+ * 「我的」页 v3（2026-10-05）
  *
- * 旧版问题：小头像行 + 2×2 同尺寸方卡——列表既视感、无层级、无动效、
- * 「喜欢的音乐」这个最高频入口和其他入口平权。
+ * 版式（自上而下）：
+ *   1. 账号抬头：一行，小圆头像 + 昵称（+ VIP）。**不带卡底、不带数据行**
+ *      —— 旧版是「模糊放大头像铺底 + 大字昵称 + N 首·N 项·N 个歌单」整块
+ *      独占第一屏，用户判定为「太丑，直接删掉」。
+ *   2. 「喜欢的音乐」全宽横幅主卡（21:10）：最高频入口单独放大，封面即主视觉。
+ *   3. 「已购」**原地展开**卡：点一下展开出「单曲 / 专辑」，
+ *      「单曲」再展开一层原地铺曲目，「专辑」进全屏大卡网格。
+ *   4. 创建 / 收藏两张紧凑行卡（小封面 + 数量 + chevron）→ 全屏面板。
  *
- * 新版式（三层视觉锚点）：
- *   1. 人物 hero：居中大头像（背景 = 同一张头像的柔焦放大，上下渐隐融
- *      入底色）+ 大字昵称 + 数据行（tabular 数字）。个人主页的存在感。
- *   2. 「喜欢的音乐」全宽横幅主卡（21:10）：最高频入口单独放大，
- *      封面即主视觉。
- *   3. 已购 / 创建 / 收藏三张紧凑行卡（小封面 + 数量 + chevron）。
- *
- * 壳契约完全保留：四个 shellKey 不变、起点 rect 测量仍挂在封面
- * onGloballyPositioned、面板路由（ProfilePanels）零改动——
- * sharedBounds 从新布局的任意矩形照常 morph 到面板 banner。
+ * 壳契约：liked / created / subscribed 三个 shellKey 与起点 rect 测量不变
+ * （rect 仍挂在封面 onGloballyPositioned，面板路由 ProfilePanels 零改动）；
+ * 已购与已购专辑这两条链**不挂共享元素**（前者不打开面板，后者起点是个图标）。
  *
  * 动效（参数集中在 [ProfileMotion]，真机上不满意只调这一处）：
  * 入场 stagger 用 Material 运动规范推荐区间（间隔 45ms、时长 280ms、
@@ -148,117 +146,53 @@ private fun Modifier.pressScale(onClick: () -> Unit): Modifier {
         .clickable(interactionSource = interaction, indication = null, onClick = onClick)
 }
 
-/* ── 人物 hero ──────────────────────────────────────────────── */
+/* ── 账号抬头 ───────────────────────────────────────────────── */
 
+/**
+ * 顶部账号行（2026-10-05 取代杂志版 hero）。
+ *
+ * 旧 hero 是「模糊放大头像铺底 + 上下渐隐带 + 96dp 圆头像 + displaySmall 大字昵称 +
+ * 「N 首 · N 项 · N 个歌单」数据行」，整块独占第一屏。用户判定为「太丑，直接删掉」
+ * —— 收成**一行**：小圆头像 + 昵称（+ VIP 标）。
+ *
+ * 两处刻意不做：
+ * - **不要数据行**。同一批数字在下面每张卡的副标题里各有一份
+ *   （N 首 / N 项 / N 个歌单），抬头再来一行汇总是纯重复。
+ * - **不铺卡底**。铺了它就是「又一张入口卡」，与下面的真入口卡抢层级；
+ *   它只是一条抬头，左内缩对齐行卡内容即可。
+ */
 @Composable
-private fun ProfileHero(account: Account, likedCount: Int, purchasedCount: Int, playlistCount: Int) {
-    Box(Modifier.fillMaxWidth()) {
-        // 背景 = 同一张头像的柔焦放大层（Coil 内存命中：同 url 同解码尺寸）。
-        // blur 在 <API 31 是 no-op：退化为低透明度原图，仍成立不崩。
-        Box(
-            Modifier
-                .matchParentSize()
-                .clipToBounds()
-                .graphicsLayer {
-                    scaleX = 1.6f
-                    scaleY = 1.6f
-                }
-                .blur(32.dp),
-        ) {
-            NumeArtwork(
-                url = account.avatarUrl,
-                contentDescription = null,
-                modifier = Modifier.matchParentSize(),
-                size = null,
-                shape = NumeShape.Card,
-                requestSize = ArtistAvatarSize,
-                fallbackIcon = Icons.Filled.AccountCircle,
-                fallbackIconSize = 96.dp,
-            )
-        }
-        // 上下渐隐把柔焦层融进底色（否则是一块突兀的色带）。
-        Box(
-            Modifier
-                .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to MaterialTheme.colorScheme.surface,
-                        0.22f to Color.Transparent,
-                        0.78f to Color.Transparent,
-                        1f to MaterialTheme.colorScheme.surface,
-                    ),
-                ),
-        )
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
+private fun ProfileHeaderRow(account: Account) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+    ) {
+        NumeArtwork(
+            url = account.avatarUrl,
+            contentDescription = account.nickname,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp, bottom = 20.dp),
-        ) {
-            NumeArtwork(
-                url = account.avatarUrl,
-                contentDescription = account.nickname,
-                modifier = Modifier
-                    .size(NumeArt.AvatarLg)
-                    .clip(CircleShape),
-                size = NumeArt.AvatarLg,
-                shape = CircleShape,
-                requestSize = ArtistAvatarSize,
-                fallbackIcon = Icons.Filled.AccountCircle,
-                fallbackIconSize = 96.dp,
-            )
-            Spacer(Modifier.height(12.dp))
+                .size(NumeArt.AvatarMd)
+                .clip(CircleShape),
+            size = NumeArt.AvatarMd,
+            shape = CircleShape,
+            requestSize = ArtistAvatarSize,
+            fallbackIcon = Icons.Filled.AccountCircle,
+            fallbackIconSize = 40.dp,
+        )
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
             Text(
                 account.nickname,
-                style = MaterialTheme.typography.displaySmall,
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(6.dp))
-            ProfileStatLine(
-                likedCount = likedCount,
-                purchasedCount = purchasedCount,
-                playlistCount = playlistCount,
-                vip = account.vipType > 0,
-            )
         }
+        if (account.vipType > 0) VipBadge()
     }
-}
-
-/** 数据行：tabular 数字 + 中点分隔；VIP 胶囊排最前（有的话）。 */
-@Composable
-private fun ProfileStatLine(likedCount: Int, purchasedCount: Int, playlistCount: Int, vip: Boolean) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        if (vip) VipBadge()
-        val muted = MaterialTheme.typography.labelMedium
-            .copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
-        val strong = muted.copy(fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-        Text(
-            buildAnnotatedString {
-                withStyle(strong.toSpanStyle()) { append(compact(likedCount)) }
-                withStyle(muted.toSpanStyle()) { append(" 首 · ") }
-                withStyle(strong.toSpanStyle()) { append(compact(purchasedCount)) }
-                withStyle(muted.toSpanStyle()) { append(" 项 · ") }
-                withStyle(strong.toSpanStyle()) { append(compact(playlistCount)) }
-                withStyle(muted.toSpanStyle()) { append(" 个歌单") }
-            },
-            style = muted,
-            maxLines = 1,
-        )
-    }
-}
-
-/** 1234 → 「1,234」；≥10000 → 「1.2 万」（数字短了 hero 才稳）。 */
-private fun compact(n: Int): String = when {
-    n >= 10000 -> {
-        val w = n / 10000.0
-        if (w >= 10 || w == w.toInt().toDouble()) "${w.toInt()} 万" else "%.1f 万".format(w)
-    }
-    else -> "%,d".format(n)
 }
 
 @Composable
@@ -334,6 +268,8 @@ private fun ProfileRowCard(
     sharedKey: String?,
     onClick: (Rect?, morphable: Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    /** chevron 朝向（度）：0 = 朝右（进入下一级）；90 = 朝下（原地展开已开）。 */
+    chevronAngle: Float = 0f,
 ) {
     var rect by remember { mutableStateOf<Rect?>(null) }
     // 判定的是**小封面**而不是整行卡：卡片被纸边切掉一截时，只要 64dp 的封面还完整
@@ -351,7 +287,6 @@ private fun ProfileRowCard(
         Box(
             Modifier
                 .size(64.dp)
-                .clip(NumeShape.CardSmall)
                 .onGloballyPositioned { coords ->
                     val r = Rect(coords.localToWindow(Offset.Zero), coords.size.toSize())
                     rect = r
@@ -364,7 +299,12 @@ private fun ProfileRowCard(
                     } else {
                         Modifier
                     },
-                ),
+                )
+                // 圆角 clip 必须在 sharedBounds **内层**（链更靠后）—— 与探索页大卡
+                // 同一条规矩：转场时在 overlay 里飞的是 sharedBounds 圈住的这一份，
+                // 圆角只挂在外层的话，飞的那份就是直角（2026-10-05 修正：本行卡原先
+                // 把 .clip() 写在了 .then(shellSharedCover) 之前，正是「动画中封面没圆角」）。
+                .clip(NumeShape.CardSmall),
         ) {
             if (coverUrl != null) {
                 // 真实封面：纯图展示，scrim 关掉（小图上 0.5 黑渐变占过半
@@ -416,8 +356,209 @@ private fun ProfileRowCard(
             Icons.Filled.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = NumeFade.ARROW_MUTED),
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier
+                .size(20.dp)
+                .graphicsLayer { rotationZ = chevronAngle },
         )
+    }
+}
+
+/* ── 已购：原地展开（单曲 / 专辑） ─────────────────────────── */
+
+/**
+ * 内联展开时最多铺多少首已购单曲。
+ *
+ * 「我的」页外层是 `verticalScroll` + 普通 Column（不是 LazyColumn），内联列表每多一行
+ * 就多一个真实组合节点；已购上百首时这一屏会明显变慢。超出部分交给「查看全部」——
+ * 面板里是懒加载列表，多少首都不怕。
+ */
+private const val PurchasedInlineCap = 30
+
+/**
+ * 「已购」区块：行卡点一下**原地展开**（不打开面板），露出「单曲」「专辑」两个子项；
+ * 「单曲」再展开一层、原地铺开曲目；「专辑」才进全屏面板（大卡陈列）。
+ *
+ * ## 几处刻意的决定
+ *
+ * - **不用封面，用图标**：已购本身没有"一张代表封面"——它是单曲 + 专辑两个集合的容器，
+ *   拿首曲专辑封面当门脸是借用（用户判定为不必要）。行卡的图标分支本来就支持这条路。
+ * - **不挂共享元素**：这条链不打开面板，挂 sharedBounds 等于给转场注册一个找不到对侧
+ *   目标的孤儿 bounds（探索页同类注释）。面板侧（专辑网格）相应地也不挂。
+ * - **展开态是独立 state，不进 hiltViewModel**：它是纯 UI 开关，切 tab 回来收起
+ *   （与「进页面先看到概览」一致）比记着更合理。
+ */
+@Composable
+private fun PurchasedEntry(
+    songs: List<Track>,
+    albums: List<Album>,
+    /** null = 已登录；非 null = 未登录，点任一子项都走它（拉起登录）。 */
+    onLogin: (() -> Unit)?,
+    onPlaySong: (Int) -> Unit,
+    onOpenAlbums: () -> Unit,
+    onOpenAllSongs: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    var songsOpen by remember { mutableStateOf(false) }
+    val loggedIn = onLogin == null
+    // `tween` 的 T 无法从参数推断，必须显式给 <Float>（否则报 Cannot infer type for 'T'）。
+    // expand/shrink 那一对是 <IntSize>，所以在调用处就地构造、由参数类型推断。
+    val ease = tween<Float>(ProfileMotion.ENTER_MS, easing = Motion.EmphasizedDecelerate)
+    val mainChevron by animateFloatAsState(
+        targetValue = if (open) 90f else 0f,
+        animationSpec = ease,
+        label = "purchasedChevron",
+    )
+    val songChevron by animateFloatAsState(
+        targetValue = if (songsOpen) 90f else 0f,
+        animationSpec = ease,
+        label = "purchasedSongsChevron",
+    )
+
+    Column(Modifier.fillMaxWidth()) {
+        ProfileRowCard(
+            icon = Icons.Filled.ShoppingCart,
+            title = "已购",
+            count = if (loggedIn) {
+                "${songs.size} 首单曲 · ${albums.size} 张专辑"
+            } else {
+                "登录后查看"
+            },
+            coverUrl = null,
+            shared = null,
+            avScope = null,
+            guard = null,
+            sharedKey = null,
+            onClick = { _, _ -> open = !open },
+            chevronAngle = mainChevron,
+        )
+        AnimatedVisibility(
+            visible = open,
+            enter = expandVertically(tween(ProfileMotion.ENTER_MS, easing = Motion.EmphasizedDecelerate)) +
+                fadeIn(ease),
+            exit = shrinkVertically(tween(ProfileMotion.ENTER_MS, easing = Motion.Emphasized)) +
+                fadeOut(tween(ProfileMotion.ENTER_MS, easing = Motion.Emphasized)),
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                SubEntryRow(
+                    title = "单曲",
+                    meta = if (loggedIn) "${songs.size} 首" else "登录后查看",
+                    chevronAngle = songChevron,
+                    onClick = { if (loggedIn) songsOpen = !songsOpen else onLogin?.invoke() },
+                )
+                AnimatedVisibility(
+                    visible = songsOpen,
+                    enter = expandVertically(
+                        tween(ProfileMotion.ENTER_MS, easing = Motion.EmphasizedDecelerate),
+                    ) + fadeIn(ease),
+                    exit = shrinkVertically(
+                        tween(ProfileMotion.ENTER_MS, easing = Motion.Emphasized),
+                    ) + fadeOut(tween(ProfileMotion.ENTER_MS, easing = Motion.Emphasized)),
+                ) {
+                    InlinePurchasedSongs(
+                        songs = songs,
+                        onPlay = onPlaySong,
+                        onOpenAll = onOpenAllSongs,
+                    )
+                }
+                SubEntryRow(
+                    title = "专辑",
+                    meta = if (loggedIn) "${albums.size} 张" else "登录后查看",
+                    onClick = { if (loggedIn) onOpenAlbums() else onLogin?.invoke() },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 已购展开后的子项行（单曲 / 专辑）：比主行卡轻一档 —— 无封面、无卡底，
+ * 只比主行左缩进一点，读作「上面那张卡里的两项」而不是两个并列入口。
+ */
+@Composable
+private fun SubEntryRow(
+    title: String,
+    meta: String,
+    onClick: () -> Unit,
+    chevronAngle: Float = 0f,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 2.dp)
+            .clip(NumeShape.CardSmall)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            meta,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Spacer(Modifier.width(6.dp))
+        Icon(
+            Icons.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = NumeFade.ARROW_MUTED),
+            modifier = Modifier
+                .size(20.dp)
+                .graphicsLayer { rotationZ = chevronAngle },
+        )
+    }
+}
+
+/**
+ * 已购单曲的内联列表：点行**播放**（队列是完整已购，见 ProfileViewModel.playPurchased）。
+ *
+ * 展示上限 [PurchasedInlineCap]，超出给「查看全部 N 首」落到面板 —— 内联铺一千行
+ * 既拖慢这一屏，也没人会在"我的"页里滚完它。
+ */
+@Composable
+private fun InlinePurchasedSongs(
+    songs: List<Track>,
+    onPlay: (Int) -> Unit,
+    onOpenAll: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(start = 12.dp, top = 2.dp, bottom = 4.dp)) {
+        if (songs.isEmpty()) {
+            Text(
+                "还没有已购单曲",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+            )
+        } else {
+            // 保序取前 N：`onPlay(i)` 里的 i 就是**完整已购列表**里的下标，与
+            // ProfileViewModel.playPurchased(index) 的契约对齐（不能传可见段的下标）。
+            songs.take(PurchasedInlineCap).forEachIndexed { i, track ->
+                NumeMediaRow(
+                    title = track.name,
+                    subtitle = track.artist.takeIf { it.isNotBlank() },
+                    coverUrl = track.artworkUrl,
+                    onClick = { onPlay(i) },
+                )
+            }
+            if (songs.size > PurchasedInlineCap) {
+                Text(
+                    "查看全部 ${songs.size} 首",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(NumeShape.CardSmall)
+                        .clickable(onClick = onOpenAll)
+                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                )
+            }
+        }
     }
 }
 
@@ -434,14 +575,27 @@ internal fun LoggedOutContent(onLogin: () -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
 
-        // 未登录同构占位：与已登录相同的三行卡，点击引导登录。
+        // 未登录同构：结构与已登录完全一致 —— 「已购」照样能原地展开看到「单曲 / 专辑」，
+        // 点任一子项都拉起登录（onLogin 非空即未登录，见 [PurchasedEntry]）。
+        StaggerIn(1) {
+            PurchasedEntry(
+                songs = emptyList(),
+                albums = emptyList(),
+                onLogin = onLogin,
+                onPlaySong = {},
+                onOpenAlbums = {},
+                onOpenAllSongs = {},
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+
+        // 其余两张行卡：登录后才有内容，未登录只是占位。
         val placeholders = listOf(
-            Triple(Icons.Filled.ShoppingCart, "已购", "登录后查看"),
             Triple(Icons.Filled.List, "创建的歌单", "登录后查看"),
             Triple(Icons.Filled.Star, "收藏的歌单", "登录后查看"),
         )
         placeholders.forEachIndexed { i, (icon, title, hint) ->
-            StaggerIn(i + 1) {
+            StaggerIn(i + 2) {
                 ProfileRowCard(
                     icon = icon,
                     title = title,
@@ -507,6 +661,8 @@ internal fun LoggedInContent(
     data: ProfileData,
     onOpenTracks: (source: String, id: String, title: String) -> Unit,
     onOpenPanel: (ProfilePanel, Rect?, morphable: Boolean) -> Unit,
+    /** 已购内联列表的行点击（下标为在**完整已购**里的位置）。 */
+    onPlayPurchased: (Int) -> Unit,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
     /** 滚动视口的源可见性守卫（见 [SharedSourceGuard]）。 */
@@ -515,11 +671,12 @@ internal fun LoggedInContent(
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
     Column(Modifier.fillMaxWidth()) {
         val likedMeta = "${data.likedCount} 首"
-        val purchasedMeta = "${data.purchasedSongCount + data.purchasedAlbums.size} 项"
         val createdMeta = "${data.createdPlaylists.size} 个歌单"
         val subscribedMeta = "${data.subscribedPlaylists.size} 个歌单"
 
         // 面板定义与 shellKey 契约保持不变（ProfilePanels 路由零改动）。
+        // 注意 panels[1]（已购曲目列表）**不再是某张行卡的直接目标**：已购改成原地展开后，
+        // 它只作为「查看全部 N 首」的落点（内联列表有展示上限）。
         val panels = listOf(
             ProfilePanel.Tracks(
                 "liked", "", "喜欢的音乐",
@@ -531,7 +688,7 @@ internal fun LoggedInContent(
                 "purchased", "", "已购",
                 coverUrl = data.purchasedCoverUrl,
                 icon = Icons.Filled.ShoppingCart,
-                meta = purchasedMeta,
+                meta = "${data.purchasedSongCount} 首单曲",
             ),
             ProfilePanel.Playlists(
                 "创建的歌单",
@@ -551,15 +708,20 @@ internal fun LoggedInContent(
             ),
         )
 
+        // 已购专辑网格（「已购 → 专辑」的目的地）。这条链两端都不挂共享元素
+        // （起点是图标，见 PurchasedEntry / ProfilePanel.Albums），所以 morph 传 false。
+        val albumsPanel = ProfilePanel.Albums(
+            title = "已购专辑",
+            albums = data.purchasedAlbums,
+            coverUrl = data.purchasedAlbums.firstOrNull()?.coverUrl,
+            icon = Icons.Filled.ShoppingCart,
+            meta = "${data.purchasedAlbums.size} 张",
+        )
+
         StaggerIn(0) {
-            ProfileHero(
-                account = data.account,
-                likedCount = data.likedCount,
-                purchasedCount = data.purchasedSongCount + data.purchasedAlbums.size,
-                playlistCount = data.createdPlaylists.size + data.subscribedPlaylists.size,
-            )
+            ProfileHeaderRow(data.account)
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
 
         // 主入口：喜欢的音乐（全宽横幅，与面板 banner 同 key morph）。
         StaggerIn(1) {
@@ -575,28 +737,40 @@ internal fun LoggedInContent(
         }
         Spacer(Modifier.height(10.dp))
 
-        // 次入口：三张行卡，依次 stagger。
+        // 已购：原地展开（单曲 / 专辑），不打开面板 —— 所以这张卡不挂共享元素。
+        StaggerIn(2) {
+            PurchasedEntry(
+                songs = data.purchasedSongs,
+                albums = data.purchasedAlbums,
+                onLogin = null,
+                onPlaySong = onPlayPurchased,
+                onOpenAlbums = { onOpenPanel(albumsPanel, null, false) },
+                onOpenAllSongs = { onOpenPanel(panels[1], null, false) },
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+
+        // 尾部两张行卡：仍是「大卡 → 面板」，封面与面板 banner 同 key morph。
         val rows = listOf(
-            Triple(Icons.Filled.ShoppingCart, "已购", purchasedMeta),
             Triple(Icons.Filled.List, "创建的歌单", createdMeta),
             Triple(Icons.Filled.Star, "收藏的歌单", subscribedMeta),
         )
+        val rowCovers = listOf(
+            data.createdPlaylists.firstOrNull()?.coverUrl,
+            data.subscribedPlaylists.firstOrNull()?.coverUrl,
+        )
         rows.forEachIndexed { i, (icon, title, meta) ->
-            StaggerIn(i + 2) {
+            StaggerIn(i + 3) {
                 ProfileRowCard(
                     icon = icon,
                     title = title,
                     count = meta,
-                    coverUrl = when (i) {
-                        0 -> data.purchasedCoverUrl
-                        1 -> data.createdPlaylists.firstOrNull()?.coverUrl
-                        else -> data.subscribedPlaylists.firstOrNull()?.coverUrl
-                    },
+                    coverUrl = rowCovers[i],
                     shared = shared,
                     avScope = avScope,
                     guard = guard,
-                    sharedKey = panels[i + 1].shellKey,
-                    onClick = { rect, morphable -> onOpenPanel(panels[i + 1], rect, morphable) },
+                    sharedKey = panels[i + 2].shellKey,
+                    onClick = { rect, morphable -> onOpenPanel(panels[i + 2], rect, morphable) },
                 )
             }
             if (i < rows.lastIndex) Spacer(Modifier.height(10.dp))

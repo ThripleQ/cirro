@@ -22,12 +22,14 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -38,11 +40,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
+import com.thripleq.nume.core.repo.Album
 import com.thripleq.nume.core.repo.PlaylistSummary
 import com.thripleq.nume.ui.components.BannerCoverSize
 import com.thripleq.nume.ui.components.BigCoverVisual
@@ -118,6 +123,13 @@ internal fun ProfilePanelLegacy(
                 onOpenTracks = onOpenTracks,
                 bottomPadding = bottomPadding,
             )
+            is ProfilePanel.Albums -> AlbumGridPanel(
+                title = target.title(),
+                albums = target.albums,
+                onCoverReady = onCoverReady,
+                onOpenTracks = onOpenTracks,
+                bottomPadding = bottomPadding,
+            )
         }
     }
 }
@@ -125,6 +137,7 @@ internal fun ProfilePanelLegacy(
 private fun ProfilePanel.title(): String = when (this) {
     is ProfilePanel.Tracks -> title
     is ProfilePanel.Playlists -> title
+    is ProfilePanel.Albums -> title
 }
 
 /**
@@ -184,8 +197,99 @@ internal fun ProfileSharedPanelContent(
                 bottomPadding = bottomPadding,
                 coverSharedModifier = coverShared,
             )
+            // 专辑网格无 banner、不挂共享元素（起点是「已购」行卡的图标，见 ProfilePanel.Albums）。
+            is ProfilePanel.Albums -> AlbumGridPanel(
+                title = target.title(),
+                albums = target.albums,
+                onCoverReady = {},
+                onOpenTracks = onOpenTracks,
+                bottomPadding = bottomPadding,
+            )
         }
     }
+}
+
+/**
+ * 已购专辑网格（「已购 → 专辑」的目的地）：2 列正方形大卡，**卡面底部压名称条**
+ * —— 复用 [BigCoverVisual] 的既有语言（底部 scrim + 专辑名 + 歌手），
+ * 与探索页卡片一致；而不是 [PlaylistCell] 那种「图下一行字」。
+ *
+ * ## 为什么没有 banner
+ *
+ * 歌单/曲目面板的顶部 banner 是为了承载**共享元素的 morph 终点** + 交代「这是哪个集合」。
+ * 专辑网格两者都不需要：入口是「已购」行卡的图标（一个图标 morph 成整屏网格没有意义，
+ * 所以这条链不挂共享元素），而「这是什么」由第一行标题交代。于是 [onCoverReady] 直接放行
+ * —— 不调它，自研壳的 hero 会一直顶着（它等的是「内容封面已就绪」）。
+ */
+@Composable
+private fun AlbumGridPanel(
+    title: String,
+    albums: List<Album>,
+    onCoverReady: () -> Unit,
+    onOpenTracks: (source: String, id: String, name: String) -> Unit,
+    bottomPadding: Dp,
+) {
+    LaunchedEffect(Unit) { onCoverReady() }
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = bottomPadding),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }, key = "panelTitle") {
+            // 与面板标题条同写法（headlineSmall + 行高居中裁剪 + 粗体，高度跟文字走）。
+            // 右端让开右上角的关闭键：键是浮层、比标题高，长标题不许钻到它底下。
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    lineHeightStyle = LineHeightStyle(
+                        alignment = LineHeightStyle.Alignment.Center,
+                        trim = LineHeightStyle.Trim.Both,
+                    ),
+                ),
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(end = 56.dp, bottom = 10.dp),
+            )
+        }
+        if (albums.isEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        "暂无已购专辑",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else {
+            items(albums, key = { it.id }) { a ->
+                AlbumCard(album = a, onClick = { onOpenTracks("album", a.id, a.name) })
+            }
+        }
+    }
+}
+
+/** 一张已购专辑卡：正方形封面 + 卡面底部名称条（同探索页卡片语言）。 */
+@Composable
+private fun AlbumCard(album: Album, onClick: () -> Unit) {
+    BigCoverVisual(
+        coverUrl = album.coverUrl,
+        name = album.name,
+        meta = album.artist.takeIf { it.isNotBlank() },
+        // 用 LibraryMusic 而不是 Icons.Filled.Album：本文件同时 import 了数据类
+        // `core.repo.Album`，两者同名会撞 import（Kotlin 不允许同名 import）。
+        watermarkIcon = Icons.Filled.LibraryMusic,
+        requestSize = BannerCoverSize,
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clip(NumeShape.Card)
+            .clickable(onClick = onClick),
+    )
 }
 
 /** 歌单网格面板内容：首个 banner 封面 + 全屏懒加载网格，点格子进歌单曲目列表。

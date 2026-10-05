@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.thripleq.nume.core.repo.Album
 import com.thripleq.nume.core.repo.PlaylistSummary
 import com.thripleq.nume.ui.components.NumeErrorState
 import com.thripleq.nume.ui.components.NumePageTitleBar
@@ -46,9 +47,11 @@ import com.thripleq.nume.ui.profile.ProfileViewModel
 import com.thripleq.nume.ui.theme.Motion
 
 /**
- * 我的页：2×2 大卡（喜欢的音乐 / 已购 / 创建的歌单 / 收藏的歌单），风格同探索页大封面卡。
- * 每张卡点开都是「大卡 → 全屏面板」，封面 morph 到内容里的 banner 封面。
- * 喜欢的音乐 / 已购是曲目列表；创建 / 收藏是歌单网格面板，点网格内的歌单再进入该歌单的曲目列表。
+ * 我的页：账号抬头 + 「喜欢的音乐」全宽横幅 + 「已购」原地展开卡 + 创建/收藏两张行卡。
+ * 横幅与行卡点开都是「大卡 → 全屏面板」，封面 morph 到内容里的 banner 封面。
+ * 喜欢的音乐是曲目列表；创建 / 收藏是歌单网格面板，点网格内的歌单再进入该歌单的曲目列表。
+ * 「已购」不打开面板：原地展开出「单曲」（再展开一层、原地铺曲目）与
+ * 「专辑」（进全屏 2 列大卡网格，点某张进该专辑曲目列表）。
  *
  * 两条壳实现并存、由 [Motion.SharedShellEnabled] 切换：
  * - 官方共享元素：[ShellPanel] + shellSharedCover（与探索页/歌手头像同一套语义，只转封面）。
@@ -129,6 +132,7 @@ fun ProfileScreen(
                         onOpenPanel = onOpenPanel,
                         onWebLogin = onWebLogin,
                         onRetry = onRetry,
+                        onPlayPurchased = vm::playPurchased,
                         shared = shared,
                         avScope = scope,
                         bottomPadding = panelBottomPad,
@@ -160,6 +164,7 @@ fun ProfileScreen(
                 onOpenPanel = onOpenPanel,
                 onWebLogin = onWebLogin,
                 onRetry = onRetry,
+                onPlayPurchased = vm::playPurchased,
                 shared = null,
                 avScope = null,
                 bottomPadding = panelBottomPad,
@@ -189,6 +194,8 @@ private fun ProfileBodyUi(
     onOpenPanel: (ProfilePanel, Rect?, morphable: Boolean) -> Unit,
     onWebLogin: () -> Unit,
     onRetry: () -> Unit,
+    /** 已购内联列表的行点击（index 为在**完整已购**里的下标，见 ProfileViewModel.playPurchased）。 */
+    onPlayPurchased: (Int) -> Unit,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
     bottomPadding: Dp,
@@ -236,6 +243,7 @@ private fun ProfileBodyUi(
                     data = s.data,
                     onOpenTracks = onOpenTracks,
                     onOpenPanel = onOpenPanel,
+                    onPlayPurchased = onPlayPurchased,
                     shared = shared,
                     avScope = avScope,
                     guard = guard,
@@ -280,4 +288,19 @@ internal sealed interface ProfilePanel {
         override val meta: String?,
         override val shellKey: String,
     ) : ProfilePanel
+
+    /**
+     * 已购专辑的大卡网格（已购 → 专辑）。**没有 banner**：网格自己就是主体，
+     * 顶上只放一行面板标题（网格首行即专辑卡），所以也不参与共享元素 ——
+     * 起点是「已购」行卡的图标，把一个图标 morph 成整屏网格没有意义。
+     */
+    data class Albums(
+        val title: String,
+        val albums: List<Album>,
+        override val coverUrl: String?,
+        override val icon: ImageVector,
+        override val meta: String?,
+    ) : ProfilePanel {
+        override val shellKey: String get() = "shell:profile:albums"
+    }
 }
