@@ -54,8 +54,9 @@ internal const val SPLIT = 0.5f
  *  高度足够装下封面+滑块+控制整组内容（此前卡片只有半屏高，内容溢出被裁、比例失调）。
  *  全屏固定 2；卡片→全屏的形变（贴边/收角/变色/dock淡出）全部在 [HALF_ANCHOR_P, 2] 内插值，
  *  一行程直达全屏（行程不变）。「壳顶全程随手指线性升降」这一条**已不再成立**：拖动路径下
- *  这一段改由跟随器驱动（[PlayerDockState.runFollowLoop]），末端刻意不严格跟手 ——
- *  滞后、末端阻力、「内容后到」都是从这里来的，也就是「质量感」本身。 */
+ *  这一段改由跟随器驱动（[PlayerDockState.runFollowLoop]），刻意不严格跟手 ——
+ *  滞后与「内容后到」都是从这里来的，也就是「质量感」本身。上下边的行程差则由
+ *  `shellRect` 的会合同步曲线（[Motion.SyncJoinP]）处理，不在跟随层。 */
 internal const val HALF_ANCHOR_P = 1.66f
 
 /** 分裂段内部再分两拍：前一半「挤腰」（交界圆角涨大、两侧内收成腰），后一半「断开」（缝打开）。 */
@@ -163,17 +164,6 @@ class PlayerDockState internal constructor(
                 else visualContentP.coerceAtLeast(HALF_ANCHOR_P)
 
     /**
-     * **下边**的进度（0..2）：与 [progress] 同量纲、同源，只是末端阻尼更强 → 下边比上边走得更少。
-     *
-     * [PlayerPage] 的 `shellRect` 用它单独算底边；顶边、左右、圆角、颜色仍全部走 [progress] ——
-     * 于是**阻力只落在下边，顶边照常贴到屏顶**（用户 2026-10-05：「注意我说的只有下边哦」）。
-     *
-     * 点按路径与 [progress] 读同一个数据源（[entry]），不会在两条时间轴之间错拍。
-     */
-    val bottomProgress: Float
-        get() = if (tapExpand) entry.value * 2f else bottomFollow.coerceIn(0f, 2f)
-
-    /**
      * 点按展开的等效行程：0 = 收起在迷你条，1 = 盖满全屏。
      *
      * 与 [sheetState] **完全独立** —— 手势拖动不碰它，它只在 [openByTap] 期间驱动 [progress]。
@@ -192,27 +182,17 @@ class PlayerDockState internal constructor(
 
     // ── 拖动跟随器：卡片↔全屏这一段「不严格跟手」的来源 ──────────────────────────
     // 拖动路径下 [progress] 读的不是手指量（[rawProgress]），而是这里的跟随器输出：
-    //   壳 = 一阶低通追 raw（τ 上/下行不同 → 重力感；接近全屏时 τ 变大 → 末端阻力）
+    //   壳 = 一阶低通追 raw（τ 上/下行不同 → 重力感）
     //   内容 = 更慢的欠阻尼二阶追 raw（相位差 = 层次；ζ<1 → 余振 = 质量）
+    // 上下边不再分轨（2026-10-06 起删了末端阻尼）：壳只有一条跟随量，
+    // 两条边的行程差由 `shellRect` 的「会合同步」曲线处理（见 [Motion.SyncJoinP]）。
     // 三处「raw 会瞬变」的交接（点按落位 / 收起交接 / 锚点重注册）必须调 [syncFollow]，
     // 否则视觉量会从旧值一路追过去 —— 表现为「动画都结束了，壳又自己滑一段」。
     //
     // 只在 [open] 期间跑（[PlayerDock] 发起 [runFollowLoop]），收敛后挂起：停下来零成本。
 
-    /** 壳（上边/左右/圆角/底色/dock 淡出）的跟随量（0..2）。一阶，不会过冲 —— 壳位置要稳。 */
+    /** 壳（上下边/左右/圆角/底色/dock 淡出）的跟随量（0..2）。一阶，不会过冲 —— 壳位置要稳。 */
     private var shellFollow = 0f
-
-    /**
-     * **下边**的跟随量（0..2）：与 [shellFollow] 同帧、同一个公式，**只有末端阻尼倍数不同**
-     * （[Motion.DockEndBottom] vs [Motion.DockEndTop]）—— 两者之差就是「下边被多压住的那一截」。
-     * 对外暴露的是 [bottomProgress]。
-     *
-     * 为什么必须是**两个跟随器**，而不是「壳的位置再减去一个压缩量」：那样会**倒退**。手指到顶
-     * 那一刻压缩量刚好涨满，而壳还落后一点，两者一减，底边进度反而比上一帧小 —— 观感是
-     * 「下边被压住之后又往回缩一下」。两个跟随器各自积分时，滞后项是同一个（同 τ、同帧），
-     * 相减自动抵消，剩下的才是纯粹的阻尼量，单调不回头。
-     */
-    private var bottomFollow = 0f
 
     /** 内容的跟随量与速度（0..2 / 每秒）：二阶欠阻尼，允许越过 raw 一点再收回。 */
     private var contentFollow = 0f
@@ -233,19 +213,6 @@ class PlayerDockState internal constructor(
     var followSpeed by mutableFloatStateOf(0f)
         private set
 
-    /**
-     * 末端**窗口**的进度（0..1）= 惯量强度：`[Motion.DockEndFrom]` 之前恒为 0（严格 1:1 跟手），
-     * 之后渐增到 1（全屏）。
-     *
-     * 它就是 [step] 里那个 `endT`：既用来缩放时间常数（壳 `τ_eff = τ·endT`、内容 `ω_eff = ω/endT`），
-     * 也单独暴露给**速度耦合**那类「与位置无关」的表现用（[PlayerPage] 的阴影速度项）——
-     * 不乘它的话，中途甩动就会变沉，与「效果集中在末端」矛盾。
-     *
-     * **不参与输出插值** —— `vis = raw + (shell − raw) * w` 那种写法会让位置瞬移，理由见 `step`。
-     */
-    var dragFollowMix by mutableFloatStateOf(0f)
-        private set
-
     /** 手指量：锚点、甩动选档、吸附判定用的那条（跟随器不动它）。
      *
      *  上限就是全屏锚点：`AnchoredDraggableState.offset` 本身已被钳在锚点范围内，
@@ -261,16 +228,12 @@ class PlayerDockState internal constructor(
     fun syncFollow() {
         val raw = rawProgress()
         shellFollow = raw
-        bottomFollow = raw
         contentFollow = raw
         contentVel = 0f
         visualP = raw
         visualContentP = raw
         lastVisual = raw
         followSpeed = 0f
-        // 权重跟位置走：收敛挂起期间不会再算，留在旧值上会让阴影速度项的口径对不上
-        // （比如从「拖到 1.7 停住」收敛时，旧值还可能是上一次全屏的 1）。
-        dragFollowMix = smoothstep(Motion.DockEndFrom, 2f, raw)
     }
 
     /**
@@ -309,65 +272,35 @@ class PlayerDockState internal constructor(
             val nowNs = withFrameNanos { it }
             val dt = frameDt(nowNs, lastNs)
             lastNs = nowNs
-            step(raw, dt, rawStill = still)
+            step(raw, dt)
         }
         // 收起后复位：raw 已回到 0，视觉量不能留在旧值上（下次打开第一帧就是迷你条本身）。
         syncFollow()
     }
 
     /**
-     * 一帧的积分：两条边各自一阶跟随（末端阻尼 = τ 放大）、内容欠阻尼二阶。
-     *
-     * @param rawStill 本帧 [rawProgress] 与上一帧完全相同（手指没动、落位曲线也已跑完）。
-     *   用来关掉末端阻尼 —— 手指都停了，就该让边把最后一段走完（全屏档才盖得严）。
-     *   **这里可以放心读它**：阻尼改的是 τ、不是目标位置，来回翻转也不会让任何一条边瞬移。
+     * 一帧的积分：壳一阶跟随（τ 上/下行不对称 = 重力感）、内容欠阻尼二阶。
+     * 上下边共用 [shellFollow] —— 行程差交给 `shellRect` 的会合同步曲线，不在跟随层处理。
      */
-    private fun step(raw: Float, dt: Float, rawStill: Boolean) {
-        // 末端窗口：0 = 还没进入（τ→0 = 严格跟手），1 = 盖满全屏（τ 满额）。
-        // 它同时就是惯量权重 —— 外面那层「速度耦合阴影」读它。
-        val endT = smoothstep(Motion.DockEndFrom, 2f, raw)
-        dragFollowMix = endT
-
-        // 末端阻尼只在**手指还在推进**时施加；停住 / 落位期间放掉，让边把最后一段补完。
-        //
-        // 【这里可以读 rawStill，而先前那套「位移压缩」不能】：阻尼改的是 τ，不是目标位置，
-        // 切换它不会让任何一条边瞬移；压缩改的是目标，rawStill 在末端反复翻转会让目标在
-        // 0/1 之间跳、边来回摆上百像素。取舍完全相反，别把这边的宽松当成那边的教训。
-        val damp = if (rawStill || settling) 0f else endT
-
+    private fun step(raw: Float, dt: Float) {
         // 基础 τ：上行/下行不同（抬起来费劲、掉下去干脆 = 重力感的主要来源）；落位期间收到
         // 很小，让壳立刻贴住落位曲线 —— 那条曲线（SettleWithVelocity）本身就是**最终轨迹**，
         // 不该再被滤一遍，否则滞后一路累积成「本该结束、画面还在动」的蠕行。
-        val baseTau = when {
+        val tau = when {
             settling -> Motion.DragFollowReleaseMs
             raw >= shellFollow -> Motion.DragFollowRiseMs
             else -> Motion.DragFollowFallMs
         } / 1000f
 
-        // 两条边各自一阶跟随，同一个公式：
-        //     τ = base × endT × (1 + 增益 × endT)
-        //          └ 第一个 endT 因子：窗口外 τ→0（严格 1:1）、窗口内从 0 渐增 —— 这就是
-        //            「启动段不需要这个过程、末端陡然增强」那条要求。
-        //          └ 括号：越靠终点越稠，阻尼本体。
-        // 两条边唯一的差别是那个增益（几何上行程差近 5 倍，见 Motion.DockEndTop）。
-        val tauTop = (baseTau * endT * (1f + Motion.DockEndTop * damp)).coerceAtLeast(MIN_TAU_S)
-        val tauBottom = (baseTau * endT * (1f + Motion.DockEndBottom * damp)).coerceAtLeast(MIN_TAU_S)
-
-        shellFollow += (raw - shellFollow) * (1f - exp(-dt / tauTop))
-        // 滞后上限：甩得越快无界的滞后越离谱（也越会在窗口渐入处产生拖动中的倒退）——钳住之后
-        // 「重量」有个恒定上限，慢拖又不会被钳到（滞后 ≈ 速度 × τ 本身更小）。
+        shellFollow += (raw - shellFollow) * (1f - exp(-dt / tau))
+        // 滞后上限：甩得越快无界的滞后越离谱 —— 钳住之后「重量」有个恒定上限，
+        // 慢拖又不会被钳到（滞后 ≈ 速度 × τ 本身更小）。
         shellFollow = shellFollow.coerceIn(raw - Motion.DragFollowMaxLagP, raw + Motion.DragFollowMaxLagP)
         visualP = shellFollow
 
-        // 下边：同一个公式、同一帧，只有增益不同。两条都往 raw 收敛，所以谁也不会被谁拽住。
-        bottomFollow += (raw - bottomFollow) * (1f - exp(-dt / tauBottom))
-        bottomFollow = bottomFollow.coerceIn(raw - Motion.DragFollowMaxLagP, raw + Motion.DragFollowMaxLagP)
-
-        // 内容：欠阻尼二阶，同样只缩放 ω、不插值输出 —— 插值会让位置瞬移（实测向下甩时
-        // w 在 20ms 内从 0.97 掉到 0.09，凭空多推壳 97px，用户读成「颤动」）。
-        // ω 越大跟得越紧：窗口外 ω 被放大到与壳同步跟手，窗口内才出现相位差（= 纵深）。
-        // 半隐式欧拉要分子步：ω·h 过大时会发散；窗口外 ω 被放大，子步长要跟着变小。
-        val omega = 5f / (Motion.ContentFollowMs / 1000f) / endT.coerceAtLeast(MIN_OMEGA_SCALE)
+        // 内容：欠阻尼二阶，同样不插值输出 —— 插值会让位置瞬移（实测向下甩时
+        // 凭空多推壳 97px，用户读成「颤动」）。半隐式欧拉要分子步：ω·h 过大时会发散。
+        val omega = 5f / (Motion.ContentFollowMs / 1000f)
         var remain = dt
         while (remain > 0f) {
             val h = minOf(remain, MAX_SUBSTEP_S, SUBSTEP_OMEGA_LIMIT / omega)
@@ -582,23 +515,6 @@ private const val MAX_SUBSTEP_S = 0.016f
 /** 子步长的 ω 上限：半隐式欧拉要求 ω·h 小（取 0.35，稳定且相位误差可忽略）。 */
 private const val SUBSTEP_OMEGA_LIMIT = 0.35f
 
-/**
- * τ 的下限（s）：接入权重 w→0 时要让壳**本帧直接对齐** raw，此时 τ 必须是正的
- * （否则除零）。取 1e-5 时 `exp(-dt/τ)` 下溢为 0，等效于「一步到位」。
- */
-private const val MIN_TAU_S = 1e-5f
-
-/**
- * ω 的放大幅度上限（= w 的下限）：内容 ω 要除以 w，w→0 时 ω→∞ 会让子步长过小。
- * 限在 4 倍（ω≤111 rad/s）既够「与壳同步」，又保住子步数在个位数。
- */
-private const val MIN_OMEGA_SCALE = 0.25f
-
 /** raw 的上限：即全屏锚点（见 [rawProgress]）。 */
 private const val RAW_MAX = 2f
 
-/** 平滑阶跃：0 在 edge0 以下、1 在 edge1 以上，中间走 S 曲线（两端导数为 0，无突变）。 */
-private fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
-    val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
-    return t * t * (3f - 2f * t)
-}

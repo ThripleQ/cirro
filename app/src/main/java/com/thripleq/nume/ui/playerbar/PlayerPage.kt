@@ -153,12 +153,6 @@ internal fun PlayerPage(
     val tapContentIn = 0.25f
     val tapHeaderIn = 0.15f
 
-    fun lerpRect(a: Rect, b: Rect, t: Float) = Rect(
-        a.left + (b.left - a.left) * t,
-        a.top + (b.top - a.top) * t,
-        a.right + (b.right - a.right) * t,
-        a.bottom + (b.bottom - a.bottom) * t,
-    )
 
     // 三档壳矩形（屏幕坐标，px）——「先扩展、再分裂」细胞分裂观感：
     //   p∈[0,SPLIT] 扩展：气泡底钉 dock 顶、左右贴满屏，顶从 dock 顶充气升到卡片顶
@@ -171,7 +165,7 @@ internal fun PlayerPage(
     //
     //   **连续性保证**：分裂点（t0=SPLIT）上 dock 圆角=0、气泡底边=dockTop+edgePx，
     //   扩展段末与分裂段初逐值相等，无跳变（分裂不再割裂）。
-    fun shellRect(p: Float, bottomP: Float = p): Rect {
+    fun shellRect(p: Float): Rect {
         val dockTopPx = fullHeightPx - dockHeightPx
         val full = Rect(0f, 0f, fullWidthPx, fullHeightPx)
         val t0 = p.coerceIn(0f, 1f)
@@ -184,10 +178,6 @@ internal fun PlayerPage(
         // 点按路径不走这套：它没有「卡片档」这个概念，直接从 45% 行程起把壳推满（见 tapFillT）。
         val t1 = if (tapExpand) tapFillT(tapT)
                  else ((p - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
-        // 下边的插值比：只差在「末端阻尼」那一段（[bottomP] 由跟随器给，末端落后 p 一截）。
-        // 相等时走下面同一个分支 —— 点按路径与 `cardRect` 这类调用都不会多算一遍。
-        val t1Bottom = if (bottomP == p) t1
-                       else ((bottomP - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
         val extT = (t0 / SPLIT).coerceIn(0f, 1f)
         // 分裂形态量：点按期间整段归零 —— 不挤腰（腰是 `waistT` 从它派生的）、
         // 左右不收（`inset` 由它线性给出）、dock 顶角不回涨（下面的 dockCornerCur）。
@@ -232,30 +222,42 @@ internal fun PlayerPage(
             bottom + dockShiftPx,
         )
 
-        val r = lerpRect(bubbleOrCard, full, t1)
-        // 顶边 / 左右 / 圆角 / 颜色走 t1（手指量）；**底边单独走 [bottomP]**。
+        // ── 卡片 → 全屏：上下边「会合同步」（用户 2026-10-05 的方案）───────────────
         //
-        // 为什么要拆：末端阻尼作用在**进度**上时，落到两条边上的像素量差近 5 倍 ——
-        // 顶边 `dockTop*(1-p/2)*(1-t1)` 是两段同向相乘，p→2 时导数 →0（它已经钉在屏顶）；
-        // 底边则恒以 1572 px/档推进。要让「阻力只落在下边」，下边就得有一条自己的进度，
-        // 也就是 [PlayerDockState.bottomProgress]：与 p 同源、同一帧积分，只在末端窗口落后一截。
+        // 两条边的行程天生不等（底边要跨过整个 dock ≈ 1.75× 顶边行程），同一条时间轴走不等
+        // 行程 → 速度恒差 → 「上边效果密、下边效果稀」的几何病。旧结构用「底边单独的进度 +
+        // 末端阻力」压它，代价是底边「钉死→狂奔→急刹」三段断裂。
         //
-        // 【别改成「让底边提前到位」那个老办法】曾让底边提前 0.22 档插值，代价是底边在
-        // p≈1.88 就贴死屏底、而顶边离屏顶还有 ≈114px —— 壳被拉长成「底边不动、上边还在走」，
-        // 读作「滑行中突然收到很大阻力，但距离结束还有不小距离」（用户 2026-10-03）。
-        // 现在这条是**下边落后**（阻尼的物理含义），方向正好相反。
-        if (t1Bottom == t1) return r
+        // 现在两条边共用 t1，按**剩余距离**（离各自目的地的 px）重排：
+        //   前段 t1 ∈ [0, SyncJoinP]：剩余从「当前实际剩余」收敛到 [Motion.SyncRemainDp]；
+        //   同步段 t1 ∈ [SyncJoinP, 1]：两边剩余距离**逐帧相等**、同速归零 —— 严格并肩走完，
+        //   没有任何一边停住等另一边，也不存在谁先到/被钉住。
+        // 剩余读**当前 bubbleOrCard**（而不是固定快照）：点按路径的 t1 在 p≈0.9 就启动，
+        // 两条路径 t1=0 时的形位不同 —— 从当前形位出发才保证逐帧连续；前段因此保持旧
+        // lerpRect 的收缩结构（拖动路径顶=双收缩、底=单收缩，观感不变），换掉的只有末段。
+        //
+        // 左右边行程只有 edgePx（10dp），跟随 t1 线性收拢即可，不参与同步。
+        if (t1 <= 0f) return bubbleOrCard
+        val syncRemainPx = with(density) { Motion.SyncRemainDp.dp.toPx() }
+        val headT = (t1 / Motion.SyncJoinP).coerceIn(0f, 1f)
+        val tailT = ((t1 - Motion.SyncJoinP) / (1f - Motion.SyncJoinP)).coerceIn(0f, 1f)
+        val topRemainNow = bubbleOrCard.top                     // 顶的目的地 = 0（屏顶）
+        val bottomRemainNow = full.bottom - bubbleOrCard.bottom // 底的目的地 = 屏底
+        val topRemain = if (t1 < Motion.SyncJoinP) lerp(topRemainNow, syncRemainPx, headT)
+                        else syncRemainPx * (1f - tailT)
+        val bottomRemain = if (t1 < Motion.SyncJoinP) lerp(bottomRemainNow, syncRemainPx, headT)
+                           else syncRemainPx * (1f - tailT)
         return Rect(
-            r.left,
-            r.top,
-            r.right,
-            bubbleOrCard.bottom + (full.bottom - bubbleOrCard.bottom) * t1Bottom,
+            inset * (1f - t1),
+            topRemain,
+            fullWidthPx - inset * (1f - t1),
+            full.bottom - bottomRemain,
         )
     }
 
     val p = state.progress
-    // 壳矩形：顶边/左右按 p，底边按 bottomProgress（末端阻尼 > 0 时它比 p 少走一截）。
-    val rect = shellRect(p, state.bottomProgress)
+    // 壳矩形：卡片→全屏段由 shellRect 内的「会合同步」曲线驱动（上下边剩 d 会合后同速收尾）。
+    val rect = shellRect(p)
     val t0 = p.coerceIn(0f, 1f)
     // 点按行程比（0..1）：理由见 shellRect 内同名量 —— 不能用被钳位的 t0。
     val tapT = if (tapExpand) (p / 2f).coerceIn(0f, 1f) else 0f
@@ -289,10 +291,14 @@ internal fun PlayerPage(
         MaterialTheme.colorScheme.surfaceContainerHigh,
         breakT,
     )
+    // 会合段进度（同步段的两边同速收尾）：「再上效果」的挂点 —— 底色升满、速度阴影
+    // 都集中在这最后一段（前段两边匀速走位、无效果突变，密度均匀由几何保证）。
+    // 点按路径不受影响（它本来就全程渐变、密度均匀）。
+    val syncTailT = ((t1 - Motion.SyncJoinP) / (1f - Motion.SyncJoinP)).coerceIn(0f, 1f)
     val shellColor = lerp(
         elevatedColor,
         MaterialTheme.colorScheme.surfaceContainerHighest,
-        t1,
+        if (tapExpand) t1 else syncTailT,
     )
     // 内容淡入：拖动路径按「气泡长起来」的节奏渐显（壳长到卡片档才全亮，避免壳还矮、内容
     // 已全亮的挤压感）；点按路径快得多 —— 它全程只有 420ms，慢慢浮现会读成"糊"，前 25%
@@ -369,12 +375,12 @@ internal fun PlayerPage(
                     // 扩展/挤腰段不投影（与 dock 浑然一体），「断开」成卡才浮起。
                     // 再叠一项**速度耦合**：拖得越快壳越压得低（阴影越沉）——「甩起来的东西有风」，
                     // 慢下来自动收回去。读 [PlayerDockState.followSpeed] 在绘制阶段，不引重组。
-                    // 速度项还要乘接入权重 [PlayerDockState.dragFollowMix] —— 这一项与位置无关，
-                    // 不乘的话中途甩动就变沉，与「这些效果集中在展开末端」的意图相反。
+                    // 速度项乘**会合段进度**（与底色同一挂点）—— 中途甩动不变沉，效果集中在
+                    // 上下边同速收尾的那一段（「这时候再上效果」）。
                     shadowElevation = 4.dp.toPx() * breakT +
                         Motion.ShellShadowSpeedDp.dp.toPx() *
                         (state.followSpeed / Motion.ShellShadowSpeedRef).coerceIn(0f, 1f) *
-                        state.dragFollowMix
+                        syncTailT
                     shape = shellShape
                     clip = true
                 }
