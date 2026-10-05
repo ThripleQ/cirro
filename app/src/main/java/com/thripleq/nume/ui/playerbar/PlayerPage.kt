@@ -171,7 +171,7 @@ internal fun PlayerPage(
     //
     //   **连续性保证**：分裂点（t0=SPLIT）上 dock 圆角=0、气泡底边=dockTop+edgePx，
     //   扩展段末与分裂段初逐值相等，无跳变（分裂不再割裂）。
-    fun shellRect(p: Float): Rect {
+    fun shellRect(p: Float, bottomP: Float = p): Rect {
         val dockTopPx = fullHeightPx - dockHeightPx
         val full = Rect(0f, 0f, fullWidthPx, fullHeightPx)
         val t0 = p.coerceIn(0f, 1f)
@@ -184,6 +184,10 @@ internal fun PlayerPage(
         // 点按路径不走这套：它没有「卡片档」这个概念，直接从 45% 行程起把壳推满（见 tapFillT）。
         val t1 = if (tapExpand) tapFillT(tapT)
                  else ((p - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
+        // 下边的插值比：只差在「末端阻尼」那一段（[bottomP] 由跟随器给，末端落后 p 一截）。
+        // 相等时走下面同一个分支 —— 点按路径与 `cardRect` 这类调用都不会多算一遍。
+        val t1Bottom = if (bottomP == p) t1
+                       else ((bottomP - HALF_ANCHOR_P) / (2f - HALF_ANCHOR_P)).coerceIn(0f, 1f)
         val extT = (t0 / SPLIT).coerceIn(0f, 1f)
         // 分裂形态量：点按期间整段归零 —— 不挤腰（腰是 `waistT` 从它派生的）、
         // 左右不收（`inset` 由它线性给出）、dock 顶角不回涨（下面的 dockCornerCur）。
@@ -228,18 +232,30 @@ internal fun PlayerPage(
             bottom + dockShiftPx,
         )
 
-        // 顶边 / 左右 / 圆角 / 颜色 / **底边**全走同一条 t1：壳是一个刚体，两条边必须同时到位。
+        val r = lerpRect(bubbleOrCard, full, t1)
+        // 顶边 / 左右 / 圆角 / 颜色走 t1（手指量）；**底边单独走 [bottomP]**。
         //
-        // 曾让底边提前 0.22 档到位（治「下边软软的」），代价是：底边在 p≈1.88 就贴死屏底，
-        // 而顶边离屏顶还有 ≈114px、还得继续往上走 —— 壳被拉长成「底边不动、上边还在走」，
+        // 为什么要拆：末端阻尼作用在**进度**上时，落到两条边上的像素量差近 5 倍 ——
+        // 顶边 `dockTop*(1-p/2)*(1-t1)` 是两段同向相乘，p→2 时导数 →0（它已经钉在屏顶）；
+        // 底边则恒以 1572 px/档推进。要让「阻力只落在下边」，下边就得有一条自己的进度，
+        // 也就是 [PlayerDockState.bottomProgress]：与 p 同源、同一帧积分，只在末端窗口落后一截。
+        //
+        // 【别改成「让底边提前到位」那个老办法】曾让底边提前 0.22 档插值，代价是底边在
+        // p≈1.88 就贴死屏底、而顶边离屏顶还有 ≈114px —— 壳被拉长成「底边不动、上边还在走」，
         // 读作「滑行中突然收到很大阻力，但距离结束还有不小距离」（用户 2026-10-03）。
-        // 既然效果窗口已经推到 1.76→1.99（窗口结束时 t1≈0.97、底边走完 97%），
-        // 「底边拖着一截没走完」的旧问题已由窗口推后解决，不需要再让底边提前了。
-        return lerpRect(bubbleOrCard, full, t1)
+        // 现在这条是**下边落后**（阻尼的物理含义），方向正好相反。
+        if (t1Bottom == t1) return r
+        return Rect(
+            r.left,
+            r.top,
+            r.right,
+            bubbleOrCard.bottom + (full.bottom - bubbleOrCard.bottom) * t1Bottom,
+        )
     }
 
     val p = state.progress
-    val rect = shellRect(p)
+    // 壳矩形：顶边/左右按 p，底边按 bottomProgress（末端阻尼 > 0 时它比 p 少走一截）。
+    val rect = shellRect(p, state.bottomProgress)
     val t0 = p.coerceIn(0f, 1f)
     // 点按行程比（0..1）：理由见 shellRect 内同名量 —— 不能用被钳位的 t0。
     val tapT = if (tapExpand) (p / 2f).coerceIn(0f, 1f) else 0f
