@@ -122,10 +122,27 @@ class HomeRepository @Inject constructor(
      * **这个 "false" 曾经是假的**：C 层原先按「不等于 "0" 就算真」解析，于是它被判成
      * true，等于每次进探索页都在强制服务端重新出卡（2026-10-05 在 `ne_homepage_block_page`
      * 里改成「只有 "true"/"1" 算真」）。改 C 层时别把这里换成 "0" 来将就旧口径。
+     *
+     * cursor 传**空串 = 不传**，这是刻意的。本端点走主流 `/weapi/` 时只实现了
+     * 「无分页」形态：cursor 只要非空（"-1" 哨兵、0、字符串还是数字、甚至服务端
+     * 自己返回的那个真游标，全都一样）就固定返 HTTP 200 + 74 字节 {"code":50002}，
+     * 于是解析不出 data.blocks → **雷达栏整栏消失 + 猜你喜欢只剩登录提示**，表象
+     * 与 UI 层 bug 完全一样。2026-10-05 定测：不带 cursor（weapi）与带 cursor（api
+     * 老网关）在未登录态下**逐字节等价**（397574 字节、15 个 blocks、雷达 6 张、
+     * 猜你喜欢 4 组）。首页只要第一屏 blocks，所以不带 —— 这也正是上游
+     * api-enhanced 的默认形态（它的 cursor 默认 undefined，序列化时被丢掉）。
+     * 将来真要按 cursor 翻 block 流，得让 C 层改走 /api/ 老网关（ne_create_weapi_asis），
+     * 光把这里填上值只会拿到 50002。
      */
     suspend fun homePage(): HomePageBlocks = withContext(Dispatchers.IO) {
-        val r = gateway.call(NeteaseOp.HOME_BLOCK_PAGE, "false", "-1")
+        // 第三个参数是 cursor：留空 = 不传，原因见上。
+        val r = gateway.call(NeteaseOp.HOME_BLOCK_PAGE, "false", "")
         dbg { "blockPage err=${r.err} len=${r.body.size}" }
+        // 哨兵：正常响应 100KB+。短响应只剩「路径或参数又变了」一种可能，整段
+        // 打出来，省掉再猜一轮。
+        if (r.body.size in 1..600) {
+            Log.e("HomeApi", "blockPage SMALL body=${String(r.body, Charsets.UTF_8)}")
+        }
         if (r.err != 0 || r.body.isEmpty()) return@withContext HomePageBlocks()
         try {
             val blocks = JSONObject(String(r.body, Charsets.UTF_8))
