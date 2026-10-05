@@ -56,10 +56,34 @@ sealed interface HomeUiState {
          * - 相似艺人 → 种子歌手在 `/api/discovery/simiArtist` 里的第一个相似歌手头像
          *
          * 两者都是**卡片自己被点开后会给出的内容**，卡面因此与内容自洽。
-         * 仍未拿到时（未登录 / 上游失败）由 [FeaturedCard.coverUrl] 的调用处兜底。
+         *
+         * ## 卡面拿不到时**不借别人的图**（2026-10-05 晚，用户：「用 shimmer」）
+         *
+         * 原先这两笔各挂了**两级兜底**（先借猜你喜欢的歌曲封面 `guess[1]` / `guess[2]`，
+         * 最后退到推荐歌单第一张 `playlists[0].coverUrl`）。问题是首页**逐块回填**：
+         * [featured] 每发布一块就重算一次，而「推荐歌单」那块来得比 block 流早 ——
+         * 于是两张卡同时落到**同一个** `playlists[0].coverUrl` 上，首屏闪一下
+         * 「两张卡顶着同一张封面」（用户介意的那一瞬）；block 流到了之后又改成借
+         * 猜你喜欢第 2、3 首的封面，与下方单曲行撞图，直到这两笔真正回来才各就各位。
+         *
+         * 现在 null 就是 null，两级兜底**已删、别再挂回来**：卡面还没落定
+         * （[cardFacesSettled] = false）时由 UI 画微光占位（见 [FeaturedCard.coverPending]）。
+         *
+         * 落定后**仍为 null → 整张卡不出场**（用户 2026-10-05：「如果是不存在而不是没加载完，
+         * 就不显示」）。这两者是不同的：还在路上要闪微光（否则卡片凭空出现，位置会跳），
+         * 确实没有就是没有 —— 一张顶着空壳的「相似艺人」既没信息量，还得占着一格。
+         * 少掉的位置由 [featured] 末尾的补位卡自然填上。
          */
         val radioCover: String? = null,
         val artistCover: String? = null,
+        /**
+         * 上面两笔卡面是否**已落定**（请求都回来了，不管有没有值）。
+         *
+         * false = 还在路上 → 卡面画 shimmer 微光；true = 有值就画图、没值那张卡就不出场。
+         * **没有这一位就分不清「还没到」与「确实没有」**——前者该闪微光，后者不该
+         * 一直闪（未登录时 `simiArtist` 返 301，相似艺人卡的卡面恒为 null）。
+         */
+        val cardFacesSettled: Boolean = false,
         /**
          * 「猜你喜欢的「XX」好歌」整块 —— 标题与歌曲都来自首页 block 流里的
          * `HOMEPAGE_BLOCK_STYLE_RCMD`（见 [HomeRepository.homePage]）。
@@ -152,11 +176,16 @@ sealed interface HomeUiState {
             // 键唯一，视觉上还是会重复）。
             val used = radar.orEmpty().map { it.id }.toSet() + listOfNotNull(privateRadar?.id)
             // 「私人漫游 / 相似艺人」不是歌单，没有歌单封面可用 —— 卡面走 [Ready.radioCover]
-            // / [Ready.artistCover]（各自的**内容源**）。这里只留两级兜底：内容源还没到
-            // （异步后到）时先用猜你喜欢的歌曲封面顶着，最后才退到推荐歌单封面，
-            // 目的是让卡面在**任何时序下都不留白块**。
-            val guess = guessSongs
-            val fallbackCover = playlists?.firstOrNull()?.coverUrl
+            // / [Ready.artistCover]（各自的**内容源**）。
+            //
+            // 这里**故意不挂兜底**：卡面没到就让它空着，由 UI 画微光（`coverPending`）。
+            // 原先的「借猜你喜欢歌曲封面 / 退到 playlists[0]」在逐块回填下会让两张卡
+            // 同时落到同一张图上（首屏闪一下同图）、还会与下方单曲行撞图（见 [Ready.radioCover]）。
+            val pending = !cardFacesSettled
+            // 两张功能卡的出场条件：**卡面在路上**（出场闪微光）或**卡面已到手**。
+            // 落定后仍无图 = 这张卡的内容源确实拿不到（未登录 simiArtist 返 301 等）→ 不出场。
+            val radioShown = pending || radioCover != null
+            val artistShown = pending || artistCover != null
             buildList {
                 charts?.firstOrNull { it.name == "热歌榜" }?.let {
                     add(
@@ -174,13 +203,16 @@ sealed interface HomeUiState {
                         ),
                     )
                 }
-                add(
-                    FeaturedCard(
-                        "radio", radioCover ?: guess?.getOrNull(1)?.artworkUrl ?: fallbackCover,
-                        "私人漫游", "多种听歌模式随心播放", "radio", "",
-                        playKind = HomeViewModel.PLAY_RADIO,
-                    ),
-                )
+                if (radioShown) {
+                    add(
+                        FeaturedCard(
+                            "radio", radioCover,
+                            "私人漫游", "多种听歌模式随心播放", "radio", "",
+                            playKind = HomeViewModel.PLAY_RADIO,
+                            coverPending = pending,
+                        ),
+                    )
+                }
                 privateRadar?.let {
                     add(
                         FeaturedCard(
@@ -189,13 +221,16 @@ sealed interface HomeUiState {
                         ),
                     )
                 }
-                add(
-                    FeaturedCard(
-                        "artist", artistCover ?: guess?.getOrNull(2)?.artworkUrl ?: fallbackCover,
-                        "相似艺人", "从你喜欢的艺人听起", "artist", "",
-                        playKind = HomeViewModel.PLAY_ARTIST,
-                    ),
-                )
+                if (artistShown) {
+                    add(
+                        FeaturedCard(
+                            "artist", artistCover,
+                            "相似艺人", "从你喜欢的艺人听起", "artist", "",
+                            playKind = HomeViewModel.PLAY_ARTIST,
+                            coverPending = pending,
+                        ),
+                    )
+                }
                 stylePlaylists?.firstOrNull()?.let { p ->
                     val s = styles?.firstOrNull()?.name
                     add(
@@ -245,6 +280,13 @@ data class FeaturedCard(
     val id: String,
     /** null = 点开列表壳；[HomeViewModel.PLAY_RADIO] / [PLAY_ARTIST] = 拉一批直接播。 */
     val playKind: String? = null,
+    /**
+     * 卡面**还在路上**（[Ready.cardFacesSettled] = false）→ 卡面画微光占位而不是空封面。
+     *
+     * 只有「私人漫游 / 相似艺人」这两张（卡面各自去别的接口取）会为 true；其余卡的
+     * coverUrl 是跟数据一块到的，恒为 false。
+     */
+    val coverPending: Boolean = false,
 )
 
 @HiltViewModel
@@ -305,6 +347,10 @@ class HomeViewModel @Inject constructor(
             // 首页 block 流：**一次请求喂两块** —— 雷达歌单 + 猜你喜欢的标题与单曲。
             val homePage = async { homeRepo.homePage() }
             val styles = async { homeRepo.styleList() }
+            // 「私人漫游」卡的卡面：**不依赖任何别的数据**，所以和上面几块一起发，
+            // 不要等到 block 流回来才发（原来它挂在 homePage.await() 之后，白等一整个
+            // block 页的往返，那张卡的微光窗口也就跟着拉长——见 [Ready.cardFacesSettled]）。
+            val radioCover = async { homeRepo.radioSongs("1").firstOrNull()?.artworkUrl }
             // 场景音乐：先拿场景/情感标签，再为每个标签各取一张热门歌单当封面
             // （分类表里标签没有封面）。标签之间无依赖 → 并行。
             val scene = async {
@@ -342,10 +388,9 @@ class HomeViewModel @Inject constructor(
             )
             _uiState.value = ready
 
-            // 两张「点了直接播」功能卡的卡面，各取**自己的内容源**（见 [Ready.radioCover]）。
-            // 种子歌手 id 来自 homePage，所以只能等在这里发；两者互不依赖 → 并行。
-            // 它们不参与上面的逐块发布，晚到不影响任何区块的首屏。
-            val radioCover = async { homeRepo.radioSongs("1").firstOrNull()?.artworkUrl }
+            // 「相似艺人」的卡面：要种子歌手 id，而它来自 homePage，所以只能等在这里发
+            // （「私人漫游」那笔在开头就已发出，见 radioCover）。
+            // 它不参与上面的逐块发布，晚到不影响任何区块的首屏。
             val artistCover = async {
                 hp.seedArtistId?.let { homeRepo.simiArtist(it).firstOrNull()?.picUrl }
             }
@@ -367,11 +412,13 @@ class HomeViewModel @Inject constructor(
             _uiState.value = ready
             ready = ready.copy(scene = scene.await())
 
-            // 卡面最后合入（不挡住上面任何一块的展示）。拿不到就为 null，
-            // 由 [featured] 的两级兜底接住，卡面不会留白。
+            // 卡面最后合入（不挡住上面任何一块的展示）。拿不到就为 null —— **不再借别人的图**
+            // 兜底，由 UI 画中性空封面；这一笔同时把 cardFacesSettled 标上，微光到此为止
+            // （否则未登录时 simiArtist 返 301、相似艺人卡的封面会永远闪，见 [Ready.cardFacesSettled]）。
             ready = ready.copy(
                 radioCover = radioCover.await(),
                 artistCover = artistCover.await(),
+                cardFacesSettled = true,
             )
 
             val allEmpty = ready.playlists.isNullOrEmpty() &&

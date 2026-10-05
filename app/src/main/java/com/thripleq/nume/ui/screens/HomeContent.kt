@@ -57,13 +57,13 @@ import com.thripleq.nume.ui.components.NumeMediaRow
 import com.thripleq.nume.ui.components.NumePageTitleBar
 import com.thripleq.nume.ui.components.NumeSectionHeader
 import com.thripleq.nume.ui.components.SharedSourceGuard
-import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
 import com.thripleq.nume.ui.components.numeEntrySurface
 import com.thripleq.nume.ui.components.rememberSharedSourceGuard
 import com.thripleq.nume.ui.components.shellSharedCover
 import com.thripleq.nume.ui.home.HomeUiState
 import com.thripleq.nume.ui.home.HomeViewModel
 import com.thripleq.nume.ui.theme.NumeShape
+import com.valentinilk.shimmer.shimmer
 
 /**
  * 探索页横滑列表的滚动状态（精选推荐 / 猜你喜欢 / 雷达歌单 / 场景音乐）。
@@ -151,6 +151,7 @@ internal fun HomeContent(
                             source = it.source,
                             id = it.id,
                             playKind = it.playKind,
+                            coverPending = it.coverPending,
                         )
                     }
                 }
@@ -308,6 +309,16 @@ internal data class KanadeCardModel(
     val id: String,
     /** 非空 = 点了直接播一批歌（漫游 / 艺人），不走列表壳。 */
     val playKind: String? = null,
+    /**
+     * 卡面**还在路上**（只有「私人漫游 / 相似艺人」会为 true，见
+     * [com.thripleq.nume.ui.home.HomeViewModel.FeaturedCard.coverPending]）：
+     * 画微光占位，而不是退到空封面 —— 空封面看着像「这张卡没有图」，微光才读得出「在加载」。
+     *
+     * 与之配对的是**出场条件**：卡面落定后仍为 null 的卡根本不会进这个列表
+     * （见 `HomeViewModel.Ready.radioCover`），所以 `coverPending == false` 且
+     * `coverUrl == null` 对这两张卡不会发生。
+     */
+    val coverPending: Boolean = false,
 )
 
 /**
@@ -440,7 +451,24 @@ private fun KanadeCard(
                     },
                 ),
         ) {
-            BigCoverVisual(card.coverUrl, card.title, Modifier.fillMaxSize())
+            // 卡面还在路上 → 微光占位（**不借别人的封面**）。
+            //
+            // 2026-10-05 用户：「我刚开 app 能看到一瞬间某几个卡片的封面是一样」—— 根因就是
+            // 首页逐块回填时，私人漫游 / 相似艺人两张卡各自的两级兜底会同时落到
+            // `playlists[0].coverUrl` 上（详见 HomeViewModel.Ready.radioCover 注释）。
+            // 那两级兜底已删；这里没图就闪微光。**「确实没有」的卡不会走到这里**——
+            // 卡面落定后仍无图时那两张卡整张不出场（用户：「如果是不存在而不是没加载完，
+            // 就不显示」），所以这里的分支只剩「在路上」与「有图」两种。徽标照画。
+            if (card.coverPending) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .shimmer()
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                )
+            } else {
+                BigCoverVisual(card.coverUrl, card.title, Modifier.fillMaxSize())
+            }
             card.badge?.let { badge ->
                 Text(
                     text = badge,
