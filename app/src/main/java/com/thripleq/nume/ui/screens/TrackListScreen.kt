@@ -657,13 +657,12 @@ fun TrackListScreen(
                                     ) {
                                         TrackListRow(
                                             track = track,
-                                            // 「已购」整档是"已经拥有"，标付费没有意义（会让整个
-                                            // 列表挂满 PAY），故只在这一档不传标记。其余档一律按 fee。
-                                            payTag = if (src == TrackListSource.PURCHASED) {
-                                                null
-                                            } else {
-                                                payTagOf(track.fee)
-                                            },
+                                            // 徽标判据只有 `fee`（**内容属性**），与"是否已购"无关，
+                                            // 所有档一视同仁。早先这里对「已购」档做过抑制，理由是
+                                            // "会挂满 PAY" —— 2026-10-06 实测证伪：那 9 首已购单曲
+                                            // **全是 fee=1**（该标 VIP），且 kanade 对已购的
+                                            // Kids Return 照标 VIP ⇒ 抑制反而与 kanade 不一致。
+                                            payTag = payTagOf(track.fee),
                                             onClick = { vm.onTrackClick(target, index) },
                                         )
                                     }

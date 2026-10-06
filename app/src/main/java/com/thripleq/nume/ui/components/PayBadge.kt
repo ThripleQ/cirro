@@ -38,9 +38,14 @@ enum class PayTag(val label: String) {
  *   会让半张榜单都挂上标，与截图里"只有个别行有标"的观感不符；
  * - 老端点缺字段 → `0`。
  *
- * ⚠️ **没有考虑 `privileges[i].payed`（已购买）**：那需要按下标去对齐另一个数组，
- * 而对齐关系没有保证；且这条信息只在"已购"语境下才改变观感，已在列表层单独处理
- * （`TrackListScreen` 对 `TrackListSource.PURCHASED` 不传标记）。
+ * ⚠️ **不区分"是否已购买"**：`fee` 是内容属性，所以你买过的歌在别的列表里照样标。
+ * 这不是缺陷 —— 2026-10-06 实测两条证据都指向 kanade 也一样：
+ * ① 它截图里那首 **Kids Return 就在用户的已购单曲列表里，却仍标 VIP**；
+ * ② 它的 dex 里**完全没有** `paid / payed / purchase / bought` 任何标识符 ⇒
+ * 它根本不存在"已购"状态可供判断。故 nume 也不为"已购"做任何特殊化。
+ *
+ * 也刻意**没有**用 `privileges[i].payed`（=3 才是已购）：要按下标去对齐另一个数组，
+ * 而对齐关系没有保证（`song/like/get` 那种只回 id 的来源更是无从对齐）。
  */
 fun payTagOf(fee: Int): PayTag? = when (fee) {
     4 -> PayTag.PAY
