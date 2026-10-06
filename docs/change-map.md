@@ -22,7 +22,8 @@
 | 改歌曲行的**付费 / VIP 徽标**（三态样式、判据、位置） | `ui/components/PayBadge.kt`（`PayTag` / `payTagsOf` / `NumePayBadge`）；挂载点：`NumeMediaRow` / `TrackListRow` 的 `payTags` 参数，调用处一律 `rememberPayTags(track)` |
 | 改徽标的**颜色**（红=需购买 / 蓝=已购） | `ui/theme/Color.kt` 的 `NumePay`（明暗各一档，按 `surface` 亮度选） |
 | 改**「我买了什么」的判据** | `core/repo/LibraryStateStore.kt` 的 `isOwned`（已购单曲 ∪ 已购数字专辑）；两份清单在 `ensureOwnedLoaded` 里拉全 |
-| 让徽标出现在**新的列表**里 | 该列表的行组件加 `payTags = rememberPayTags(track)`；不需要额外请求（镜像在 `NumeApp` 根上已经提供） |
+| 让徽标出现在**新的列表**里 | 该列表的行组件加 `payTags = rememberPayTags(track)`；不需要额外请求（镜像在 `NumeApp` 根上已经提供）。**前提是那些 `Track` 的 `fee` 有值** —— 只要来源是 song 对象（走 `parseTracks`）就自动有；来源不是 song 对象的要自己补，见下一行 |
+| 改**「已购单曲」屏的档位**来源 | `core/repo/ProfileRepository.kt` 的 `purchasedSongs` —— 那个端点回的是**购买记录**（`songId`/`vip`/`sq`… 28 个键，**没有 `fee`**），所以拉完后按 songId 另发一次 `v3/song/detail` 补 `fee`/`durationMs`。**别改用购买记录里的 `vip` 字段**：样本全是 VIP 歌、无法证伪，且 song 对象里没有这个键可对照 |
 | 徽标用的圆角 | `ui/theme/Shape.kt` 的 `NumeShape.Badge`（2dp，实测 kanade 截图 4px@d3 ≈ 1.3dp） | |
 | 改底部导航胶囊：加删 tab、换图标、改顺序 | `NumeApp.kt` | 导航目的地也集中在这一个文件 |
 | 改点某处跳到哪个页面 | `NumeApp.kt` | 跳转逻辑只在这里 |

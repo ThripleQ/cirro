@@ -66,7 +66,7 @@ Nume 是桌面端播放器 [Netune](https://github.com/ThripleQ/Netune) 的安�
 | 集合刷新 | Room 先出 + 指纹检查 | 既不用 TTL、也不无条件重拉：`n=0` 检查很便宜（7~15%）且**完整回 trackIds**，指纹（trackIds 的 md5）未变就直接复用 Room 的曲目表。判定要点与踩过的坑见 `CollectionRefresher.kt`。 |
 | 页面刷新 | 重新可见 + 冷却门 | `RefreshGate`（30s）：冷却内零请求，冷却外静默重取。**刻意不用 TTL** —— TTL 对「在别处改了数据」是概率性的（得恰好过期才看得到），而「重新可见」是确定的事件。别再把刷新挂回 `init`。 |
 | 专辑收藏态 | 出口处查镜像 | 专辑详情**没有** `subscribed` 字段（album 对象 29 个键里没有），所以壳的出口处按 `LibraryStateStore` 那份「我收藏的专辑」覆写；镜像没载入时**保持原值**，绝不把「没拉到」当「没收藏」。歌单不走这条（详情自带该字段）。 |
-| 曲目付费徽标 | 内容档位 × 账号镜像 | 画不画由 `fee`（内容属性）定，红还是蓝由「买了没」定。后者**不能靠 `privileges[].payed`** —— 那个数组在 `/weapi/v1/album/{id}` 里整个不存在，而专辑详情恰恰最需要它。于是同收藏态一路：`LibraryStateStore` 拉一份「已购单曲 ∪ 已购数字专辑」的 id 全集，之后本地查表、零额外请求。判据与颜色见 `ui/components/PayBadge.kt`。 |
+| 曲目付费徽标 | 内容档位 × 账号镜像 | 画不画由 `fee`（内容属性）定，红还是蓝由「买了没」定。后者**不能靠 `privileges[].payed`** —— 那个数组在 `/weapi/v1/album/{id}` 里整个不存在，而专辑详情恰恰最需要它。于是同收藏态一路：`LibraryStateStore` 拉一份「已购单曲 ∪ 已购数字专辑」的 id 全集，之后本地查表、零额外请求。判据与颜色见 `ui/components/PayBadge.kt`。**「已购单曲」屏是唯一例外**：那个端点回的是购买记录、不是 song 对象（没有 `fee`），所以 `ProfileRepository.purchasedSongs` 拉完后按 songId 另发一次 `v3/song/detail` 补档位 |
 
 ## 四、原生桥（libnetease，当前已落地）
 
