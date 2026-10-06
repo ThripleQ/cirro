@@ -113,6 +113,9 @@ import com.thripleq.nume.ui.components.NumeCloseButton
 import com.thripleq.nume.ui.components.NumeContainer
 import com.thripleq.nume.ui.components.NumeEmptyState
 import com.thripleq.nume.ui.components.NumeErrorState
+import com.thripleq.nume.ui.components.NumePayBadge
+import com.thripleq.nume.ui.components.PayTag
+import com.thripleq.nume.ui.components.payTagOf
 import com.thripleq.nume.ui.components.NumeArtwork
 import com.thripleq.nume.ui.components.NumeArt
 import com.thripleq.nume.ui.components.NumeTitleBarHeight
@@ -652,7 +655,17 @@ fun TrackListScreen(
                                             // 一路变色。（壳的 `surface` 底在糊底**之下**，盖不住它。）
                                             .background(MaterialTheme.colorScheme.surface),
                                     ) {
-                                        TrackListRow(track, onClick = { vm.onTrackClick(target, index) })
+                                        TrackListRow(
+                                            track = track,
+                                            // 「已购」整档是"已经拥有"，标付费没有意义（会让整个
+                                            // 列表挂满 PAY），故只在这一档不传标记。其余档一律按 fee。
+                                            payTag = if (src == TrackListSource.PURCHASED) {
+                                                null
+                                            } else {
+                                                payTagOf(track.fee)
+                                            },
+                                            onClick = { vm.onTrackClick(target, index) },
+                                        )
                                     }
                                 }
                                 item(key = "sheetTail") {
@@ -1577,9 +1590,17 @@ private fun PanelIcon(
  * 行仍是 nume 的**条目卡**（[numeEntrySurface]：8dp 外缩 + 圆角 + `surfaceContainer`），
  * 浮在面板底上；卡内再内缩到 [TrackListMetrics.RowInset]。与官方一致的是**封面到屏边**的
  * 距离（8 + 8 = 16dp），卡边是 nume 自己的条目语言。行高由 44dp 封面 + 上下 8dp 内缩撑起。
+ *
+ * [payTag] 非空时在「歌手 - 专辑」前面贴一枚付费/VIP 徽标（kanade 的歌曲信息设计，
+ * 位置与尺寸见 [NumePayBadge]）。
  */
 @Composable
-private fun TrackListRow(track: Track, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun TrackListRow(
+    track: Track,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    payTag: PayTag? = null,
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -1615,13 +1636,21 @@ private fun TrackListRow(track: Track, onClick: () -> Unit, modifier: Modifier =
             ).joinToString(" - ")
             if (sub.isNotEmpty()) {
                 Spacer(Modifier.height(2.dp))
-                Text(
-                    text = sub,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // 与 [NumeMediaRow] 同一形状：徽标在左、文字吃剩余宽度并在末尾省略号。
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (payTag != null) {
+                        NumePayBadge(payTag)
+                        Spacer(Modifier.width(2.dp))
+                    }
+                    Text(
+                        text = sub,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
             }
         }
         // ⋮ 用 44dp 触控盒而不是 [IconButton]：M3 的 IconButton 有 48dp 最小高度，

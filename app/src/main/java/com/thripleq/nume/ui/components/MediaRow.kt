@@ -28,7 +28,9 @@ import com.thripleq.nume.ui.theme.NumeShape
  * `SmallTrackRow`/榜单行），统一到单一规范：
  * - 封面 [NumeArt.Row]（52dp）+ [NumeShape.Chip]，解码 [NumeArt.RequestRow]；
  * - 标题 `bodyLarge`/`onSurface`，副标题 `bodySmall`/`onSurfaceVariant`；
- * - 行容器 `numeEntrySurface()` + 内缩 8/8。
+ * - 行容器 `numeEntrySurface()` + 内缩 8/8；
+ * - [payTag] 非空时在**副标题前面**贴一枚付费/VIP 徽标（[NumePayBadge]），与副标题同一行、
+ *   垂直居中对齐 —— kanade 的歌曲信息设计，位置与间距见 `PayBadge.kt` 的注释。
  */
 @Composable
 fun NumeMediaRow(
@@ -42,6 +44,7 @@ fun NumeMediaRow(
     coverRequestSize: Int = NumeArt.RequestRow,
     coverModifier: Modifier = Modifier,
     titleMaxLines: Int = 1,
+    payTag: PayTag? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     Row(
@@ -71,13 +74,23 @@ fun NumeMediaRow(
             )
             if (!subtitle.isNullOrBlank()) {
                 Spacer(Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // 副标题这一行恒用 Row 包（无徽标时只有一个带权重的子项，观感与裸 Text 一致）：
+                // 徽标在左、文字吃剩余宽度并在末尾省略号，是唯一能让「徽标不被挤走」的形状。
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (payTag != null) {
+                        NumePayBadge(payTag)
+                        Spacer(Modifier.width(2.dp))
+                    }
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        // fill = false：文字短时行宽跟着内容收，徽标仍紧贴文字左侧。
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
             }
         }
         if (trailing != null) trailing()

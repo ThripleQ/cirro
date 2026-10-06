@@ -68,6 +68,7 @@ import com.thripleq.nume.ui.components.SharedKeys
 import com.thripleq.nume.ui.components.SkeletonBox
 import com.thripleq.nume.ui.components.SkeletonLine
 import com.thripleq.nume.ui.components.numeEntrySurface
+import com.thripleq.nume.ui.components.payTagOf
 import com.thripleq.nume.ui.theme.NumeShape
 import com.valentinilk.shimmer.shimmer
 import java.text.SimpleDateFormat
@@ -174,6 +175,7 @@ fun ArtistScreen(
                                 title = track.name,
                                 subtitle = track.albumName.ifBlank { null },
                                 coverUrl = track.artworkUrl,
+                                payTag = payTagOf(track.fee),
                                 onClick = { vm.onPlayTrack(index) },
                             )
                         }
