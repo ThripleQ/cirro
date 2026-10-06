@@ -139,6 +139,12 @@ class ProfileRepository @Inject constructor(
         const val ACCOUNT_REFRESH_MS = 5_000L
         // 已购曲目/专辑分页大小：单页 100，随 offset 一直拉直到某页不满为止。
         const val PAGE_SIZE = 100
+        /**
+         * [songDetails] 单批 id 数。上限来自 C 层的 `char ids[8192]`（约 680 条，见该函数注释），
+         * 这里取 200 留足余量 —— 而且这一屏的 id 是拼接后一次性发出去的，越小越不容易踩到
+         * 服务端对请求体长度的限制。
+         */
+        const val SONG_DETAIL_BATCH = 200
     }
 
     /** 已解析"喜欢"曲目缓存（uid → tracks）：Profile 页计数与列表页共用，避免重复全量拉取。 */
@@ -215,7 +221,23 @@ class ProfileRepository @Inject constructor(
         songDetails(ids).also { likedCache[uid.toString()] = it }
     }
 
-    /** Purchased single tracks (/api/single/mybought/song/list). 分页拉全，避免上限 100。结果内存缓存。 */
+    /**
+     * 已购单曲。分页拉全，避免上限 100。结果内存缓存。
+     *
+     * ## 为什么要多打一次 `v3/song/detail`
+     *
+     * 这个端点回的是**购买记录**、不是 song 对象（字段表见 [fetchPurchasedSongPage]），
+     * 里面**没有 `fee`** —— 而徽标的判据只有 `fee`。它确实有个 `vip` 字段（实测用户这
+     * 9 首全是 `true`），但：① 已购样本**全部**是 VIP 歌（fee=1），`vip=false` 的情形
+     * 一个样本都没有，**无法证伪**；② `v3/song/detail` 的 song 对象里**根本没有** `vip`
+     * 这个键，所以拿不到大样本去对照；③ 上游 module 只是转发、没定义这个字段。
+     * 猜错的代价是把免费歌标成 VIP，而用户对徽标的要求就是「准确」，于是不猜 ——
+     * 按 songId 另发一次 [songDetails] 取权威档位（9 首一个请求，成本可忽略）。
+     *
+     * **只补 `fee` / `durationMs`，不替换整条**：detail 查不到的歌（已下架）必须留在
+     * 列表里、只退化成不画徽标；而 `artistName` 这类字段购买记录给得更全（它是拼接的
+     * 完整歌手串，song 对象的 `ar[]` 只取第一个）。
+     */
     suspend fun purchasedSongs(): List<Track> = withContext(Dispatchers.IO) {
         purchasedSongsCache?.let { return@withContext it }
         val all = mutableListOf<Track>()
@@ -227,13 +249,36 @@ class ProfileRepository @Inject constructor(
             if (page.size < PAGE_SIZE) break
             offset += PAGE_SIZE
         }
-        // 只有整轮分页都成功才落缓存（含"确实没有已购"的空结果）：请求失败若被固化，
-        // 会让用户看到"无已购"；而空结果不入缓存，已购为 0 的人每次进"我的"都要重拉。
-        if (completed) {
-            diag("purchasedSongs complete offset=$offset total=${all.size}")
-            purchasedSongsCache = all
+        var detailed = 0
+        val merged = if (completed && all.isNotEmpty()) {
+            val feeById = songDetails(all.map { it.id }).associateBy { it.id }
+            detailed = feeById.size
+            if (feeById.isEmpty()) {
+                // 一条都没补上 ⇒ 这次等于没拿到档位。**不固化**，否则下次进来徽标仍然缺，
+                // 而用户没有任何线索知道是「拉失败了」而不是「本来就该没有」。
+                completed = false
+                all
+            } else {
+                all.map { t ->
+                    feeById[t.id]?.let { d ->
+                        t.copy(
+                            fee = d.fee,
+                            // detail 老端点可能给 0（没时长），那时保留原值而不是抹掉。
+                            durationMs = d.durationMs.takeIf { it > 0L } ?: t.durationMs,
+                        )
+                    } ?: t
+                }
+            }
+        } else {
+            all
         }
-        all
+        // 只有整轮分页（含补档位）都成功才落缓存（含"确实没有已购"的空结果）：请求失败若被
+        // 固化，会让用户看到"无已购"；而空结果不入缓存，已购为 0 的人每次进"我的"都要重拉。
+        if (completed) {
+            diag("purchasedSongs complete offset=$offset total=${all.size} detailed=$detailed")
+            purchasedSongsCache = merged
+        }
+        merged
     }
 
     /** 单页已购单曲。返回 null 表示请求/解析失败（终止分页）；否则返回该页列表。 */
@@ -264,9 +309,9 @@ class ProfileRepository @Inject constructor(
                             durationMs = 0L,
                             albumName = o.optString("albumName"),
                             albumId = o.optLong("albumId", 0L).takeIf { it > 0L }?.toString() ?: "",
-                            // 这一项**没有** `fee`（它只是购买记录，不是 song 对象）⇒ 档位未知、
-                            // 解析成 0，这一屏不画徽标。**别拿这里的 `vip` 去猜档位**：样本里
-                            // 9/9 都是 vip=true 且 fee=1，无法证伪，猜错会把免费歌标成 VIP。
+                            // 档位**不在这里取**：这一项没有 `fee`（它是购买记录、不是 song 对象），
+                            // 留 0 占位，由 [purchasedSongs] 拉完全部后按 id 统一补。
+                            // 别改用同项的 `vip` 字段 —— 理由见 [purchasedSongs] 的注释。
                         ),
                     )
                 }
@@ -444,23 +489,46 @@ class ProfileRepository @Inject constructor(
         }
     }
 
+    /**
+     * `/weapi/v3/song/detail` 批量取曲目详情（说话人：「喜欢」列表与「已购单曲」补档位都走这里）。
+     *
+     * ## 为什么必须分批
+     *
+     * C 层的 `ne_song_detail` 把逗号串原样拼进 `char ids[8192]`（`snprintf`），每条约
+     * 12 字节（最长 11 位 id + 逗号）⇒ **约 680 条是硬上限**；超了会被静默截断。而同一请求里
+     * 那个 `c` 字段是 `sb` 动态拼的、不受限 —— 一旦截断，两个参数描述的就是不同的 id 集合，
+     * 服务端行为不可预期。`chunked` 后每批 200 条，留足余量。
+     *
+     * 保序性**已实测**（把 9 个 id 逆序传入 → 逆序返回，不是按 id 排序），所以按批
+     * `flatMap` 出来的顺序仍是传入顺序，分页/懒加载的调用方可以依赖它。
+     *
+     * ## 失败语义
+     *
+     * 任一批失败即返回**空表**，不返回「已拿到的那部分」：调用方（[likedTracks] /
+     * [purchasedSongs]）把空理解为「这次没拿到档位」，而部分结果会被当成完整结果
+     * 固化进缓存 —— 那会变成「红心/徽标少几首」且看不出是缺的。
+     */
     private suspend fun songDetails(ids: List<String>): List<Track> {
         if (ids.isEmpty()) return emptyList()
-        // /weapi/v3/song/detail accepts up to ~1000 ids in one call.
-        val r = gateway.call(NeteaseOp.SONG_DETAIL, ids.joinToString(","))
-        diag("songDetails op=${NeteaseOp.SONG_DETAIL} ids=${ids.size} code=${r.code} err=${r.err} body=${String(r.body, Charsets.UTF_8).take(300)}")
-        // create_weapi 路径：body 无顶层 code 时库 fallback code=200/err=0；
-        // 旧版严格路径的 code=0 已不复现。以 err+body 判定，code 仅作诊断。
-        if (r.err != 0 || r.body.isEmpty()) return emptyList()
-        return try {
-            val root = JSONObject(String(r.body, Charsets.UTF_8))
-            val tracks = parseTracks(root.optJSONArray("songs"))
-            diag("songDetails parsed=${tracks.size} hasSongs=${root.has("songs")}")
-            tracks
-        } catch (e: Exception) {
-            diag("songDetails parse failed: ${e.message}")
-            emptyList()
+        val out = mutableListOf<Track>()
+        for (batch in ids.chunked(SONG_DETAIL_BATCH)) {
+            val r = gateway.call(NeteaseOp.SONG_DETAIL, batch.joinToString(","))
+            // create_weapi 路径：body 无顶层 code 时库 fallback code=200/err=0；
+            // 旧版严格路径的 code=0 已不复现。以 err+body 判定，code 仅作诊断。
+            if (r.err != 0 || r.body.isEmpty()) {
+                diag("songDetails batch=${batch.size} err=${r.err} code=${r.code} -> abort")
+                return emptyList()
+            }
+            val parsed = try {
+                parseTracks(JSONObject(String(r.body, Charsets.UTF_8)).optJSONArray("songs"))
+            } catch (e: Exception) {
+                diag("songDetails parse failed: ${e.message}")
+                return emptyList()
+            }
+            out += parsed
         }
+        diag("songDetails ids=${ids.size} parsed=${out.size} batches=${(ids.size + SONG_DETAIL_BATCH - 1) / SONG_DETAIL_BATCH}")
+        return out
     }
 
     /** 调试诊断日志，仅在 debug 构建输出（vivo 等机型 Log.d 被屏蔽，故用 Log.e）。 */
