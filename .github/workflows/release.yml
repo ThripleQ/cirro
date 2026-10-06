@@ -64,7 +64,7 @@ jobs:
           {
             echo "tag=$TAG"
             echo "version=$VNAME"
-            echo "apk=nume-${TAG}.apk"
+            echo "apk=cirro-${TAG}.apk"
           } >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
 
