@@ -225,15 +225,19 @@ class LibraryStateStore @Inject constructor(
         ids
     }
 
-    /** 解析 `{"ids":[...],"code":200}`；失败/未登录返回 null（**不置位，下次重试**）。 */
+    /**
+     * 解析 `{"ids":[...],"code":200}`；失败/未登录返回 null（**不置位，下次重试**）。
+     *
+     * JSON 结构那部分在 `OwnedParsers.kt`（纯函数、可单测），这里只管传输层的
+     * err/body 判定与诊断日志。
+     */
     private fun parseIds(r: ApiResult, what: String): Set<String>? {
         if (r.err != 0 || r.code != 200 || r.body.isEmpty()) {
             diag("$what failed code=${r.code} err=${r.err}")
             return null
         }
         return try {
-            val arr = JSONObject(String(r.body, Charsets.UTF_8)).optJSONArray("ids") ?: return null
-            buildSet { for (i in 0 until arr.length()) add(arr.optLong(i, 0L).toString()) }
+            parseLikedIds(JSONObject(String(r.body, Charsets.UTF_8)))
         } catch (e: Exception) {
             diag("$what parse failed: ${e.message}")
             null
@@ -266,17 +270,7 @@ class LibraryStateStore @Inject constructor(
             return null
         }
         return try {
-            val root = JSONObject(String(r.body, Charsets.UTF_8))
-            if (root.optInt("code", 200) != 200) return null
-            val list = root.optJSONObject("data")?.optJSONArray("list")
-                ?: root.optJSONArray("data")
-                ?: return emptySet()
-            buildSet {
-                for (i in 0 until list.length()) {
-                    val id = list.optJSONObject(i)?.optLong("songId", 0L) ?: 0L
-                    if (id > 0) add(id.toString())
-                }
-            }
+            parseOwnedSongIds(JSONObject(String(r.body, Charsets.UTF_8)))
         } catch (e: Exception) {
             diag("single/mybought parse failed: ${e.message}")
             null
@@ -304,19 +298,7 @@ class LibraryStateStore @Inject constructor(
             return null
         }
         return try {
-            val root = JSONObject(String(r.body, Charsets.UTF_8))
-            if (root.optInt("code", 200) != 200) return null
-            val list = root.optJSONArray("paidAlbums")
-                ?: root.optJSONObject("data")?.optJSONArray("list")
-                ?: root.optJSONArray("data")
-                ?: return emptySet()
-            buildSet {
-                for (i in 0 until list.length()) {
-                    val o = list.optJSONObject(i) ?: continue
-                    val id = o.optLong("albumId", o.optLong("id", 0L))
-                    if (id > 0) add(id.toString())
-                }
-            }
+            parseOwnedAlbumIds(JSONObject(String(r.body, Charsets.UTF_8)))
         } catch (e: Exception) {
             diag("digitalAlbum/purchased parse failed: ${e.message}")
             null
@@ -330,16 +312,7 @@ class LibraryStateStore @Inject constructor(
             return null
         }
         return try {
-            val root = JSONObject(String(r.body, Charsets.UTF_8))
-            // 未登录时这条回 301 且没有 data —— 当成"拉不到"，不置位。
-            if (root.has("code") && root.optInt("code", 200) != 200) return null
-            val arr = root.optJSONArray("data") ?: return null
-            buildSet {
-                for (i in 0 until arr.length()) {
-                    val id = arr.optJSONObject(i)?.optLong("id", 0L) ?: 0L
-                    if (id > 0) add(id.toString())
-                }
-            }
+            parseSubscribedAlbumIds(JSONObject(String(r.body, Charsets.UTF_8)))
         } catch (e: Exception) {
             diag("album/sublist parse failed: ${e.message}")
             null
