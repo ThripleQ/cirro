@@ -104,6 +104,33 @@ class LibraryStateStore @Inject constructor(
         _subscribedAlbumIds.update { if (subscribed) it + albumId else it - albumId }
     }
 
+    /**
+     * 「这个账号的已收藏专辑」——**只在确实载入过时才返回集合**，否则返回 null。
+     *
+     * 调用方（专辑详情的收藏态）必须拿到 null 就**保持原样**：把「没载入」当成「没收藏」，
+     * 会让每张专辑在载入完成前都画成空心，用户点一下才发现「已经在收藏列表里」。
+     * 同步读、不发网络（首屏渲染路径上用，见 `ProfileRepository.cachedAlbumCollection`）。
+     */
+    fun albumsLoadedFor(uid: Long): Set<String>? =
+        if (albumsLoadedUid == uid) _subscribedAlbumIds.value else null
+
+    /** 同上，红心版（切歌时画红心前的同步读）。 */
+    fun likedLoadedFor(uid: Long): Set<String>? =
+        if (loadedUid == uid) _likedIds.value else null
+
+    /**
+     * 「下次访问重新拉一遍」。收藏是会在**别处**变的（官方 App 收藏了歌 / 专辑），
+     * 而本类只按 uid 记账 —— 同一个账号一个进程内只拉一次，于是那边加了收藏这边永远看不到。
+     *
+     * 只清「已载入」这个记账，**不动已载入的集合本身**：清了集合，红心会在重新拉回来之前
+     * 整片熄灭（页面闪一下）。保留旧值、让下一次 [ensureLikedLoaded] /
+     * [ensureSubscribedAlbumsLoaded] 静默换成新的，观感才对。
+     */
+    fun markStale() {
+        loadedUid = null
+        albumsLoadedUid = null
+    }
+
     /** 登出时调用：把镜像清空，避免下个账号看到上个人的红心。 */
     fun invalidate() {
         loadedUid = null
@@ -118,11 +145,21 @@ class LibraryStateStore @Inject constructor(
     }
 
     private suspend fun fetchSubscribedAlbumIds(): Set<String>? = withContext(Dispatchers.IO) {
-        // limit 100：这是「本地查表」用的，不是收藏管理页。收藏专辑超过 100 张的
-        // 账号在这一档会漏判（服务端 limit 上限外的部分看不到）—— 真要支持，
-        // 得加分页累积；现阶段先按单页，注释留在这儿免得后人以为它拉全了。
-        val r = gateway.call(NeteaseOp.ALBUM_SUBLIST, "100", "0")
-        parseAlbumIds(r)
+        // 分页拉到底。**只拉一页是不够的**：这是「本地查表」用的镜像，漏掉的 id 会让
+        // 已经收藏的专辑画成空心（用户点一下才发现「已经在收藏列表里」）。
+        // 单页给 PAGE_SIZE（上游默认只有 25）；不满一页即到底。
+        val ids = mutableSetOf<String>()
+        var offset = 0
+        while (true) {
+            val r = gateway.call(NeteaseOp.ALBUM_SUBLIST, PAGE_SIZE.toString(), offset.toString())
+            val page = parseAlbumIds(r) ?: return@withContext null
+            val before = ids.size
+            ids += page
+            // 不满一页 = 到底；一条新 id 都没进来 = 服务端没按 offset 翻页（再拉还是同一页）。
+            if (page.size < PAGE_SIZE || ids.size == before) break
+            offset += PAGE_SIZE
+        }
+        ids
     }
 
     /** 解析 `{"ids":[...],"code":200}`；失败/未登录返回 null（**不置位，下次重试**）。 */
@@ -166,5 +203,10 @@ class LibraryStateStore @Inject constructor(
     /** 调试诊断（vivo 上 Log.d 被屏蔽，故用 Log.e）。 */
     private fun diag(msg: String) {
         if (BuildConfig.DEBUG) Log.e("NumeLibrary", msg)
+    }
+
+    private companion object {
+        /** `album/sublist` 的分页大小：镜像要的是「全量」，不是收藏管理页那种一屏。 */
+        const val PAGE_SIZE = 100
     }
 }

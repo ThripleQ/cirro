@@ -65,6 +65,7 @@ data class ProfileData(
 class ProfileRepository @Inject constructor(
     private val gateway: NetEaseGateway,
     private val refresher: CollectionRefresher,
+    private val library: LibraryStateStore,
 ) {
 
     /**
@@ -91,6 +92,23 @@ class ProfileRepository @Inject constructor(
         purchasedAlbumsCache = null
         refresher.clear()
     }
+
+    /**
+     * 已购（单曲 / 专辑）缓存作废，下次 [purchasedSongs] / [purchasedAlbums] 重拉。
+     *
+     * 这两份原来只在登录态变化时才清 —— 而「在官方 App 里刚买了一首歌」既不换账号、
+     * 也没有任何回调，于是永远看不到。「我的」页重新可见时调用（见 `ProfileViewModel.onEnterVisible`）。
+     */
+    fun invalidatePurchased() {
+        purchasedSongsCache = null
+        purchasedAlbumsCache = null
+    }
+
+    /**
+     * 已缓存的账号，**纯同步、绝不发网络**。首屏渲染路径（[cachedAlbumCollection]）上
+     * 用来取 uid，不值得为它挂一次 `/account` 往返 —— 拿不到就先不补收藏态。
+     */
+    fun cachedAccountOrNull(): Account? = cachedAccount?.first
 
     /**
      * 红心在别处被改过（[InteractionRepository.setSongLiked]）后调用。
@@ -355,9 +373,32 @@ class ProfileRepository @Inject constructor(
     suspend fun playlistCollection(playlistId: String, force: Boolean = false): TrackCollection? =
         refresher.playlist("pl:$playlistId", playlistId, force)
 
-    /** 已购专辑完整壳（/weapi/v1/album/{id}，无播放量等）。同 [playlistCollection]，但不做变更检查。 */
-    suspend fun albumCollection(albumId: String, force: Boolean = false): TrackCollection? =
-        refresher.album("al:$albumId", albumId, force)
+    /**
+     * 已购专辑完整壳（/weapi/v1/album/{id}，无播放量等）。同 [playlistCollection]，但不做变更检查。
+     *
+     * **收藏态在出口处补上**：专辑详情**没有** `subscribed` 字段（实测 album 对象 29 个键里没有），
+     * 拿到的壳里它恒为 false —— 于是「已经收藏过的专辑」按钮画成空心，点一下才拿到服务端的
+     * 「该专辑已经在用户收藏列表中」。收藏态只能查 [LibraryStateStore] 那份「我收藏的专辑」镜像
+     * （歌单不同：`v6/playlist/detail` 自带这个字段，跟着 [TrackCollection.subscribed] 走）。
+     *
+     * 放在出口处而不是写进缓存：Room 里那一行的该列是解析结果的死值（恒 false），
+     * 每次读都得就着镜像现覆写 —— 缓存本身**不参与**收藏态的判断。
+     */
+    suspend fun albumCollection(albumId: String, force: Boolean = false): TrackCollection? {
+        val base = refresher.album("al:$albumId", albumId, force) ?: return null
+        val subscribed = albumSubscribed(albumId) ?: return base
+        return base.copy(subscribed = subscribed)
+    }
+
+    /**
+     * 这张专辑是否已被当前账号收藏。镜像拉不到就返回 null —— 调用方**保持原值**，
+     * 绝不把「没拉到」当成「没收藏」（那会让每张专辑先画空心）。
+     */
+    private suspend fun albumSubscribed(albumId: String): Boolean? {
+        val uid = account()?.uid ?: return null
+        library.ensureSubscribedAlbumsLoaded(uid)
+        return library.albumsLoadedFor(uid)?.contains(albumId)
+    }
 
     /**
      * 只读 Room 副本（不发网络）—— 进列表页时**第一段**先用它渲染，避免骨架屏，
@@ -366,9 +407,17 @@ class ProfileRepository @Inject constructor(
     suspend fun cachedPlaylistCollection(playlistId: String): TrackCollection? =
         refresher.cached("pl:$playlistId")
 
-    /** 同上，专辑版。 */
-    suspend fun cachedAlbumCollection(albumId: String): TrackCollection? =
-        refresher.cached("al:$albumId")
+    /**
+     * 同上，专辑版。收藏态这里也要补 —— 否则第一段先画空心、第二段才亮，按钮会闪一下。
+     * 镜像还没载入（或还不知道 uid）就先不补，等第二段（[albumCollection]）修正；
+     * 这条路径上**只读已缓存的账号**，不为了取 uid 去打网络（首屏要快）。
+     */
+    suspend fun cachedAlbumCollection(albumId: String): TrackCollection? {
+        val base = refresher.cached("al:$albumId") ?: return null
+        val uid = cachedAccountOrNull()?.uid ?: return base
+        val ids = library.albumsLoadedFor(uid) ?: return base
+        return base.copy(subscribed = albumId in ids)
+    }
 
     // ── helpers ────────────────────────────────────────────
 
