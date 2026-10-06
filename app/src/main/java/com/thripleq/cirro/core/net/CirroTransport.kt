@@ -91,7 +91,16 @@ object CirroTransport {
                     val status = resp.code
                     val bytes = resp.body.bytes()
                     val cookies = resp.headers.values("Set-Cookie").takeIf { it.isNotEmpty() }
-                    if (BuildConfig.DEBUG) Log.d("CirroTransport", "<- status=${status} bytes=${bytes.size}")
+                    if (BuildConfig.DEBUG) {
+                        // 只打名字不打值：Set-Cookie 里带的是登录凭据（MUSIC_U）。
+                        // 名字够用来判断服务端有没有轮转（MUSIC_U 续期 / __csrf 重发），
+                        // 而轮转是「cookies 是否落盘」那条路径唯一的触发条件。
+                        val names = cookies?.joinToString(",") { it.substringBefore('=') }
+                        Log.d(
+                            "CirroTransport",
+                            "<- status=$status bytes=${bytes.size} setCookie=[${names ?: ""}]",
+                        )
+                    }
                     CirroTransportOut(status, null, bytes, cookies?.toTypedArray())
                 }
             } catch (e: Exception) {
