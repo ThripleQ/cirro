@@ -41,6 +41,14 @@ Nume 是桌面端播放器 [Netune](https://github.com/ThripleQ/Netune) 的安�
   打过网络超过冷却（30s）才发一次 `n=0` 轻量检查（只回元数据 + 完整 trackIds，实测约全量的
   7~15%），**指纹未变就复用 Room 的曲目表**，变了才拉全量 —— 见
   `core/repo/CollectionRefresher.kt`。Room 因此是**常态读路径**，「离线可读」只是副产品。
+- **「什么时候去取新数据」统一由两扇冷却门管**，都不带 TTL：
+  1. 集合壳（歌单/榜单/专辑）：`CollectionRefresher` 的 30s 检查冷却（上一条）；
+  2. 页面（三个 tab + 详情页）：`core/util/RefreshGate` —— 页面 ViewModel 挂在导航回退栈上
+     **切走再切回不会重建**，刷新若只挂在 `init` 上就这辈子只跑一次（「有数据的地方拿新数据
+     不及时」的结构性来源）。所以页面在**重新可见**时调 `vm.onEnterVisible()`，冷却期内
+     零请求、冷却之外**静默**重取（不置 Loading、拉空不覆盖已显示内容）。
+     默认 30s：秒级的反复切 tab 全挡掉，几十秒级的「去官方 App 改了数据再回来看」仍能在
+     半分钟内看到。**收关在 ViewModel，不在页面** —— 页面只负责「我可见了」这个事实。
 - **播放 / 缓存路径**（核心亮点）：
   `Player → Media3 ExoPlayer → CachingDataSource → 分段缓存 + 原子索引`。
   未命中时 CachingDataSource 触发 **Range 分段下载**（走 libnetease 生成的签名 URL + OkHttp），
@@ -56,6 +64,8 @@ Nume 是桌面端播放器 [Netune](https://github.com/ThripleQ/Netune) 的安�
 | libnetease 接入 | git submodule 钉版 | 单一事实源，`git pull` 升级即可。 |
 | 线程契约 | 串行派发 | request-kernel 全局单线程，`NetEaseGateway` 用单派发 + 锁串行所有调用。 |
 | 集合刷新 | Room 先出 + 指纹检查 | 既不用 TTL、也不无条件重拉：`n=0` 检查很便宜（7~15%）且**完整回 trackIds**，指纹（trackIds 的 md5）未变就直接复用 Room 的曲目表。判定要点与踩过的坑见 `CollectionRefresher.kt`。 |
+| 页面刷新 | 重新可见 + 冷却门 | `RefreshGate`（30s）：冷却内零请求，冷却外静默重取。**刻意不用 TTL** —— TTL 对「在别处改了数据」是概率性的（得恰好过期才看得到），而「重新可见」是确定的事件。别再把刷新挂回 `init`。 |
+| 专辑收藏态 | 出口处查镜像 | 专辑详情**没有** `subscribed` 字段（album 对象 29 个键里没有），所以壳的出口处按 `LibraryStateStore` 那份「我收藏的专辑」覆写；镜像没载入时**保持原值**，绝不把「没拉到」当「没收藏」。歌单不走这条（详情自带该字段）。 |
 
 ## 四、原生桥（libnetease，当前已落地）
 
