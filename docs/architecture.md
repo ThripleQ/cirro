@@ -266,5 +266,7 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 - [x] 我的页：登录（Cookie 粘贴 / 短信验证码）+ 喜欢的音乐 + 已购 + 收藏/创建的歌单
 - [ ] 登录二维码（另做）
 - [x] 播放页打磨（PlayerDock 合体：迷你条↔卡片↔全屏两段式、单布局连续形变、随机/循环接 ExoPlayer）
-- [ ] 探索(Home) / 搜索页（目前仍是占位，纯展示）
-- [ ] 离线下载（DownloadManager）
+- [x] 探索(Home) / 搜索页（2026-10 起已实现：探索页横滑卡片行 + 展开壳，搜索页落地页 + 结果列表）
+- [x] 交互按钮接线（2026-10-06）：歌单页 分享 / 评论 / 收藏 / 排序、播放页 红心、评论页 点赞
+      —— 写操作统一走 `core/repo/InteractionRepository.kt`，收藏态走 `core/repo/LibraryStateStore.kt`
+- [ ] 离线下载（DownloadManager）—— 歌单页那枚「下载」图标仍是占位

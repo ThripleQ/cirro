@@ -51,6 +51,18 @@
 | 大卡 → 全屏列表时 hero 封面飞到哪里 | `ui/screens/{HomeExpandShell,ProfilePanels}.kt` 传的 `heroCover*`（必须与 `TrackListMetrics` 一致） |
 | 登录 / 验证码接口（JNI op 30/31、cookie 导入） | `app/src/main/cpp/libnetease_jni.c` + `core/net/NeteaseOp.kt` |
 
+## 2.6 点赞 / 收藏 / 分享 / 排序（写操作，2026-10-06）
+
+| 我想… | 去改 |
+|---|---|
+| 红心歌曲 / 收藏歌单 / 收藏专辑 / 评论点赞这些**写**操作 | `core/repo/InteractionRepository.kt` — 统一返 `ActionResult`。服务端把失败放在 **HTTP 200 的 `message`** 里（下架歌曲回「下架歌曲无法收藏」，code=401），**只看 `err`/`code` 判不出任何东西** |
+| 「当前账号收藏了什么」的内存镜像（喜欢歌曲 id 全量 / 已收藏专辑 id） | `core/repo/LibraryStateStore.kt` — 每账号拉一次、之后本地查表，切歌零请求。**歌单的收藏态不走这里**：`/weapi/v6/playlist/detail` 自带 `subscribed`，跟着 `TrackCollection` 走 |
+| 全屏播放页那颗红心的状态与动作 | `ui/playerbar/PlayerActionsViewModel.kt`（状态取自上面那份镜像） |
+| 评论浮层从哪打开（播放页 / 歌单页头部胶囊 / 专辑页） | 入口是 `ui/components/CommentsOpener.kt` 的 `LocalCommentsOpener`，**由 `NumeApp.kt` 在根上提供**；浮层按 `threadId` 工作（`CommentThread.song/playlist/album`），不再只认单曲 |
+| 曲目列表页的「排序」（5 档，纯本地重排） | `ui/profile/TrackListViewModel.kt` 的 `TrackSort` + `applySort`（中文走拼音 Collator，原始顺序另存一份）；面板 UI 在 `TrackListScreen.kt` 的 `TrackListSortSheet` |
+| 曲目列表页的「分享」文案与链接 | `TrackListScreen.kt` 的 `shareUrlOf` —— 只有歌单 / 榜单 / 专辑有公开页面，其余只分享文字（硬拼 id 会打开不相干的歌单） |
+| 新增一个 native 接口（C → Kotlin 四处联动） | `libnetease/include/netease/services.h` + `src/service/services.c` → `app/src/main/cpp/libnetease_jni.c` 的 switch → `core/net/NeteaseOp.kt`。**当前号段用到 52**，新增从 53 起 |
+
 ## 3. 播放：点歌、进度、后台、缓存
 
 | 我想… | 去改 |

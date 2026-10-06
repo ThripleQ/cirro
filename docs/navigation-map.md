@@ -30,11 +30,12 @@ ui/
 │                  #   rememberPlayerState/rememberPlayerPosition 是播放状态的唯一真相源；
 │                  #   rememberPlayerState/rememberPlayerPosition 是播放状态的唯一真相源；
 │                  #   ActionNavRow 为滚动操作行（滑出头部按钮后出现），列表只负责上报）
-├── components/    # 跨功能通用组件（ExpandableShell：胶囊→全屏通用伸展壳）
+├── components/    # 跨功能通用组件（ExpandableShell：胶囊→全屏通用伸展壳；
+│                  #   CommentsOpener：评论浮层的打开入口，由 NumeApp 在根上提供）
 └── screens/       # 布局主体（哑组件，跨功能）
-    ├── HomeScreen.kt        # 探索 tab 的占位首页（纯展示）
+    ├── HomeScreen.kt        # 探索 tab 首页（横滑卡片行 + 展开壳内嵌 TrackListScreen）
     ├── LibraryScreen.kt
-    ├── SearchScreen.kt      # 搜索 tab 占位（纯展示，待实现）
+    ├── SearchScreen.kt      # 搜索 tab（落地页 + 结果列表）
     ├── ProfileScreen.kt     # 我的：登录入口 + 喜欢/已购/歌单区块 + 登录对话框
     ├── TrackListScreen.kt   # 统一详情页：榜单/歌单/专辑/喜欢/已购 = 紧凑头部（封面+标题+作者+简介）+
                              #   三胶囊 + 圆角面板（播放全部行 + 曲目行）；几何令牌在 TrackListMetrics
@@ -43,7 +44,9 @@ ui/
 core/
 ├── net/           # libnetease JNI 网关（数据出口）
 ├── repo/          # Repository：取/转换数据（ChartRepository / ProfileRepository /
-│                  #   TrackCollection 壳元数据模型 / TrackParser 曲目解析）
+│                  #   TrackCollection 壳元数据模型 / TrackParser 曲目解析 /
+│                  #   InteractionRepository 写操作（红心·收藏·评论点赞）/
+│                  #   LibraryStateStore「当前账号收藏了什么」的进程级镜像）
 └── playback/      # 播放四件套：PlayerHolder（进程级播放器+状态+错误恢复+随机/循环）/
                    #   PlaybackLauncher（播放入口+补队列）/ PlaybackService（后台+通知）/
                    #   PlaybackCache（边播边缓存）
