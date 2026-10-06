@@ -108,42 +108,90 @@ class TrackListViewModel @Inject constructor(
     // 上次加载参数：错误态"点此重试"要用同参重拉，不依赖 UI 再次传参。
     private var lastArgs: Triple<TrackListSource, String, String>? = null
 
-    fun load(source: TrackListSource, id: String, title: String) {
+    /**
+     * 装载一个列表。分**两段**：
+     *
+     * 1. 换列表时（[loadedKey] 变了）先把 Room 里的离线副本贴出来 —— 有就立刻出，
+     *    不等网络，也就没有骨架屏闪烁。
+     * 2. 再走一次取数（[CollectionRefresher] 内部是「冷却内直接用缓存 → 发 `n=0`
+     *    轻量检查 → 指纹变了才拉全量」），拿到后替换。
+     *
+     * ⚠️ **这里刻意不等价于「同 key 就返回」**：下面这段取数在冷却期内是零网络请求，
+     * 冷却之外才发一次便宜的检查，所以重复调用是安全且必要的。旧实现在这里
+     * `if (loadedKey == key) return`，而展开壳/「我的」面板的 VM 挂在常驻 nav entry 上
+     * 不会销毁 —— 于是第二次打开同一条歌单连检查都不发，数据永远停在第一次。
+     *
+     * [force] 供错误态重试与将来的人工刷新入口用：跳过冷却、无条件真拉一次。
+     */
+    fun load(source: TrackListSource, id: String, title: String, force: Boolean = false) {
         val key = "${source.wire}:$id"
-        if (loadedKey == key) return
+        val keyChanged = loadedKey != key
         loadedKey = key
         lastArgs = Triple(source, id, title)
         viewModelScope.launch {
-            _uiState.value = TrackListUiState.Loading
-            val collection = when (source) {
-                TrackListSource.CHART -> chartRepo.chartCollection(id)
-                TrackListSource.PLAYLIST -> profileRepo.playlistCollection(id)
-                TrackListSource.ALBUM -> profileRepo.albumCollection(id)?.let {
-                    // 接口无 album 对象，标题从首曲推断；拿不到时用导航参数兜底
-                    if (it.name.isBlank()) it.copy(name = title) else it
+            if (keyChanged) {
+                // 换列表：曲目来源归零、排序回默认，并先把离线副本贴出来。
+                loaded = null
+                // 排序方式**跟着重置**：新列表保持服务端顺序，「排序」的当前项也回到
+                // 「默认顺序」—— 否则排序 sheet 会显示上一张列表选的那一项，而这张
+                // 列表其实还是原序，自相矛盾。同 key 重进时**不重置**（同一张列表，
+                // 用户的排序选择应该留着）。
+                _sort.value = TrackSort.DEFAULT
+                val cached = cachedOf(source, id, title)
+                if (cached != null) {
+                    loaded = cached
+                    _uiState.value = readyOr(cached)
+                } else {
+                    _uiState.value = TrackListUiState.Loading
                 }
-                TrackListSource.LIKED -> profileRepo.likedTracks(id.toLongOrNull() ?: 0L)
-                    .let { simpleShell(id, title, it) }
-                TrackListSource.PURCHASED -> profileRepo.purchasedSongs()
-                    .let { simpleShell(id, title, it) }
-                TrackListSource.DAILY -> homeRepo.dailySongs()
-                    .let { simpleShell(id, title.ifBlank { "每日推荐" }, it) }
             }
+            val collection = fetchOf(source, id, title, force)
             loaded = collection
-            // 换列表时排序方式**跟着重置**：新列表保持服务端顺序，「排序」的当前项也
-            // 回到「默认顺序」——否则排序 sheet 会显示上一张列表选的那一项，而这张
-            // 列表其实还是原序，自相矛盾。
-            _sort.value = TrackSort.DEFAULT
             _uiState.value = readyOr(collection)
         }
     }
 
-    /** 错误态重试：同参重拉（load() 有同 key 幂等门，先清 key）。 */
+    /** 错误态重试：同参重拉，并跳过冷却（[force]）。 */
     fun retry() {
         val (source, id, title) = lastArgs ?: return
         loadedKey = null
-        load(source, id, title)
+        load(source, id, title, force = true)
     }
+
+    /**
+     * 只读 Room 副本（不发网络），第一段渲染用。
+     * 喜欢 / 已购 / 每日推荐没有后端壳、也没进 Room，返回 null 走原路径。
+     */
+    private suspend fun cachedOf(
+        source: TrackListSource,
+        id: String,
+        title: String,
+    ): TrackCollection? = when (source) {
+        TrackListSource.CHART -> chartRepo.cachedChartCollection(id)
+        TrackListSource.PLAYLIST -> profileRepo.cachedPlaylistCollection(id)
+        TrackListSource.ALBUM -> profileRepo.cachedAlbumCollection(id)?.let { withTitle(it, title) }
+        TrackListSource.LIKED, TrackListSource.PURCHASED, TrackListSource.DAILY -> null
+    }
+
+    /** 第二段取数：歌单/榜单/专辑走带检查的路径，其余三类没有后端壳，用已有数据组装。 */
+    private suspend fun fetchOf(
+        source: TrackListSource,
+        id: String,
+        title: String,
+        force: Boolean,
+    ): TrackCollection? = when (source) {
+        TrackListSource.CHART -> chartRepo.chartCollection(id, force)
+        TrackListSource.PLAYLIST -> profileRepo.playlistCollection(id, force)
+        TrackListSource.ALBUM -> profileRepo.albumCollection(id, force)?.let { withTitle(it, title) }
+        TrackListSource.LIKED -> simpleShell(id, title, profileRepo.likedTracks(id.toLongOrNull() ?: 0L))
+        TrackListSource.PURCHASED -> simpleShell(id, title, profileRepo.purchasedSongs())
+        TrackListSource.DAILY ->
+            simpleShell(id, title.ifBlank { "每日推荐" }, homeRepo.dailySongs())
+    }
+
+    /** 专辑接口没有 album 对象，标题从首曲推断；推断不出时用导航参数兜底。 */
+    private fun withTitle(collection: TrackCollection, title: String): TrackCollection =
+        if (collection.name.isBlank()) collection.copy(name = title) else collection
 
     /**
      * 换一种排序。**只重排本地已有的曲目**（不重拉网络），并同时影响「播放全部」
@@ -188,7 +236,7 @@ class TrackListViewModel @Inject constructor(
     }
 
     /** 把订阅态写进本地两份状态（视图 + 原始壳）并同步仓库缓存。 */
-    private fun applySubscribed(subscribed: Boolean) {
+    private suspend fun applySubscribed(subscribed: Boolean) {
         val base = loaded ?: return
         // 收藏数只在「从未收藏 → 已收藏」时 +1：它是个计数，方向跟 subscribed 一致。
         // 服务端那个计数还会被别的用户改，所以这里只是乐观值，下次拉详情会校正。
@@ -198,7 +246,12 @@ class TrackListViewModel @Inject constructor(
             subscribedCount = (base.subscribedCount + delta).coerceAtLeast(0L),
         )
         loaded = next
-        (lastArgs?.first)?.let { profileRepo.cacheSubscribed(next.id, subscribed, next.subscribedCount) }
+        // 落进 Room：它是列表页的常态读路径，只改内存的话冷却期内再进页面会读回旧值。
+        // 专辑例外 —— 专辑没有 `pl:` 那份副本，它的收藏态由 LibraryStateStore 管
+        // （那条链路还没接上，见 `数据刷新问题清单.md` A1）。
+        if (lastArgs?.first != TrackListSource.ALBUM) {
+            profileRepo.cacheSubscribed(next.id, subscribed, next.subscribedCount)
+        }
         _uiState.value = readyOr(next)
     }
 

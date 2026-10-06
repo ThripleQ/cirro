@@ -36,8 +36,11 @@ Nume 是桌面端播放器 [Netune](https://github.com/ThripleQ/Netune) 的安�
 ## 二、两条数据流
 
 - **元数据路径**（歌单 / 歌词 / 封面 / 账号）：
-  `Repository → NetEaseGateway → libnetease(JNI 签名与解析) → OkHttp → 网易云 API`，
-  结果落 Room，供 UI 复用。
+  `Repository → NetEaseGateway → libnetease(JNI 签名与解析) → OkHttp → 网易云 API`。
+  集合（歌单 / 榜单 / 专辑）**先把 Room 里的副本交出去渲染，再判要不要重拉**：距上次真正
+  打过网络超过冷却（30s）才发一次 `n=0` 轻量检查（只回元数据 + 完整 trackIds，实测约全量的
+  7~15%），**指纹未变就复用 Room 的曲目表**，变了才拉全量 —— 见
+  `core/repo/CollectionRefresher.kt`。Room 因此是**常态读路径**，「离线可读」只是副产品。
 - **播放 / 缓存路径**（核心亮点）：
   `Player → Media3 ExoPlayer → CachingDataSource → 分段缓存 + 原子索引`。
   未命中时 CachingDataSource 触发 **Range 分段下载**（走 libnetease 生成的签名 URL + OkHttp），
@@ -52,6 +55,7 @@ Nume 是桌面端播放器 [Netune](https://github.com/ThripleQ/Netune) 的安�
 | JNI 边界 | 传输注入 | libnetease 照常跑高层调用，仅在发 HTTP 一刻经注册的 transport 回调到 Kotlin(OkHttp)。 |
 | libnetease 接入 | git submodule 钉版 | 单一事实源，`git pull` 升级即可。 |
 | 线程契约 | 串行派发 | request-kernel 全局单线程，`NetEaseGateway` 用单派发 + 锁串行所有调用。 |
+| 集合刷新 | Room 先出 + 指纹检查 | 既不用 TTL、也不无条件重拉：`n=0` 检查很便宜（7~15%）且**完整回 trackIds**，指纹（trackIds 的 md5）未变就直接复用 Room 的曲目表。判定要点与踩过的坑见 `CollectionRefresher.kt`。 |
 
 ## 四、原生桥（libnetease，当前已落地）
 
