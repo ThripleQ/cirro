@@ -1,9 +1,9 @@
-package com.thripleq.nume.core.repo
+package com.thripleq.cirro.core.repo
 
 import com.google.common.truth.Truth.assertThat
-import com.thripleq.nume.core.net.ApiResult
-import com.thripleq.nume.core.util.Clock
-import com.thripleq.nume.core.util.Diagnostics
+import com.thripleq.cirro.core.net.ApiResult
+import com.thripleq.cirro.core.util.Clock
+import com.thripleq.cirro.core.util.Diagnostics
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject

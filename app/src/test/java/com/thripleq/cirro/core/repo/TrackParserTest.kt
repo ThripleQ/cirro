@@ -1,4 +1,4 @@
-package com.thripleq.nume.core.repo
+package com.thripleq.cirro.core.repo
 
 import com.google.common.truth.Truth.assertThat
 import org.json.JSONObject

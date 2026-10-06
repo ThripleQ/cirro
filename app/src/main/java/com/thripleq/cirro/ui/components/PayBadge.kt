@@ -1,4 +1,4 @@
-package com.thripleq.nume.ui.components
+package com.thripleq.cirro.ui.components
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
@@ -11,8 +11,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.thripleq.nume.ui.theme.NumePay
-import com.thripleq.nume.ui.theme.NumeShape
+import com.thripleq.cirro.ui.theme.CirroPay
+import com.thripleq.cirro.ui.theme.CirroShape
 
 
 /**
@@ -26,8 +26,8 @@ import com.thripleq.nume.ui.theme.NumeShape
 @Composable
 private fun payBadgeColor(tag: PayTag): Color = when (tag) {
     PayTag.VIP -> MaterialTheme.colorScheme.onSurfaceVariant
-    PayTag.PAY -> if (onDarkSurface()) NumePay.PayDark else NumePay.PayLight
-    PayTag.PAID -> if (onDarkSurface()) NumePay.OwnedDark else NumePay.OwnedLight
+    PayTag.PAY -> if (onDarkSurface()) CirroPay.PayDark else CirroPay.PayLight
+    PayTag.PAID -> if (onDarkSurface()) CirroPay.OwnedDark else CirroPay.OwnedLight
 }
 
 @Composable
@@ -43,7 +43,7 @@ private fun onDarkSurface(): Boolean =
  * | 框高 | 30px = 10dp | 8sp 行高 + 上下各 1dp 内缩 = 10dp |
  * | 框宽 | 61px = 20.3dp | 文本 ≈13.3dp + 左右各 3dp ≈ 19dp |
  * | 描边 | 3px = 1dp | 1dp |
- * | 圆角 | 4px ≈ 1.3dp | [NumeShape.Badge]（2dp） |
+ * | 圆角 | 4px ≈ 1.3dp | [CirroShape.Badge]（2dp） |
  * | 文字 | 大写字母高 17px = 5.67dp ⇒ ≈8sp 粗体 | 8sp Bold + 0.5sp 字距 |
  * | 框内留白 | 上 2.3dp / 下 2.0dp | 计算值 2.0dp / 2.3dp |
  *
@@ -56,7 +56,7 @@ private fun onDarkSurface(): Boolean =
  * 所以间距设 2dp 才能还原这个视觉间隙；两枚并排时（VIP + 蓝 PAY）同样用 2dp。
  */
 @Composable
-fun NumePayBadge(tag: PayTag, modifier: Modifier = Modifier) {
+fun CirroPayBadge(tag: PayTag, modifier: Modifier = Modifier) {
     val color = payBadgeColor(tag)
     Text(
         text = tag.label,
@@ -67,7 +67,7 @@ fun NumePayBadge(tag: PayTag, modifier: Modifier = Modifier) {
         letterSpacing = 0.5.sp,
         maxLines = 1,
         modifier = modifier
-            .border(1.dp, color, NumeShape.Badge)
+            .border(1.dp, color, CirroShape.Badge)
             .padding(horizontal = 3.dp, vertical = 1.dp),
     )
 }

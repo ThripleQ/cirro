@@ -1,9 +1,9 @@
-package com.thripleq.nume.ui.components
+package com.thripleq.cirro.ui.components
 
 /**
  * 歌曲行里紧跟歌手的付费标记 —— 照抄 kanade 的歌曲信息设计（2026-10-06 用户指定）。
  *
- * **为什么判据单独成一个文件**：原来它和绘制（`NumePayBadge`）同在 `PayBadge.kt`，
+ * **为什么判据单独成一个文件**：原来它和绘制（`CirroPayBadge`）同在 `PayBadge.kt`，
  * 而那个文件 import 了一堆 Compose —— JVM 单测碰不得。判据恰恰是全项目最值得断言的
  * 一批（每条都是探针实测换来的），所以把它挪到这份**零依赖**的纯 Kotlin 文件里，
  * 绘制留在原处。

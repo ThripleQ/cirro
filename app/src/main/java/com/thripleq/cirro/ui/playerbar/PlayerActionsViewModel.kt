@@ -1,10 +1,10 @@
-package com.thripleq.nume.ui.playerbar
+package com.thripleq.cirro.ui.playerbar
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.thripleq.nume.core.repo.InteractionRepository
-import com.thripleq.nume.core.repo.LibraryStateStore
-import com.thripleq.nume.core.repo.ProfileRepository
+import com.thripleq.cirro.core.repo.InteractionRepository
+import com.thripleq.cirro.core.repo.LibraryStateStore
+import com.thripleq.cirro.core.repo.ProfileRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow

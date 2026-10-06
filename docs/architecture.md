@@ -218,7 +218,7 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 壳子会变；漏读一个字段**不崩**，只会变成「封面全灰 / 徽标不画 / 已购的歌标成红色」这类
 静默错误 —— 没有断言就只有真机截图能发现。
 
-- 位置：`app/src/test/java/com/thripleq/nume/…`，`./gradlew :app:testDebugUnitTest`（纯 JVM）。
+- 位置：`app/src/test/java/com/thripleq/cirro/…`，`./gradlew :app:testDebugUnitTest`（纯 JVM）。
 - 前提：`build.gradle.kts` 挂了 `testImplementation(libs.json)` —— **android.jar 里的
   `org.json` 是空壳**（方法体一律 throw），不挂真实现任何 `JSONObject` 调用都会抛 not mocked。
 - **配套的结构约束**：解析函数必须放在**零 Android 依赖**的文件里（`TrackParser.kt` /

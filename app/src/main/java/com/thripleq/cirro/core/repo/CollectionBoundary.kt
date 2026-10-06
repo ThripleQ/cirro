@@ -1,8 +1,8 @@
-package com.thripleq.nume.core.repo
+package com.thripleq.cirro.core.repo
 
-import com.thripleq.nume.core.net.ApiResult
-import com.thripleq.nume.core.net.NetEaseGateway
-import com.thripleq.nume.core.net.NeteaseOp
+import com.thripleq.cirro.core.net.ApiResult
+import com.thripleq.cirro.core.net.NetEaseGateway
+import com.thripleq.cirro.core.net.NeteaseOp
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -14,14 +14,14 @@ import javax.inject.Singleton
  * [CollectionRefresher] 承载的是「Room 先出 → 冷却 → 检查 → 变了才拉全量」这条编排，
  * 它是全项目最需要被断言的一段逻辑：改错一步的表现是「数据永远不新」或「每次都全量拉」，
  * 都不崩、只能靠真机体会。但它原来直接依赖三样在 JVM 上碰不得的东西 —— JNI 网关
- * （[NetEaseGateway]）、Room（[com.thripleq.nume.core.db.CollectionCache]）、
+ * （[NetEaseGateway]）、Room（[com.thripleq.cirro.core.db.CollectionCache]）、
  * 墙上时钟（[System.currentTimeMillis]）—— 于是一条测试都写不了。
  *
  * 这两个接口就是这条可测性缺口的最小缝合：**只暴露编排真正用得着的那几个动作**，
  * 不试图给整个 gateway / DAO 造抽象（那才是过度设计）。
  *
  * 生产实现分别是 [GatewayCollectionRemote] 与
- * [com.thripleq.nume.core.db.CollectionCache]，绑定见 `di/RepoModule`。
+ * [com.thripleq.cirro.core.db.CollectionCache]，绑定见 `di/RepoModule`。
  */
 interface CollectionRemote {
 

@@ -1,9 +1,9 @@
-package com.thripleq.nume.ui.components
+package com.thripleq.cirro.ui.components
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
-import com.thripleq.nume.core.repo.LibraryStateStore
-import com.thripleq.nume.core.repo.Track
+import com.thripleq.cirro.core.repo.LibraryStateStore
+import com.thripleq.cirro.core.repo.Track
 
 /**
  * 「当前账号买了什么」在 UI 侧的只读快照：已购单曲 id + 已购数字专辑 id。
@@ -35,7 +35,7 @@ data class OwnedTracks(
 }
 
 /**
- * 由 [com.thripleq.nume.NumeApp] 在根上提供（它持有 Activity 作用域的 ProfileViewModel，
+ * 由 [com.thripleq.cirro.CirroApp] 在根上提供（它持有 Activity 作用域的 ProfileViewModel，
  * 是唯一一处能保证「App 一启动就有账号态」的地方）。
  *
  * `staticCompositionLocalOf`：这份值只在换账号/载入完成时整体替换，用 static 变体

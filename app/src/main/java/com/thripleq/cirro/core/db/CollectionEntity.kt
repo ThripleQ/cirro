@@ -33,7 +33,7 @@ data class CollectionEntity(
     /** 歌单/榜单的收藏态（服务端 `playlist.subscribed`）。专辑恒 false —— 那个接口没有此字段。 */
     val subscribed: Boolean,
     /**
-     * 曲目 id 序列的指纹（[com.thripleq.nume.core.repo.playlistFingerprint] 的产物）。
+     * 曲目 id 序列的指纹（[com.thripleq.cirro.core.repo.playlistFingerprint] 的产物）。
      * 与下一次「检查」请求算出的指纹比对：相同 → 曲目表仍然有效，不必拉全量。
      * 空串 = 还不知道（v1 迁移过来的旧行、或专辑）→ 下次进页面走一次全量把指纹补上。
      */
@@ -69,10 +69,10 @@ data class CollectionTrackEntity(
     /**
      * 曲目展示要用的两个字段，必须跟着曲目一起落库。
      *
-     * Room 是**常态读路径**（见 [CollectionEntity] 的说明），而 [com.thripleq.nume.core.repo.CollectionRefresher]
+     * Room 是**常态读路径**（见 [CollectionEntity] 的说明），而 [com.thripleq.cirro.core.repo.CollectionRefresher]
      * 在「指纹没变」时会**原样复用这里的曲目行**、不重拉全量 —— 若这两列不存在，
      * 那份复用的曲目就会读回 `fee=0`/`albumId=""`，徽标整批消失（且只在"曲目没变"时消失，
-     * 看起来毫无规律）。加列的迁移见 [NumeDatabase.MIGRATION_2_3]。
+     * 看起来毫无规律）。加列的迁移见 [CirroDatabase.MIGRATION_2_3]。
      */
     val fee: Int,
     val albumId: String,

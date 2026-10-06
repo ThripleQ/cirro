@@ -1,10 +1,10 @@
-package com.thripleq.nume.ui.library
+package com.thripleq.cirro.ui.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.thripleq.nume.core.repo.Chart
-import com.thripleq.nume.core.repo.ChartRepository
-import com.thripleq.nume.core.util.RefreshGate
+import com.thripleq.cirro.core.repo.Chart
+import com.thripleq.cirro.core.repo.ChartRepository
+import com.thripleq.cirro.core.util.RefreshGate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

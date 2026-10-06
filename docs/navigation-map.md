@@ -31,7 +31,7 @@ ui/
 │                  #   rememberPlayerState/rememberPlayerPosition 是播放状态的唯一真相源；
 │                  #   ActionNavRow 为滚动操作行（滑出头部按钮后出现），列表只负责上报）
 ├── components/    # 跨功能通用组件（ExpandableShell：胶囊→全屏通用伸展壳；
-│                  #   CommentsOpener：评论浮层的打开入口，由 NumeApp 在根上提供）
+│                  #   CommentsOpener：评论浮层的打开入口，由 CirroApp 在根上提供）
 └── screens/       # 布局主体（哑组件，跨功能）
     ├── HomeScreen.kt        # 探索 tab 首页（横滑卡片行 + 展开壳内嵌 TrackListScreen）
     ├── LibraryScreen.kt

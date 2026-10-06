@@ -1,4 +1,4 @@
-package com.thripleq.nume.core.util
+package com.thripleq.cirro.core.util
 
 import javax.inject.Inject
 
@@ -9,7 +9,7 @@ import javax.inject.Inject
  * 直接读 [System.currentTimeMillis]，JVM 单测就只能靠 `sleep`（慢且脆）或者干脆
  * 不测 —— 而它恰恰是「用户不喜欢频繁重拉」这条要求的落点，不测就 regressions 无声。
  *
- * 注意 [com.thripleq.nume.core.util.RefreshGate] 用的是**单调**时钟
+ * 注意 [com.thripleq.cirro.core.util.RefreshGate] 用的是**单调**时钟
  * （`SystemClock.elapsedRealtime`，不受改系统时间影响），这里给的是墙上时钟，
  * 两者不要混用。
  */

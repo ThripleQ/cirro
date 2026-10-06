@@ -1,4 +1,4 @@
-package com.thripleq.nume.ui.screens
+package com.thripleq.cirro.ui.screens
 
 import android.content.Intent
 import android.os.Build
@@ -100,36 +100,36 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-import com.thripleq.nume.core.repo.CommentThread
-import com.thripleq.nume.core.repo.Track
-import com.thripleq.nume.core.repo.TrackCollection
-import com.thripleq.nume.ui.components.BannerCoverSize
-import com.thripleq.nume.ui.components.BigCoverVisual
-import com.thripleq.nume.ui.components.CloseButtonRaise
-import com.thripleq.nume.ui.components.LocalCommentsOpener
-import com.thripleq.nume.ui.components.LocalShellHeroAlpha
-import com.thripleq.nume.ui.components.LocalShellSettled
-import com.thripleq.nume.ui.components.NumeCloseButton
-import com.thripleq.nume.ui.components.NumeContainer
-import com.thripleq.nume.ui.components.NumeEmptyState
-import com.thripleq.nume.ui.components.NumeErrorState
-import com.thripleq.nume.ui.components.NumePayBadge
-import com.thripleq.nume.ui.components.PayTag
-import com.thripleq.nume.ui.components.rememberPayTags
-import com.thripleq.nume.ui.components.NumeArtwork
-import com.thripleq.nume.ui.components.NumeArt
-import com.thripleq.nume.ui.components.NumeTitleBarHeight
-import com.thripleq.nume.ui.components.SkeletonBox
-import com.thripleq.nume.ui.components.SkeletonLine
-import com.thripleq.nume.ui.components.TitleBarCloseInset
-import com.thripleq.nume.ui.components.TitleBarStartInset
-import com.thripleq.nume.ui.components.numeEntrySurface
-import com.thripleq.nume.ui.components.rememberCoverAccent
-import com.thripleq.nume.ui.profile.TrackListSource
-import com.thripleq.nume.ui.profile.TrackListUiState
-import com.thripleq.nume.ui.profile.TrackListViewModel
-import com.thripleq.nume.ui.profile.TrackSort
-import com.thripleq.nume.ui.theme.NumeShape
+import com.thripleq.cirro.core.repo.CommentThread
+import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.repo.TrackCollection
+import com.thripleq.cirro.ui.components.BannerCoverSize
+import com.thripleq.cirro.ui.components.BigCoverVisual
+import com.thripleq.cirro.ui.components.CloseButtonRaise
+import com.thripleq.cirro.ui.components.LocalCommentsOpener
+import com.thripleq.cirro.ui.components.LocalShellHeroAlpha
+import com.thripleq.cirro.ui.components.LocalShellSettled
+import com.thripleq.cirro.ui.components.CirroCloseButton
+import com.thripleq.cirro.ui.components.CirroContainer
+import com.thripleq.cirro.ui.components.CirroEmptyState
+import com.thripleq.cirro.ui.components.CirroErrorState
+import com.thripleq.cirro.ui.components.CirroPayBadge
+import com.thripleq.cirro.ui.components.PayTag
+import com.thripleq.cirro.ui.components.rememberPayTags
+import com.thripleq.cirro.ui.components.CirroArtwork
+import com.thripleq.cirro.ui.components.CirroArt
+import com.thripleq.cirro.ui.components.CirroTitleBarHeight
+import com.thripleq.cirro.ui.components.SkeletonBox
+import com.thripleq.cirro.ui.components.SkeletonLine
+import com.thripleq.cirro.ui.components.TitleBarCloseInset
+import com.thripleq.cirro.ui.components.TitleBarStartInset
+import com.thripleq.cirro.ui.components.cirroEntrySurface
+import com.thripleq.cirro.ui.components.rememberCoverAccent
+import com.thripleq.cirro.ui.profile.TrackListSource
+import com.thripleq.cirro.ui.profile.TrackListUiState
+import com.thripleq.cirro.ui.profile.TrackListViewModel
+import com.thripleq.cirro.ui.profile.TrackSort
+import com.thripleq.cirro.ui.theme.CirroShape
 import com.valentinilk.shimmer.shimmer
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -141,10 +141,10 @@ import kotlinx.coroutines.launch
  *
  * 内缩统一 16dp（头部 / 「播放全部」/ 曲目行封面同一根竖线，与探索、搜索两页齐平；官方原本
  * 头部 20dp、曲目行 16dp 两档错位，未照抄那一处），方封面 98dp、「播放全部」圆钮 38dp
- * （取整 40dp）、曲目行封面 44dp。曲目行本身仍是 nume 的条目卡
+ * （取整 40dp）、曲目行封面 44dp。曲目行本身仍是 cirro 的条目卡
  * （见 [TrackListRow]）——官方那套紧挨的平铺行只借了封面尺寸与「歌手 - 专辑」这一行信息。
  *
- * [HeroCoverTop] 同时是 [com.thripleq.nume.ui.components.CoverExpandShell] 的 hero 终点
+ * [HeroCoverTop] 同时是 [com.thripleq.cirro.ui.components.CoverExpandShell] 的 hero 终点
  * 预测值（封面相对内容顶的偏移）——两边必须同源，改一处就够。
  */
 object TrackListMetrics {
@@ -162,7 +162,7 @@ object TrackListMetrics {
     val SideInset = 16.dp
 
     /**
-     * 曲目行**封面**距屏幕边：条目卡外缩（[NumeContainer.Inset]）+ 卡内缩，两者相加是这个值。
+     * 曲目行**封面**距屏幕边：条目卡外缩（[CirroContainer.Inset]）+ 卡内缩，两者相加是这个值。
      *
      * 与 [SideInset] 当前同值但**不是同一个东西**：[SideInset] 是本屏自己加的 padding，
      * 本值要减去卡片自带的内缩才是行内 padding（见 [TrackListRow]），卡片换外缩时必须各自改。
@@ -175,7 +175,7 @@ object TrackListMetrics {
     /**
      * 头部空档的**基准高度**（头部封面落点 [HeroCoverTop] 的口径，不是标题条高度）。
      *
-     * 2026-10-05 起标题条两条路径都统一成 [com.thripleq.nume.ui.components.NumeTitleBarHeight]，
+     * 2026-10-05 起标题条两条路径都统一成 [com.thripleq.cirro.ui.components.CirroTitleBarHeight]，
      * 本值不再是「返回栏 / 收起键那一行」的净高；它只作为 [HeroCoverTop] 的基数存在，
      * 保证 nav 与壳两条路径的**头部封面落在同一屏上位置**。真正的空档由
      * `HeroCoverTop - 标题条实测高度` 记在头部 item 自己的上内缩里（见 LazyColumn 的头部 item）。
@@ -192,7 +192,7 @@ object TrackListMetrics {
      * 面板首行（「播放全部」）吸顶停靠线 = 顶部标题条（`TrackListTitleBar`）的下沿。
      *
      * 2026-10-03 照抄搜索页后标题条**高度跟着字体走**（headlineSmall + 行高裁剪，不再是
-     * 固定 56dp）；2026-10-05 与三个 tab 页统一到同一个 [NumeTitleBarHeight]（站内一份）。
+     * 固定 56dp）；2026-10-05 与三个 tab 页统一到同一个 [CirroTitleBarHeight]（站内一份）。
      * 停靠线仍由标题条 `onSizeChanged` 运行时测出（stickyTopPx）—— 值现在是确定的，但
      * 让它跟着实测走，将来标题条再改也不会与列表内缩脱节；列表内缩与头部内缩共用该值，
      * 头部封面落点仍是 [HeroCoverTop]，差额记在头部自己的上内缩里。
@@ -202,11 +202,11 @@ object TrackListMetrics {
      * 标题条文字的起始内缩 —— 与探索页 / 搜索页 / 我的页的大标题左起**逐像素齐平**。
      *
      * 2026-10-03 用户：「标题的内缩去看搜索页面和探索，和他们保持一致」——那几页的标题条都
-     * 是 `padding(start = 24.dp)`（[com.thripleq.nume.ui.components.NumePageTitleBar]），
+     * 是 `padding(start = 24.dp)`（[com.thripleq.cirro.ui.components.CirroPageTitleBar]），
      * 本屏原先走 [SideInset]（当时 20dp），比它们少，三页并排看就是不齐。
      *
      * **不复用 [SideInset]，两个值本来就不该相等**：探索页也是「标题 24dp / 内容 16dp」这组
-     * 关系（[NumePageTitleBar] 的 24 与下方列表的 16）。大标题比内容多缩一档、压在内容竖线外
+     * 关系（[CirroPageTitleBar] 的 24 与下方列表的 16）。大标题比内容多缩一档、压在内容竖线外
      * 一点，是站内共用的排版关系；把标题拉到 16 反而会与探索页错开。
      *
      * 2026-10-05 起 **nav / 壳两条路径同用本值**（用户：详情页顶部「跟探索页不一样，改成
@@ -224,21 +224,21 @@ object TrackListMetrics {
      * 就压在这一排上，标题再长也不能钻到它下面去（标题是 `maxLines = 1` + Ellipsis，收在键之前）。
      *
      * 两条路径同用：壳路径的键由壳画（[ShellPanel] / `CoverExpandShell`），nav 路径的键由本屏
-     * 画（[NumeCloseButton]，同位同规格）—— 键都在右上角，让位方向自然也一致。
+     * 画（[CirroCloseButton]，同位同规格）—— 键都在右上角，让位方向自然也一致。
      *
      * 2026-10-05 晚：改引站内共用的 [TitleBarCloseInset]，与歌手 / 播客 / 评论三页
-     * （[NumePaperPage]）同一份 —— 那三页的键也从左上翻到了右上角。
+     * （[CirroPaperPage]）同一份 —— 那三页的键也从左上翻到了右上角。
      */
     val TitleBarTextEnd = TitleBarCloseInset
 
     /**
      * 内容圆角纸的顶角半径。
      *
-     * **站内一份**：[NumeShape.SheetRadius]（28dp）—— 与探索 / 搜索 / 我的三张纸同源。
+     * **站内一份**：[CirroShape.SheetRadius]（28dp）—— 与探索 / 搜索 / 我的三张纸同源。
      * 详情页从 2026-10-03 起也走「容器色条 + 圆角纸」这套关系（见 [TrackListScreen] 里的
      * 圆角纸层），半径必须同一个值，否则站内几张纸的圆角并排看就是不齐。
      */
-    val SheetCorner = NumeShape.SheetRadius
+    val SheetCorner = CirroShape.SheetRadius
 
     /** 「播放全部」圆钮直径。 */
     val DiscSize = 40.dp
@@ -266,7 +266,7 @@ fun TrackListScreen(
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
     /**
-     * 是否由本屏画顶部那颗键（**右上角**，[NumeCloseButton]，与壳路径那颗同规格同位置）。
+     * 是否由本屏画顶部那颗键（**右上角**，[CirroCloseButton]，与壳路径那颗同规格同位置）。
      *
      * 作为 **nav 详情页**时 true（本屏自己画）；作为**面板壳内容**时 false——
      * 壳自带同一颗键（同位、同浮层语言），再画一个就重叠了。
@@ -327,7 +327,7 @@ fun TrackListScreen(
     // 就进入「已经能滚、hero 却因为大图没到还顶着」的窗口——hero 是浮层、不随列表滚动，
     // 封面看着像卡住。把切换也压到大封面就绪之后，则列表出现与 hero 交接同一刻发生，
     // 而等待期间是不可滚的骨架（还已挂着高清封面），观感无感。
-    // previewCoverUrl 为空表示无可等之图；非壳环境（NumeApp 导航）不传该值 → 天然不等待。
+    // previewCoverUrl 为空表示无可等之图；非壳环境（CirroApp 导航）不传该值 → 天然不等待。
     var coverReady by remember { mutableStateOf(previewCoverUrl == null) }
     val onCoverDrawn: () -> Unit = remember(onCoverReady) {
         {
@@ -480,10 +480,10 @@ fun TrackListScreen(
             // 即上报修正（跳变发生在壳动画/骨架期，不可见）。
             var stickyTopPx by remember { mutableIntStateOf(0) }
             val stickyTopDp = with(density) { stickyTopPx.toDp() }
-            // 纸的顶角形状：**直接引用站内那一份 token**（[NumeShape.SheetTop]）—— 与探索 /
+            // 纸的顶角形状：**直接引用站内那一份 token**（[CirroShape.SheetTop]）—— 与探索 /
             // 搜索 / 我的三页那张纸是**同一个对象**，不再本地拼一份同参数的 RoundedCornerShape
             // （那样 token 以后调整半径，详情页会静默留在旧值）。token 是常量，不必 remember。
-            val paperShape = NumeShape.SheetTop
+            val paperShape = CirroShape.SheetTop
             // 「播放全部」这一行的**面**：四角都是普通圆角，半径与纸同源
             // [TrackListMetrics.SheetCorner] —— 吸顶时上边两角正好与壳子裁出来的纸角重合
             // （角外露容器色条），下边两角则切进**面板自己的底色**里。
@@ -520,8 +520,8 @@ fun TrackListScreen(
             // 「详情页顶栏」与「探索 / 搜索 / 我的」三页的大标题逐像素齐平，纸顶也落在同一条线。
             //
             // 唯一按路径分的是**键在哪一侧**：nav 路径的键是浮层（见本屏外层 Box 里的
-            // [NumeCloseButton]，与壳路径那颗同位同规格），壳路径的键由壳自己画（[ShellPanel]
-            // / [com.thripleq.nume.ui.components.CoverExpandShell]），本屏不重复画。
+            // [CirroCloseButton]，与壳路径那颗同位同规格），壳路径的键由壳自己画（[ShellPanel]
+            // / [com.thripleq.cirro.ui.components.CoverExpandShell]），本屏不重复画。
             Box {
                 TrackListTitleBar(
                     label = src.label,
@@ -677,12 +677,12 @@ fun TrackListScreen(
                                 }
                             }
                         }
-                        TrackListUiState.Empty -> NumeEmptyState(
+                        TrackListUiState.Empty -> CirroEmptyState(
                             "暂无曲目",
                             modifier = Modifier.background(MaterialTheme.colorScheme.surface),
                         )
                         // 错误必须给出路：文案本身可点重试（与播客/评论/歌手页同交互语言）。
-                        TrackListUiState.Error -> NumeErrorState(
+                        TrackListUiState.Error -> CirroErrorState(
                             text = "曲目加载失败，点此重试",
                             onRetry = vm::retry,
                             modifier = Modifier.background(MaterialTheme.colorScheme.surface),
@@ -707,7 +707,7 @@ fun TrackListScreen(
             }
         }
 
-        // 顶部那颗键（**只在 nav 路径**）：与壳路径那颗 [NumeCloseButton] **同位同规格**
+        // 顶部那颗键（**只在 nav 路径**）：与壳路径那颗 [CirroCloseButton] **同位同规格**
         // —— 36dp 圆 + 黑底白下箭头、右上角、12dp 外边距、上提一档让圆心压在标题条中线上。
         //
         // ## 为什么它跑到右上角、又为什么必须浮在这一层
@@ -715,13 +715,13 @@ fun TrackListScreen(
         // 1. 右上角：左上放返回箭头时，标题得给它让出一档内缩（左起 64dp），而探索页的大标题
         //    左起 24dp —— 并排看就是「标题位置不一样」。把键翻到右端后两处标题左起同一根线，
         //    让位翻到右边，与壳路径也统一了（2026-10-05 用户：「改成一样的」）。
-        // 2. 浮在这一层：36dp 的圆比标题条（[com.thripleq.nume.ui.components.NumeTitleBarHeight]）
+        // 2. 浮在这一层：36dp 的圆比标题条（[com.thripleq.cirro.ui.components.CirroTitleBarHeight]）
         //    高，塞进上面那个标题条 Box 会把它撑到 36dp，**下方的圆角纸整体下移** —— 纸顶又与
         //    探索页错开。浮层不参与 Column 测量，纸顶只由标题条决定。
         //
         // 键常驻这里：吸顶行会滚走，键不能跟着滚（骨架期也要能退出）。
         if (showBackButton) {
-            NumeCloseButton(
+            CirroCloseButton(
                 onClick = onBack,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -747,7 +747,7 @@ fun TrackListScreen(
 }
 
 /**
- * 排序面板。抄 [com.thripleq.nume.ui.playerbar.PlayerSettingsSheet] 那套
+ * 排序面板。抄 [com.thripleq.cirro.ui.playerbar.PlayerSettingsSheet] 那套
  * 「ModalBottomSheet + RadioButton」：站内两处选择类面板长得一样。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -761,7 +761,7 @@ private fun TrackListSortSheet(
     val scope = rememberCoroutineScope()
     ModalBottomSheet(
         // 先跑完自身收起动画再移除组合，否则面板会被当场拆掉、看不出收起（见
-        // [com.thripleq.nume.ui.playerbar.PlayerQueueSheet] 的同一处处理）。
+        // [com.thripleq.cirro.ui.playerbar.PlayerQueueSheet] 的同一处处理）。
         onDismissRequest = {
             scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
         },
@@ -1196,7 +1196,7 @@ private fun TrackListHeader(
                     )
                     // 官方共享元素：与入口卡片封面同 key，框架 morph 位置/尺寸（不重排内容）。
                     .then(coverSharedModifier)
-                    .clip(NumeShape.CardSmall)
+                    .clip(CirroShape.CardSmall)
                     // hero 顶着时透明；hero 一开始淡出即变为不透明底板、hero 在其上渐隐（draw 阶段读，不重组）。
                     .graphicsLayer {
                         alpha = if (heroAlpha.value >= 1f) 0f else 1f
@@ -1342,7 +1342,7 @@ private fun TrackListAction(
     Row(
         modifier = modifier
             .height(40.dp)
-            .clip(NumeShape.Pill)
+            .clip(CirroShape.Pill)
             // onSurface 低透明度当底：浅色主题下是压暗的灰片、深色主题下是提亮的白片，
             // 一两行代码同时满足两套，不用为「透明白」再开一个固定色。
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
@@ -1401,7 +1401,7 @@ private fun TrackListTitleBar(
     }
     // 2026-10-03 照抄 SearchTitleBar 的写法：headlineSmall + 行高居中裁剪
     // （LineHeightStyle Center / Trim.Both）+ 粗体。
-    // 2026-10-05：高度不再"由文字撑"，改为共用 [NumeTitleBarHeight]（= headlineSmall 行高）
+    // 2026-10-05：高度不再"由文字撑"，改为共用 [CirroTitleBarHeight]（= headlineSmall 行高）
     // —— 与探索 / 搜索 / 我的三页的标题条同一份规格，详情页的圆角纸顶边因此与三个 tab 页
     // 落在同一条线上；取值仍是字体行高，所以系统字体放大时标题不会被裁。
     // 两条 Text 的 style 同源，交叉淡变时行盒不变、不跳。
@@ -1414,7 +1414,7 @@ private fun TrackListTitleBar(
     Box(
         modifier
             .fillMaxWidth()
-            .height(NumeTitleBarHeight)
+            .height(CirroTitleBarHeight)
             .padding(start = textStart, end = textEnd),
     ) {
         Text(
@@ -1585,12 +1585,12 @@ private fun PanelIcon(
 /**
  * 曲目行：封面 + 标题 + 「歌手 - 专辑」+ 右侧 ⋮。
  *
- * 行仍是 nume 的**条目卡**（[numeEntrySurface]：8dp 外缩 + 圆角 + `surfaceContainer`），
+ * 行仍是 cirro 的**条目卡**（[cirroEntrySurface]：8dp 外缩 + 圆角 + `surfaceContainer`），
  * 浮在面板底上；卡内再内缩到 [TrackListMetrics.RowInset]。与官方一致的是**封面到屏边**的
- * 距离（8 + 8 = 16dp），卡边是 nume 自己的条目语言。行高由 44dp 封面 + 上下 8dp 内缩撑起。
+ * 距离（8 + 8 = 16dp），卡边是 cirro 自己的条目语言。行高由 44dp 封面 + 上下 8dp 内缩撑起。
  *
  * [payTags] 非空时在「歌手 - 专辑」前面贴付费/VIP 徽标（kanade 的歌曲信息设计，
- * 位置与尺寸见 [NumePayBadge]；取值见 [rememberPayTags]，别在调用点手工拼）。
+ * 位置与尺寸见 [CirroPayBadge]；取值见 [rememberPayTags]，别在调用点手工拼）。
  */
 @Composable
 private fun TrackListRow(
@@ -1602,22 +1602,22 @@ private fun TrackListRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .numeEntrySurface()
+            .cirroEntrySurface()
             .clickable(onClick = onClick)
             .padding(
-                start = TrackListMetrics.RowInset - NumeContainer.Inset,
+                start = TrackListMetrics.RowInset - CirroContainer.Inset,
                 end = 4.dp,
                 top = 8.dp,
                 bottom = 8.dp,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        NumeArtwork(
+        CirroArtwork(
             url = track.artworkUrl,
             contentDescription = track.name,
             size = TrackListMetrics.RowCover,
-            shape = NumeShape.Chip,
-            requestSize = NumeArt.RequestRow,
+            shape = CirroShape.Chip,
+            requestSize = CirroArt.RequestRow,
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -1634,10 +1634,10 @@ private fun TrackListRow(
             ).joinToString(" - ")
             if (sub.isNotEmpty()) {
                 Spacer(Modifier.height(2.dp))
-                // 与 [NumeMediaRow] 同一形状：徽标在左、文字吃剩余宽度并在末尾省略号。
+                // 与 [CirroMediaRow] 同一形状：徽标在左、文字吃剩余宽度并在末尾省略号。
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     payTags.forEach { tag ->
-                        NumePayBadge(tag)
+                        CirroPayBadge(tag)
                         Spacer(Modifier.width(2.dp))
                     }
                     Text(
@@ -1728,7 +1728,7 @@ private fun TrackListSkeleton(
                 // hero 顶着时透明；hero 一开始淡出即变为不透明底板、hero 在其上渐隐。
                 .graphicsLayer { alpha = if (heroAlpha.value >= 1f) 0f else 1f }
             if (coverUrl != null) {
-                Box(coverModifier.clip(NumeShape.CardSmall)) {
+                Box(coverModifier.clip(CirroShape.CardSmall)) {
                     BigCoverVisual(
                         coverUrl = coverUrl,
                         name = title,
@@ -1740,7 +1740,7 @@ private fun TrackListSkeleton(
                     )
                 }
             } else {
-                SkeletonBox(coverModifier, NumeShape.CardSmall)
+                SkeletonBox(coverModifier, CirroShape.CardSmall)
             }
             Spacer(Modifier.width(12.dp))
             Column(
@@ -1764,7 +1764,7 @@ private fun TrackListSkeleton(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             repeat(3) {
-                SkeletonBox(Modifier.weight(1f).height(40.dp), NumeShape.Pill)
+                SkeletonBox(Modifier.weight(1f).height(40.dp), CirroShape.Pill)
             }
         }
         Spacer(Modifier.height(24.dp))
@@ -1793,19 +1793,19 @@ private fun TrackListSkeleton(
             repeat(6) {
                 // 与真行同一套容器与内缩（条目卡 + 16dp 封面内缩）：骨架↔列表是直接切，
                 // 差一点就是「跳一下」。
-                Box(Modifier.fillMaxWidth().numeEntrySurface()) {
+                Box(Modifier.fillMaxWidth().cirroEntrySurface()) {
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .padding(
-                                start = TrackListMetrics.RowInset - NumeContainer.Inset,
+                                start = TrackListMetrics.RowInset - CirroContainer.Inset,
                                 end = 4.dp,
                                 top = 8.dp,
                                 bottom = 8.dp,
                             ),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        SkeletonBox(Modifier.size(TrackListMetrics.RowCover), NumeShape.Chip)
+                        SkeletonBox(Modifier.size(TrackListMetrics.RowCover), CirroShape.Chip)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             SkeletonLine(widthFraction = 0.6f, height = 14.dp)

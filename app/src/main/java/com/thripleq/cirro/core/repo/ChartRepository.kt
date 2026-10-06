@@ -1,8 +1,8 @@
-package com.thripleq.nume.core.repo
+package com.thripleq.cirro.core.repo
 
-import com.thripleq.nume.BuildConfig
-import com.thripleq.nume.core.net.NetEaseGateway
-import com.thripleq.nume.core.net.NeteaseOp
+import com.thripleq.cirro.BuildConfig
+import com.thripleq.cirro.core.net.NetEaseGateway
+import com.thripleq.cirro.core.net.NeteaseOp
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

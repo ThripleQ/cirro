@@ -50,8 +50,8 @@ android {
         }
 
         // release 复用同一把 keystore（**故意为之**，自用项目）：
-        // 1. 2026-10-07 nume → Cirro 改名时换了 applicationId，手机上按「新 App」首装，
-        //    旧 nume 卸不卸都行（不卸则共存）。此后 Cirro 自身升级仍须同 key，否则
+        // 1. 2026-10-07 cirro → Cirro 改名时换了 applicationId，手机上按「新 App」首装，
+        //    旧 cirro 卸不卸都行（不卸则共存）。此后 Cirro 自身升级仍须同 key，否则
         //    INSTALL_FAILED_UPDATE_INCOMPATIBLE —— 必须卸载才装得上，歌单缓存、
         //    登录态全丢。同 key 才能就地覆盖升级。
         // 2. APK 不进 Play，没有「debug key 不被市场接受」的问题。

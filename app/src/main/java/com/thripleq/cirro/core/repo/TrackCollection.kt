@@ -44,7 +44,7 @@ data class TrackCollection(
      *
      * 存在的理由是「判断要不要重新拉」：进页面时发一次轻量检查（`n=0`）拿新指纹，
      * 与这份比 —— 相同就说明曲目表还能用，不必拉全量。见
-     * [com.thripleq.nume.core.repo.CollectionRefresher]。
+     * [com.thripleq.cirro.core.repo.CollectionRefresher]。
      */
     val fingerprint: String = "",
 )

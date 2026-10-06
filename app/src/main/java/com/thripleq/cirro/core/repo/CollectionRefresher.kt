@@ -1,8 +1,8 @@
-package com.thripleq.nume.core.repo
+package com.thripleq.cirro.core.repo
 
-import com.thripleq.nume.core.net.ApiResult
-import com.thripleq.nume.core.util.Clock
-import com.thripleq.nume.core.util.Diagnostics
+import com.thripleq.cirro.core.net.ApiResult
+import com.thripleq.cirro.core.util.Clock
+import com.thripleq.cirro.core.util.Diagnostics
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -180,7 +180,7 @@ class CollectionRefresher @Inject constructor(
     }
 
     companion object {
-        private const val TAG = "NumeCollection"
+        private const val TAG = "CirroCollection"
 
         /**
          * 「检查」冷却：距上次真正打过网络不足这么久，就直接用 Room、不发请求。

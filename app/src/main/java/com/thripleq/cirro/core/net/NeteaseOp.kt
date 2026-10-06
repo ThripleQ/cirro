@@ -18,7 +18,7 @@ object NeteaseOp {
      * `/weapi/v6/playlist/detail`，参数 `(id, s, n)`。
      * - `n` 空串 = 库内回落到上游默认的全量（曲目详情最多 1000 首，trackIds 不受限）；
      * - `n = "0"` = **轻量检查**：只回元数据 + 完整 trackIds（约全量的 7~15%），
-     *   用来判曲目有没有变（见 [com.thripleq.nume.core.repo.CollectionRefresher]）。
+     *   用来判曲目有没有变（见 [com.thripleq.cirro.core.repo.CollectionRefresher]）。
      */
     const val PLAYLIST_DETAIL = 13
     const val USER_PLAYLIST = 14
@@ -104,8 +104,8 @@ object NeteaseOp {
     // ── 收藏 / 点赞（2026-10-06，占位按钮接线）─────────────────────────
     // 这四条都是**写**接口。服务端把「下架歌曲无法收藏」这类失败放在 HTTP 200
     // 的 body.message 里（code=401），所以调用方一律走
-    // [com.thripleq.nume.core.repo.InteractionRepository]，由它统一把 message
-    // 抽成 [com.thripleq.nume.core.repo.ActionResult] —— 别直接 gateway.call 后
+    // [com.thripleq.cirro.core.repo.InteractionRepository]，由它统一把 message
+    // 抽成 [com.thripleq.cirro.core.repo.ActionResult] —— 别直接 gateway.call 后
     // 只看 err/code，那样用户点了会「没反应」。
 
     /** 红心 / 取消红心某首歌 `/weapi/song/like`（args: trackId, like）。like 传 "true"/"1" 为喜欢。 */

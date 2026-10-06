@@ -1,10 +1,10 @@
-package com.thripleq.nume.core.repo
+package com.thripleq.cirro.core.repo
 
 import android.util.Log
-import com.thripleq.nume.BuildConfig
-import com.thripleq.nume.core.net.ApiResult
-import com.thripleq.nume.core.net.NetEaseGateway
-import com.thripleq.nume.core.net.NeteaseOp
+import com.thripleq.cirro.BuildConfig
+import com.thripleq.cirro.core.net.ApiResult
+import com.thripleq.cirro.core.net.NetEaseGateway
+import com.thripleq.cirro.core.net.NeteaseOp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -76,7 +76,7 @@ class InteractionRepository @Inject constructor(
             val r = gateway.call(op, *args)
             val result = interpret(r)
             if (BuildConfig.DEBUG) {
-                Log.e("NumeAction", "op=$op args=${args.joinToString(",")} -> ${result.ok} ${result.message}")
+                Log.e("CirroAction", "op=$op args=${args.joinToString(",")} -> ${result.ok} ${result.message}")
             }
             result
         }

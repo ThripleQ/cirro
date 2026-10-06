@@ -1,10 +1,10 @@
-package com.thripleq.nume.ui.playerbar
+package com.thripleq.cirro.ui.playerbar
 
 import android.provider.Settings
 import android.widget.Toast
-import com.thripleq.nume.ui.theme.Motion
-import com.thripleq.nume.ui.theme.NumeFade
-import com.thripleq.nume.ui.theme.NumeShape
+import com.thripleq.cirro.ui.theme.Motion
+import com.thripleq.cirro.ui.theme.CirroFade
+import com.thripleq.cirro.ui.theme.CirroShape
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
@@ -86,9 +86,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
-import com.thripleq.nume.core.playback.PlayerHolder
-import com.thripleq.nume.ui.components.FadingMarqueeText
-import com.thripleq.nume.ui.components.quantizedFontSize
+import com.thripleq.cirro.core.playback.PlayerHolder
+import com.thripleq.cirro.ui.components.FadingMarqueeText
+import com.thripleq.cirro.ui.components.quantizedFontSize
 import kotlinx.coroutines.flow.collect
 
 /**
@@ -449,9 +449,9 @@ internal fun PlayerPage(
                     Box(
                         Modifier
                             .size(width = 36.dp, height = 4.dp)
-                            .clip(NumeShape.Track)
+                            .clip(CirroShape.Track)
                             .background(
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = NumeFade.HANDLE),
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = CirroFade.HANDLE),
                             ),
                     )
                 }
@@ -914,8 +914,8 @@ private fun PlayerProgressRow(
                 Modifier
                     .fillMaxWidth()
                     .height(4.dp)
-                    .clip(NumeShape.Track)
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = NumeFade.TRACK)),
+                    .clip(CirroShape.Track)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = CirroFade.TRACK)),
             )
         }
     }

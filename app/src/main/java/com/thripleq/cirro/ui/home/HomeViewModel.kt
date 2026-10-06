@@ -1,16 +1,16 @@
-package com.thripleq.nume.ui.home
+package com.thripleq.cirro.ui.home
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.thripleq.nume.core.playback.PlaybackLauncher
-import com.thripleq.nume.core.repo.Chart
-import com.thripleq.nume.core.repo.ChartRepository
-import com.thripleq.nume.core.repo.HomeRepository
-import com.thripleq.nume.core.repo.PlaylistCard
-import com.thripleq.nume.core.repo.StyleTag
-import com.thripleq.nume.core.repo.Track
-import com.thripleq.nume.core.util.RefreshGate
+import com.thripleq.cirro.core.playback.PlaybackLauncher
+import com.thripleq.cirro.core.repo.Chart
+import com.thripleq.cirro.core.repo.ChartRepository
+import com.thripleq.cirro.core.repo.HomeRepository
+import com.thripleq.cirro.core.repo.PlaylistCard
+import com.thripleq.cirro.core.repo.StyleTag
+import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.util.RefreshGate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async

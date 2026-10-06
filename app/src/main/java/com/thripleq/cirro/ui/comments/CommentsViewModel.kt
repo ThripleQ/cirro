@@ -1,11 +1,11 @@
-package com.thripleq.nume.ui.comments
+package com.thripleq.cirro.ui.comments
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.thripleq.nume.core.repo.Comment
-import com.thripleq.nume.core.repo.CommentRepository
-import com.thripleq.nume.core.repo.CommentThread
-import com.thripleq.nume.core.repo.InteractionRepository
+import com.thripleq.cirro.core.repo.Comment
+import com.thripleq.cirro.core.repo.CommentRepository
+import com.thripleq.cirro.core.repo.CommentThread
+import com.thripleq.cirro.core.repo.InteractionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow

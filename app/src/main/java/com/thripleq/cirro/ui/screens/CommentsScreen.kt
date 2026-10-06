@@ -1,4 +1,4 @@
-package com.thripleq.nume.ui.screens
+package com.thripleq.cirro.ui.screens
 
 import androidx.activity.compose.BackHandler
 import android.widget.Toast
@@ -46,19 +46,19 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-import com.thripleq.nume.core.repo.Comment
-import com.thripleq.nume.ui.comments.CommentsViewModel
-import com.thripleq.nume.ui.components.NumeArt
-import com.thripleq.nume.ui.components.NumeArtwork
-import com.thripleq.nume.ui.components.NumeEmptyState
-import com.thripleq.nume.ui.components.NumeErrorState
-import com.thripleq.nume.ui.components.NumeLoadMoreIndicator
-import com.thripleq.nume.ui.components.NumePaperPage
-import com.thripleq.nume.ui.components.NumeSectionHeader
-import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
-import com.thripleq.nume.ui.components.SkeletonBox
-import com.thripleq.nume.ui.components.SkeletonLine
-import com.thripleq.nume.ui.theme.NumeShape
+import com.thripleq.cirro.core.repo.Comment
+import com.thripleq.cirro.ui.comments.CommentsViewModel
+import com.thripleq.cirro.ui.components.CirroArt
+import com.thripleq.cirro.ui.components.CirroArtwork
+import com.thripleq.cirro.ui.components.CirroEmptyState
+import com.thripleq.cirro.ui.components.CirroErrorState
+import com.thripleq.cirro.ui.components.CirroLoadMoreIndicator
+import com.thripleq.cirro.ui.components.CirroPaperPage
+import com.thripleq.cirro.ui.components.CirroSectionHeader
+import com.thripleq.cirro.ui.components.ShimmerImagePlaceholder
+import com.thripleq.cirro.ui.components.SkeletonBox
+import com.thripleq.cirro.ui.components.SkeletonLine
+import com.thripleq.cirro.ui.theme.CirroShape
 import com.valentinilk.shimmer.shimmer
 
 /**
@@ -88,17 +88,17 @@ fun CommentsScreen(
         vm.message.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
     }
 
-    // 顶部换成站内统一的那一份（[NumePaperPage]）：容器色条 + 大标题 + 圆角纸，
+    // 顶部换成站内统一的那一份（[CirroPaperPage]）：容器色条 + 大标题 + 圆角纸，
     // 右上角一颗浮层收起键。原来这里是左上角返回箭头 + 小一号的 `titleLarge` 标题、
     // 且没有圆角纸（2026-10-05 用户：「改成一模一样的，返回按钮也是一模一样」）。
-    NumePaperPage(
+    CirroPaperPage(
         title = if (state.total > 0) "评论 ${state.total}" else "评论",
         onClose = onBack,
     ) {
         when {
             state.loading -> CommentsSkeleton()
-            state.error -> NumeErrorState(text = "评论加载失败，点此重试", onRetry = vm::retry)
-            state.hot.isEmpty() && state.latest.isEmpty() -> NumeEmptyState("还没有评论")
+            state.error -> CirroErrorState(text = "评论加载失败，点此重试", onRetry = vm::retry)
+            state.hot.isEmpty() && state.latest.isEmpty() -> CirroEmptyState("还没有评论")
             else -> {
                 LoadMoreWatcher(listState, vm::loadMore)
                 LazyColumn(
@@ -107,13 +107,13 @@ fun CommentsScreen(
                     contentPadding = PaddingValues(bottom = bottomPadding),
                 ) {
                     if (state.hot.isNotEmpty()) {
-                        item(key = "hot_header") { NumeSectionHeader("热门评论") }
+                        item(key = "hot_header") { CirroSectionHeader("热门评论") }
                         items(state.hot, key = { "h_${it.id}" }) { CommentRow(it, vm::toggleLike) }
                     }
-                    item(key = "latest_header") { NumeSectionHeader("最新评论") }
+                    item(key = "latest_header") { CirroSectionHeader("最新评论") }
                     items(state.latest, key = { "l_${it.id}" }) { CommentRow(it, vm::toggleLike) }
                     if (state.loadingMore) {
-                        item(key = "loading_more") { NumeLoadMoreIndicator() }
+                        item(key = "loading_more") { CirroLoadMoreIndicator() }
                     } else if (!state.hasMore && state.latest.isNotEmpty()) {
                         item(key = "end") {
                             Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
@@ -134,10 +134,10 @@ private fun CommentRow(comment: Comment, onLike: (Comment) -> Unit) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        NumeArtwork(
+        CirroArtwork(
             url = comment.avatarUrl,
             contentDescription = comment.nickname,
-            size = NumeArt.AvatarSm,
+            size = CirroArt.AvatarSm,
             shape = CircleShape,
             requestSize = 120,
         )
@@ -161,7 +161,7 @@ private fun CommentRow(comment: Comment, onLike: (Comment) -> Unit) {
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .clip(NumeShape.Chip)
+                        .clip(CirroShape.Chip)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         .padding(8.dp),
                 ) {
@@ -201,7 +201,7 @@ private fun CommentRow(comment: Comment, onLike: (Comment) -> Unit) {
                 // 14dp，单独点它在真机上很别扭。热区往外撑到 32dp 高，视觉位置不变。
                 Row(
                     modifier = Modifier
-                        .clip(NumeShape.Pill)
+                        .clip(CirroShape.Pill)
                         .clickable { onLike(comment) }
                         .padding(horizontal = 6.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,

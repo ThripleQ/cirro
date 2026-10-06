@@ -1,16 +1,16 @@
-package com.thripleq.nume.ui.profile
+package com.thripleq.cirro.ui.profile
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.thripleq.nume.core.playback.PlaybackLauncher
-import com.thripleq.nume.core.repo.ChartRepository
-import com.thripleq.nume.core.repo.HomeRepository
-import com.thripleq.nume.core.repo.InteractionRepository
-import com.thripleq.nume.core.repo.LibraryStateStore
-import com.thripleq.nume.core.repo.ProfileRepository
-import com.thripleq.nume.core.repo.Track
-import com.thripleq.nume.core.repo.TrackCollection
+import com.thripleq.cirro.core.playback.PlaybackLauncher
+import com.thripleq.cirro.core.repo.ChartRepository
+import com.thripleq.cirro.core.repo.HomeRepository
+import com.thripleq.cirro.core.repo.InteractionRepository
+import com.thripleq.cirro.core.repo.LibraryStateStore
+import com.thripleq.cirro.core.repo.ProfileRepository
+import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.repo.TrackCollection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.Collator

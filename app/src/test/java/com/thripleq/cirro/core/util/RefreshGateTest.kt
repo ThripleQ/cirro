@@ -1,4 +1,4 @@
-package com.thripleq.nume.core.util
+package com.thripleq.cirro.core.util
 
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test

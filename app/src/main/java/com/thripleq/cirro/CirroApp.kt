@@ -1,4 +1,4 @@
-package com.thripleq.nume
+package com.thripleq.cirro
 
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterExitState
@@ -36,29 +36,29 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
-import com.thripleq.nume.core.playback.PlayerHolder
-import com.thripleq.nume.core.repo.CommentThread
-import com.thripleq.nume.ui.components.CommentsOpener
-import com.thripleq.nume.ui.components.LocalCommentsOpener
-import com.thripleq.nume.ui.components.LocalOwnedTracks
-import com.thripleq.nume.ui.components.RevealLayer
-import com.thripleq.nume.ui.playerbar.BottomTab
-import com.thripleq.nume.ui.playerbar.PlayerDock
-import com.thripleq.nume.ui.playerbar.rememberPlayerDockState
-import com.thripleq.nume.ui.profile.ProfileViewModel
-import com.thripleq.nume.ui.screens.ArtistScreen
-import com.thripleq.nume.ui.screens.CommentsScreen
-import com.thripleq.nume.ui.screens.HomeScreen
-import com.thripleq.nume.ui.screens.LibraryScreen
-import com.thripleq.nume.ui.screens.PodcastScreen
-import com.thripleq.nume.ui.screens.ProfileScreen
-import com.thripleq.nume.ui.screens.SearchScreen
-import com.thripleq.nume.ui.screens.TrackListScreen
-import com.thripleq.nume.ui.screens.WebLoginScreen
-import com.thripleq.nume.ui.theme.Motion
+import com.thripleq.cirro.core.playback.PlayerHolder
+import com.thripleq.cirro.core.repo.CommentThread
+import com.thripleq.cirro.ui.components.CommentsOpener
+import com.thripleq.cirro.ui.components.LocalCommentsOpener
+import com.thripleq.cirro.ui.components.LocalOwnedTracks
+import com.thripleq.cirro.ui.components.RevealLayer
+import com.thripleq.cirro.ui.playerbar.BottomTab
+import com.thripleq.cirro.ui.playerbar.PlayerDock
+import com.thripleq.cirro.ui.playerbar.rememberPlayerDockState
+import com.thripleq.cirro.ui.profile.ProfileViewModel
+import com.thripleq.cirro.ui.screens.ArtistScreen
+import com.thripleq.cirro.ui.screens.CommentsScreen
+import com.thripleq.cirro.ui.screens.HomeScreen
+import com.thripleq.cirro.ui.screens.LibraryScreen
+import com.thripleq.cirro.ui.screens.PodcastScreen
+import com.thripleq.cirro.ui.screens.ProfileScreen
+import com.thripleq.cirro.ui.screens.SearchScreen
+import com.thripleq.cirro.ui.screens.TrackListScreen
+import com.thripleq.cirro.ui.screens.WebLoginScreen
+import com.thripleq.cirro.ui.theme.Motion
 import kotlinx.serialization.Serializable
 
-/** Type-safe navigation destinations. Navigation lives only in [NumeApp]. */
+/** Type-safe navigation destinations. Navigation lives only in [CirroApp]. */
 @Serializable
 object Home
 
@@ -147,7 +147,7 @@ private fun AnimatedVisibilityScope.rememberRevealProgress(
  * 播放页盖住 dock 本身与下方内容，收起箭头/返回键回落。
  */
 @Composable
-fun NumeApp() {
+fun CirroApp() {
     val navController = rememberNavController()
     val context = LocalContext.current.applicationContext
     val player = remember { PlayerHolder.get(context) }

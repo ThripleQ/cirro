@@ -1,7 +1,7 @@
-package com.thripleq.nume.core.util
+package com.thripleq.cirro.core.util
 
 import android.util.Log
-import com.thripleq.nume.BuildConfig
+import com.thripleq.cirro.BuildConfig
 import javax.inject.Inject
 
 /**

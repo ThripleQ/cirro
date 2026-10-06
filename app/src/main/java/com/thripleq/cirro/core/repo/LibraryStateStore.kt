@@ -1,10 +1,10 @@
-package com.thripleq.nume.core.repo
+package com.thripleq.cirro.core.repo
 
 import android.util.Log
-import com.thripleq.nume.BuildConfig
-import com.thripleq.nume.core.net.ApiResult
-import com.thripleq.nume.core.net.NetEaseGateway
-import com.thripleq.nume.core.net.NeteaseOp
+import com.thripleq.cirro.BuildConfig
+import com.thripleq.cirro.core.net.ApiResult
+import com.thripleq.cirro.core.net.NetEaseGateway
+import com.thripleq.cirro.core.net.NeteaseOp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -321,7 +321,7 @@ class LibraryStateStore @Inject constructor(
 
     /** 调试诊断（vivo 上 Log.d 被屏蔽，故用 Log.e）。 */
     private fun diag(msg: String) {
-        if (BuildConfig.DEBUG) Log.e("NumeLibrary", msg)
+        if (BuildConfig.DEBUG) Log.e("CirroLibrary", msg)
     }
 
     private companion object {

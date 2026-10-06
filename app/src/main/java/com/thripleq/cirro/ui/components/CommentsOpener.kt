@@ -1,4 +1,4 @@
-package com.thripleq.nume.ui.components
+package com.thripleq.cirro.ui.components
 
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.geometry.Rect
@@ -6,7 +6,7 @@ import androidx.compose.ui.geometry.Rect
 /**
  * 打开评论浮层。
  *
- * [threadId] 是网易那套资源线程序号（[com.thripleq.nume.core.repo.CommentThread]：
+ * [threadId] 是网易那套资源线程序号（[com.thripleq.cirro.core.repo.CommentThread]：
  * 单曲 `R_SO_4_`、专辑 `R_AL_3_`、歌单 `A_PL_0_`、节目 `R_VI_62_`）。
  * [origin] 是浮现起点（点下去那颗按钮的窗口矩形）；null = 居中浮现。
  */
@@ -15,7 +15,7 @@ fun interface CommentsOpener {
 }
 
 /**
- * 评论浮层的打开入口 —— **由 [com.thripleq.nume.NumeApp] 提供**。
+ * 评论浮层的打开入口 —— **由 [com.thripleq.cirro.CirroApp] 提供**。
  *
  * ## 为什么用 CompositionLocal 而不是一路传回调
  *

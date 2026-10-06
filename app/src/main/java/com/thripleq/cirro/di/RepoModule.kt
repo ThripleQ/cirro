@@ -1,13 +1,13 @@
-package com.thripleq.nume.di
+package com.thripleq.cirro.di
 
-import com.thripleq.nume.core.db.CollectionCache
-import com.thripleq.nume.core.repo.CollectionRemote
-import com.thripleq.nume.core.repo.CollectionStore
-import com.thripleq.nume.core.repo.GatewayCollectionRemote
-import com.thripleq.nume.core.util.AndroidDiagnostics
-import com.thripleq.nume.core.util.Clock
-import com.thripleq.nume.core.util.Diagnostics
-import com.thripleq.nume.core.util.WallClock
+import com.thripleq.cirro.core.db.CollectionCache
+import com.thripleq.cirro.core.repo.CollectionRemote
+import com.thripleq.cirro.core.repo.CollectionStore
+import com.thripleq.cirro.core.repo.GatewayCollectionRemote
+import com.thripleq.cirro.core.util.AndroidDiagnostics
+import com.thripleq.cirro.core.util.Clock
+import com.thripleq.cirro.core.util.Diagnostics
+import com.thripleq.cirro.core.util.WallClock
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn

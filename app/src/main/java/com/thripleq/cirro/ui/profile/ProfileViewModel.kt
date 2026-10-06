@@ -1,14 +1,14 @@
-package com.thripleq.nume.ui.profile
+package com.thripleq.cirro.ui.profile
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.thripleq.nume.core.net.NetEaseGateway
-import com.thripleq.nume.core.repo.Account
-import com.thripleq.nume.core.repo.LibraryStateStore
-import com.thripleq.nume.core.repo.ProfileData
-import com.thripleq.nume.core.repo.ProfileRepository
-import com.thripleq.nume.core.util.RefreshGate
-import com.thripleq.nume.ui.components.OwnedTracks
+import com.thripleq.cirro.core.net.NetEaseGateway
+import com.thripleq.cirro.core.repo.Account
+import com.thripleq.cirro.core.repo.LibraryStateStore
+import com.thripleq.cirro.core.repo.ProfileData
+import com.thripleq.cirro.core.repo.ProfileRepository
+import com.thripleq.cirro.core.util.RefreshGate
+import com.thripleq.cirro.ui.components.OwnedTracks
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -53,7 +53,7 @@ class ProfileViewModel @Inject constructor(
      * 「我买了什么」的 UI 侧快照，供**所有**曲目列表画徽标用（见 `LocalOwnedTracks`）。
      *
      * 挂在 ProfileViewModel 上不是因为它属于「我的」页，而是**这个 VM 是 Activity 作用域的**
-     * —— 它在 [com.thripleq.nume.NumeApp] 根部就被创建，于是这份镜像跟着 App 启动一起加载，
+     * —— 它在 [com.thripleq.cirro.CirroApp] 根部就被创建，于是这份镜像跟着 App 启动一起加载，
      * 与用户在哪个 tab 无关（徽标出现在歌单/榜单/搜索/首页，随便从哪进都得是准的）。
      * [SharingStarted.Eagerly] 保证这两个 flow 一开始收集就不会因无人订阅而停。
      */
