@@ -18,7 +18,9 @@
 | 改启动图 / 窗口底色（与主题同步的两处平台色） | `res/values/colors.xml` + `res/values-night/colors.xml` + `res/values/themes.xml` | 都锚 Compose 的 `surface`；不同步会在启动/旋转时闪一帧反差色 |
 | 改 M3 角色 → `ColorScheme` 的映射 | `ui/theme/Theme.kt` | 角色必须逐个显式传，漏传会回落 M3 内置紫灰 |
 | 改图上文字/水印/遮罩等浮层墨色 | `ui/theme/Color.kt`（`NumeInk` / `NumeFade`） | 与 colorScheme 解耦，明暗共用 |
-| 改字号、字重、字体 | `ui/theme/Type.kt` | |
+| 改字号、字重、字体 | `ui/theme/Type.kt` |
+| 改歌曲行的**付费 / VIP 徽标**（样式、判据、位置） | `ui/components/PayBadge.kt`（`PayTag` / `payTagOf` / `NumePayBadge`）；挂载点：`NumeMediaRow` 的 `payTag` 参数、`TrackListScreen` 的 `TrackListRow` |
+| 徽标用的圆角 | `ui/theme/Shape.kt` 的 `NumeShape.Badge`（2dp，实测 kanade 截图 4px@d3 ≈ 1.3dp） | |
 | 改底部导航胶囊：加删 tab、换图标、改顺序 | `NumeApp.kt` | 导航目的地也集中在这一个文件 |
 | 改点某处跳到哪个页面 | `NumeApp.kt` | 跳转逻辑只在这里 |
 
@@ -47,7 +49,7 @@
 | 顶部标题条（类型标签 ↔ 实际标题随滚动交叉淡变、单行截断） | `TrackListScreen` 的 `TrackListTitleBar`（高度 = `TrackListMetrics.PanelStickyTop`，底色随 `washExit` 淡入）；类型标签取 `TrackListSource.label` |
 | 吸顶后的容器色条 + 内容圆角纸（纸的上沿 = 标题条下沿） | 容器色：`TrackListBackdrop` 里 `graphicsLayer { alpha = exit }` + `background(surfaceContainer)`；纸：`TrackListScreen` 内层 `Box` 的 `.offset { paperTop }` + `Modifier.clip(SheetCorner)` + `background(surface)`（半径同 `ui/screens/HomeContent.kt` 的 `HomeSheetRadius`） |
 | 头部封面离状态栏 68dp（hero 终点） | `TrackListMetrics.HeroCoverTop`，落成头部 item 自己的上内缩 `HeaderTopInset`；`CoverExpandShell` 的 `heroCoverTop` 参数须同源 |
-| 底部滚动操作行（滑出头部按钮后出现的三按钮） | `ui/playerbar/PlayerDock.kt` 的 `ActionNavRow`（列表只上报是否滑出） |
+| ~~底部滚动操作行（滑出头部按钮后出现的三按钮）~~ | **已全局删除，别再加回来** | `ActionNavRow` / `actionVisible` / `actionsOffscreen` 上报链都没了；dock 只有「迷你条 + 导航行」两段，「播放全部」是列表页自己的吸顶行（见上一行），评论入口只在全屏播放页 |
 | 大卡 → 全屏列表时 hero 封面飞到哪里 | `ui/screens/{HomeExpandShell,ProfilePanels}.kt` 传的 `heroCover*`（必须与 `TrackListMetrics` 一致） |
 | 登录 / 验证码接口（JNI op 30/31、cookie 导入） | `app/src/main/cpp/libnetease_jni.c` + `core/net/NeteaseOp.kt` |
 
