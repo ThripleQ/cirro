@@ -224,28 +224,40 @@ internal fun PlayerPage(
 
         // ── 卡片 → 全屏：上下边「会合同步」（用户 2026-10-05 的方案）───────────────
         //
-        // 两条边的行程天生不等（底边要跨过整个 dock ≈ 1.75× 顶边行程），同一条时间轴走不等
-        // 行程 → 速度恒差 → 「上边效果密、下边效果稀」的几何病。旧结构用「底边单独的进度 +
-        // 末端阻力」压它，代价是底边「钉死→狂奔→急刹」三段断裂。
+        // 两条边的行程天生不等（底边要跨过整个 dock，K40 口径 A≈344px vs B≈413px），
+        // 同一条时间轴走不等行程 → 速度恒差 → 「上边效果密、下边效果稀」的几何病。
+        // 旧结构用「底边单独的进度 + 末端阻力」压它，代价是底边「钉死→狂奔→急刹」三段断裂。
         //
         // 现在两条边共用 t1，按**剩余距离**（离各自目的地的 px）重排：
-        //   前段 t1 ∈ [0, SyncJoinP]：剩余从「当前实际剩余」收敛到 [Motion.SyncRemainDp]；
+        //   前段 t1 ∈ [0, SyncJoinP]：剩余从「进入本段那一刻的快照」**匀速**收敛到
+        //   [Motion.SyncRemainDp]；
         //   同步段 t1 ∈ [SyncJoinP, 1]：两边剩余距离**逐帧相等**、同速归零 —— 严格并肩走完，
         //   没有任何一边停住等另一边，也不存在谁先到/被钉住。
-        // 剩余读**当前 bubbleOrCard**（而不是固定快照）：点按路径的 t1 在 p≈0.9 就启动，
-        // 两条路径 t1=0 时的形位不同 —— 从当前形位出发才保证逐帧连续；前段因此保持旧
-        // lerpRect 的收缩结构（拖动路径顶=双收缩、底=单收缩，观感不变），换掉的只有末段。
+        //
+        // 快照（t1=0 的等效形位）必须**固定**，不能每帧读当前 bubbleOrCard：那样顶会退化
+        // 成双收缩（topNow 与 headT 同向叠加，前段速度比 0.65→9.4 漂移），「匀速走到剩 d」
+        // 就没了。两条路径的 t1=0 对应的 p 都是常数：拖动 = HALF_ANCHOR_P（卡片档），
+        // 点按 = 2·tapFillStart（t1 随 tapT 提前启动，进入时缝未开、底还贴 dock 顶）——
+        // 纯函数即可重算，不需要额外状态。
+        //
+        // 速度接缝（K40 口径，t1 单位）：前段顶 352 / 底 437（比 1.24:1，底快 24% ——
+        // 行程不等 + 会合剩余相等的必然，方案本性）；尾段两边同 306。join 处顶 −13%、
+        // 底 −30% 换挡，方向不变。
         //
         // 左右边行程只有 edgePx（10dp），跟随 t1 线性收拢即可，不参与同步。
         if (t1 <= 0f) return bubbleOrCard
         val syncRemainPx = with(density) { Motion.SyncRemainDp.dp.toPx() }
+        val p0 = if (tapExpand) 2f * tapFillStart else HALF_ANCHOR_P
+        val topTravel = dockTopPx * (1f - p0 / 2f) + dockShiftPx   // 顶的目的地 = 0（屏顶）
+        // 进入时刻的底：拖动=卡片档（缝已全开，底=dockTop−gap）；点按=tapFillStart 处
+        // （breakT=t1=0，缝未开，底=dockTop）。两者都是 t1=0 时 bubbleOrCard.bottom 的值。
+        val bottomAtJoin = dockTopPx - gapPx * (if (tapExpand) 0f else 1f) + dockShiftPx
+        val bottomTravel = full.bottom - bottomAtJoin              // 底的目的地 = 屏底
         val headT = (t1 / Motion.SyncJoinP).coerceIn(0f, 1f)
         val tailT = ((t1 - Motion.SyncJoinP) / (1f - Motion.SyncJoinP)).coerceIn(0f, 1f)
-        val topRemainNow = bubbleOrCard.top                     // 顶的目的地 = 0（屏顶）
-        val bottomRemainNow = full.bottom - bubbleOrCard.bottom // 底的目的地 = 屏底
-        val topRemain = if (t1 < Motion.SyncJoinP) lerp(topRemainNow, syncRemainPx, headT)
+        val topRemain = if (t1 < Motion.SyncJoinP) lerp(topTravel, syncRemainPx, headT)
                         else syncRemainPx * (1f - tailT)
-        val bottomRemain = if (t1 < Motion.SyncJoinP) lerp(bottomRemainNow, syncRemainPx, headT)
+        val bottomRemain = if (t1 < Motion.SyncJoinP) lerp(bottomTravel, syncRemainPx, headT)
                            else syncRemainPx * (1f - tailT)
         return Rect(
             inset * (1f - t1),
