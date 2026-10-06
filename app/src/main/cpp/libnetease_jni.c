@@ -236,6 +236,13 @@ static ne_resp *dispatch(int op, int narg, const char *const a[]) {
         /* 48: 相似歌手 /weapi/discovery/simiArtist（args: artistId）。
          * 「相似艺人」卡走这条：种子歌 → 歌手 → 相似歌手 → 他们的热门歌。 */
         case 48: return ne_simi_artist(A(0));
+        /* 49..52: 占位按钮接线（2026-10-06），全是**写**接口。
+         * 服务端把「下架歌曲」那类失败放在 HTTP 200 的 message 里，调用方
+         * 必须读 body.message，不能只看 err/code。 */
+        case 49: return ne_song_like(A(0), A(1));
+        case 50: return ne_comment_like(A(0), A(1), A(2));
+        case 51: return ne_album_subscribe(A(0), A(1));
+        case 52: return ne_album_sublist(A(0), A(1));
         default: return NULL;
     }
 #undef A

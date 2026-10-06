@@ -92,6 +92,36 @@ class ProfileRepository @Inject constructor(
         purchasedAlbumsCache = null
     }
 
+    /**
+     * 红心在别处被改过（[InteractionRepository.setSongLiked]）后调用。
+     *
+     * 只清「喜欢」那一份缓存，**不动 [cachedProfile]**：清了它，「我的」页会退回
+     * 骨架屏重来一次，而用户刚从播放页回来、期望的是原来的版面。留着旧数据、
+     * 让下次静默刷新把计数改过来，观感才是对的；曲目列表本身下次进「喜欢的音乐」
+     * 也会因为缓存被清而重拉。
+     */
+    fun invalidateLikedCache() {
+        likedCache.clear()
+    }
+
+    /**
+     * 歌单收藏态在别处被改过（[InteractionRepository.setPlaylistSubscribed]）后调用，
+     * 把内存里那份壳同步掉 —— 否则退出列表页再进来，收藏按钮会退回旧状态。
+     *
+     * **只动内存，不写 Room**：`CollectionEntity` 没有 subscribed 列，离线副本
+     * 本来就把这个字段当 false 处理。为它加一次 schema 迁移不值当 —— 联网时
+     * 下一次 [playlistCollection] 就会把真值覆盖回来。
+     */
+    fun cacheSubscribed(playlistId: String, subscribed: Boolean, subscribedCount: Long) {
+        val key = "pl:$playlistId"
+        collectionMemory[key]?.let {
+            collectionMemory[key] = it.copy(
+                subscribed = subscribed,
+                subscribedCount = subscribedCount,
+            )
+        }
+    }
+
     private companion object {
         // 账号态短缓存有效期：覆盖 tab 切换/VM 重建的峰值调用，又不至于让
         // 登录态过期太久（5s 内手滑切 tab 仍复用，陈旧影响可忽略）。

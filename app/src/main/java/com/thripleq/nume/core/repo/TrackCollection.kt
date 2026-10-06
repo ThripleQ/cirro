@@ -19,6 +19,12 @@ class LruCache<K, V>(private val max: Int) {
  * 一个"壳子 + 列表"：榜单、歌单、专辑都是同一个结构——一段集合元数据
  * （封面/标题/播放量/收藏数/更新频率/描述/创建者）+ 曲目列表。喜欢/已购
  * 没有独立后端壳，由 ViewModel 用已有数据组装一份简化壳。
+ *
+ * [subscribed] 只对**歌单/榜单**有真值：`/weapi/v6/playlist/detail` 的 playlist
+ * 对象自带这个布尔，所以收藏按钮的初始态跟着壳走，不需要额外请求。
+ * 专辑没有对应字段（探针实测），专辑的收藏态由
+ * [LibraryStateStore.subscribedAlbumIds] 提供；喜欢/已购/每日推荐这类本地
+ * 组装的壳恒为 false（它们本来就不支持收藏）。
  */
 data class TrackCollection(
     val id: String,
@@ -31,6 +37,7 @@ data class TrackCollection(
     val description: String,
     val creator: String,
     val tracks: List<Track>,
+    val subscribed: Boolean = false,
 )
 
 /** 接口常把缺失字段返回为 JSON null，org.json 的 optString 会得到字面量 "null"；
@@ -56,6 +63,9 @@ fun parsePlaylistObject(obj: JSONObject): TrackCollection {
         description = obj.strOrEmpty("description"),
         creator = creator,
         tracks = parseTracks(obj.optJSONArray("tracks")),
+        // 收藏按钮的初始态。未登录时该字段为 false —— 与"没收藏"同形，
+        // 点了会拿到服务端的 301 文案，可接受（比停在加载态强）。
+        subscribed = obj.optBoolean("subscribed", false),
     )
 }
 
