@@ -1,5 +1,6 @@
 package com.thripleq.nume.ui.screens
 
+import android.content.Intent
 import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -28,6 +29,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -36,9 +38,13 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Sort
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -48,6 +54,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -69,6 +76,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -92,11 +100,13 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
+import com.thripleq.nume.core.repo.CommentThread
 import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.core.repo.TrackCollection
 import com.thripleq.nume.ui.components.BannerCoverSize
 import com.thripleq.nume.ui.components.BigCoverVisual
 import com.thripleq.nume.ui.components.CloseButtonRaise
+import com.thripleq.nume.ui.components.LocalCommentsOpener
 import com.thripleq.nume.ui.components.LocalShellHeroAlpha
 import com.thripleq.nume.ui.components.LocalShellSettled
 import com.thripleq.nume.ui.components.NumeCloseButton
@@ -115,11 +125,13 @@ import com.thripleq.nume.ui.components.rememberCoverAccent
 import com.thripleq.nume.ui.profile.TrackListSource
 import com.thripleq.nume.ui.profile.TrackListUiState
 import com.thripleq.nume.ui.profile.TrackListViewModel
+import com.thripleq.nume.ui.profile.TrackSort
 import com.thripleq.nume.ui.theme.NumeShape
 import com.valentinilk.shimmer.shimmer
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * 歌单页版式令牌 —— 2026-10-03 按官方歌单页实机抄量（1080×2400@480dpi，px÷3 换成 dp）。
@@ -330,11 +342,48 @@ fun TrackListScreen(
     // 封面没到（previewCoverUrl 为空）就先用正片的 URL，两者同源，取出来的色一致。
     val coverAccent = rememberCoverAccent(previewCoverUrl ?: collection?.coverUrl)
 
-    // 尚未接通的入口（分享 / 评论 / 收藏 / 下载 / 排序）统一给一句「开发中」，
+    // 分享 / 评论 / 收藏 / 排序四件事都接上了真功能；本屏只剩「下载」还是占位
+    // （离线下载要连播放器一起改，是单独一轮的事），它给一句「开发中」，
     // 与底部浮岛的占位反馈同一套语言——空点没反应会被当成坏了。
-    val context = LocalContext.current.applicationContext
-    val onPlaceholder = remember(context) {
-        { Toast.makeText(context, "开发中", Toast.LENGTH_SHORT).show() }
+    val appContext = LocalContext.current.applicationContext
+    // 分享要拿 **Activity context** 起选择器：applicationContext 起 chooser 得加
+    // FLAG_ACTIVITY_NEW_TASK，且部分 ROM 上会丢掉调用方身份、选择器样式异常。
+    val shareContext = LocalContext.current
+    val onDownloadNotYet = remember(appContext) {
+        { Toast.makeText(appContext, "开发中", Toast.LENGTH_SHORT).show() }
+    }
+    val onShare: () -> Unit = {
+        val c = collection
+        if (c != null) {
+            val url = shareUrlOf(src, c.id)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                if (url != null) putExtra(Intent.EXTRA_TEXT, "${c.name}\n$url") else putExtra(Intent.EXTRA_TEXT, c.name)
+                putExtra(Intent.EXTRA_SUBJECT, c.name)
+            }
+            shareContext.startActivity(Intent.createChooser(send, "分享到"))
+        }
+    }
+    // 评论浮层挂在根上（见 [LocalCommentsOpener]）：本屏可能正被展开壳裁着，
+    // 就地画会被壳的圆角连内容一起切掉。拿不到宿主时安静地不动。
+    val commentsOpener = LocalCommentsOpener.current
+    val onComments: (Rect) -> Unit = { rect ->
+        val c = collection
+        if (c != null) {
+            val thread = commentThreadOf(src, c.id)
+            if (thread == null) {
+                // 喜欢 / 已购 / 每日推荐是本地组装的列表，服务端没有它们的评论线。
+                Toast.makeText(appContext, "这个列表没有评论", Toast.LENGTH_SHORT).show()
+            } else {
+                commentsOpener?.open(thread, rect)
+            }
+        }
+    }
+    var sortSheetOpen by remember { mutableStateOf(false) }
+    val sort by vm.sort.collectAsStateWithLifecycle()
+    // 收藏 / 排序失败的提示（成功不打扰）。
+    LaunchedEffect(vm) {
+        vm.message.collect { Toast.makeText(appContext, it, Toast.LENGTH_SHORT).show() }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -525,7 +574,9 @@ fun TrackListScreen(
                                             watermarkIcon,
                                             textAlpha = contentReveal,
                                             exit = washExit,
-                                            onPlaceholder = onPlaceholder,
+                                            onShare = onShare,
+                                            onComments = onComments,
+                                            onSubscribe = vm::toggleSubscribe,
                                             // 骨架还在时共享元素挂骨架（见 skeletonGone），避免同 key 双宿主。
                                             coverSharedModifier =
                                                 if (skeletonGone) coverSharedModifier else Modifier,
@@ -579,7 +630,9 @@ fun TrackListScreen(
                                             target,
                                             accent = coverAccent,
                                             onPlayAll = { vm.onPlayAll(target) },
-                                            onPlaceholder = onPlaceholder,
+                                            onSubscribe = vm::toggleSubscribe,
+                                            onDownload = onDownloadNotYet,
+                                            onSort = { sortSheetOpen = true },
                                         )
                                     }
                                 }
@@ -666,7 +719,87 @@ fun TrackListScreen(
                     .padding(12.dp),
             )
         }
+
+        // 排序面板：与播放页的「播放音质」面板同一套语言（ModalBottomSheet + RadioButton）。
+        // 排序是**纯本地重排**（不重拉网络），所以这里没有任何加载态——选完即生效。
+        if (sortSheetOpen) {
+            TrackListSortSheet(
+                current = sort,
+                onPick = {
+                    vm.setSort(it)
+                    sortSheetOpen = false
+                },
+                onDismiss = { sortSheetOpen = false },
+            )
+        }
     }
+}
+
+/**
+ * 排序面板。抄 [com.thripleq.nume.ui.playerbar.PlayerSettingsSheet] 那套
+ * 「ModalBottomSheet + RadioButton」：站内两处选择类面板长得一样。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrackListSortSheet(
+    current: TrackSort,
+    onPick: (TrackSort) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    ModalBottomSheet(
+        // 先跑完自身收起动画再移除组合，否则面板会被当场拆掉、看不出收起（见
+        // [com.thripleq.nume.ui.playerbar.PlayerQueueSheet] 的同一处处理）。
+        onDismissRequest = {
+            scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+        },
+        sheetState = sheetState,
+    ) {
+        Text(
+            text = "排序",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+        TrackSort.entries.forEach { mode ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPick(mode) }
+                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = current == mode, onClick = { onPick(mode) })
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = mode.label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+/**
+ * 分享用的官方链接。**只有歌单 / 榜单 / 专辑有公开页面** —— 喜欢 / 已购 / 每日推荐
+ * 是本地组装的列表，它们的 id 分别是 uid、无意义串，硬拼进 `playlist?id=` 会打开
+ * 一张不相干的歌单（比不给链接更糟）。这几类只分享文字。
+ */
+private fun shareUrlOf(source: TrackListSource, id: String): String? = when (source) {
+    TrackListSource.PLAYLIST, TrackListSource.CHART -> "https://music.163.com/#/playlist?id=$id"
+    TrackListSource.ALBUM -> "https://music.163.com/#/album?id=$id"
+    else -> null
+}
+
+/** 评论线程序号；返回 null 表示这个列表没有评论线（本地组装的那三类）。 */
+private fun commentThreadOf(source: TrackListSource, id: String): String? = when (source) {
+    // 榜单本身就是歌单，共用 `A_PL_0_`。
+    TrackListSource.PLAYLIST, TrackListSource.CHART -> CommentThread.playlist(id)
+    TrackListSource.ALBUM -> CommentThread.album(id)
+    else -> null
 }
 
 /* ── 页底 ──────────────────────────────────────────────────────── */
@@ -1021,7 +1154,10 @@ private fun TrackListHeader(
     textAlpha: State<Float>?,
     /** 头部滚出进度 0..1（= `washExit`）：驱动封面的退场微缩（见 [HeaderExitShrink]）。 */
     exit: State<Float>,
-    onPlaceholder: () -> Unit,
+    onShare: () -> Unit,
+    /** 评论键：参数是按钮自己的窗口矩形，作为评论浮层的浮现起点。 */
+    onComments: (Rect) -> Unit,
+    onSubscribe: () -> Unit,
     coverSharedModifier: Modifier = Modifier,
 ) {
     // 展开动画期间 hero 正顶着封面：本封面与 hero 互补，避免两层重影（见 LocalShellHeroAlpha）。
@@ -1128,7 +1264,12 @@ private fun TrackListHeader(
             }
         }
         Spacer(Modifier.height(16.dp))
-        // 三枚等宽操作胶囊（分享 / 评论 / 收藏，均为占位）。
+        // 三枚等宽操作胶囊（分享 / 评论 / 收藏）。三枚都是真动作：
+        // 分享走系统分享面板（带官方链接）、评论打开歌单评论线、收藏切换订阅。
+        //
+        // 评论键要把自己的窗口矩形交出去（评论浮层从这颗按钮处浮现），所以这一枚
+        // 单独挂 `onGloballyPositioned` —— 另外两枚不需要，别顺手全挂上（每次布局
+        // 都会回调）。
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1137,19 +1278,24 @@ private fun TrackListHeader(
                 icon = Icons.Outlined.Share,
                 label = "分享",
                 modifier = Modifier.weight(1f),
-                onClick = onPlaceholder,
+                onClick = onShare,
             )
+            var commentRect by remember { mutableStateOf(Rect.Zero) }
             TrackListAction(
                 icon = Icons.Outlined.ChatBubbleOutline,
                 label = "评论",
-                modifier = Modifier.weight(1f),
-                onClick = onPlaceholder,
+                modifier = Modifier
+                    .weight(1f)
+                    .onGloballyPositioned { commentRect = it.boundsInWindow() },
+                onClick = { onComments(commentRect) },
             )
             TrackListAction(
-                icon = Icons.Outlined.FavoriteBorder,
+                // 已收藏给实心 + 主色：与播放页那颗红心同一套「点亮」语言。
+                icon = if (collection.subscribed) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                 label = collection.subscribedCount.takeIf { it > 0 }?.let(::formatCount) ?: "收藏",
                 modifier = Modifier.weight(1f),
-                onClick = onPlaceholder,
+                onClick = onSubscribe,
+                active = collection.subscribed,
             )
         }
         //
@@ -1176,7 +1322,12 @@ private fun TrackListAction(
     label: String,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
+    /** 点亮态（收藏）：图标与文字转主色。底不变——胶囊自己在糊底上，改底色会跟封面色打架。 */
+    active: Boolean = false,
 ) {
+    // 点亮色与「未点亮」色的分工：图标承状态、文字保持墨色。文字也染主色时，整条胶囊在
+    // 浅色主题下会变成一块粉色，与三枚里的另外两枚失衡。
+    val tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
     Row(
         modifier = modifier
             .height(40.dp)
@@ -1191,7 +1342,7 @@ private fun TrackListAction(
         Icon(
             icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
+            tint = tint,
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(6.dp))
@@ -1297,7 +1448,10 @@ private fun PlayAllRow(
     collection: TrackCollection,
     accent: Color,
     onPlayAll: () -> Unit,
-    onPlaceholder: () -> Unit,
+    onSubscribe: () -> Unit,
+    /** 下载：仍是占位（离线下载要连播放器一起改，单独一轮）。 */
+    onDownload: () -> Unit,
+    onSort: () -> Unit,
 ) {
     Row(
         Modifier
@@ -1373,18 +1527,31 @@ private fun PlayAllRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        PanelIcon(Icons.Outlined.FavoriteBorder, "收藏", onPlaceholder)
-        PanelIcon(Icons.Outlined.Download, "下载", onPlaceholder)
-        PanelIcon(Icons.Outlined.Sort, "排序", onPlaceholder)
+        PanelIcon(
+            icon = if (collection.subscribed) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+            label = "收藏",
+            onClick = onSubscribe,
+            active = collection.subscribed,
+        )
+        PanelIcon(Icons.Outlined.Download, "下载", onDownload)
+        PanelIcon(Icons.Outlined.Sort, "排序", onSort)
     }
 }
 
 /**
  * 面板行尾的图标钮：40dp 触控盒，不是 [IconButton] —— M3 的 IconButton 有 48dp 最小尺寸，
  * 三枚就把中间那段挤窄到副标题放不下（官方实测图标间距约 43dp，本行照此收紧）。
+ *
+ * [active] 是点亮态（收藏）：图标转主色。这枚钮是**同一个动作的第二个入口**（头部那枚
+ * 胶囊才是第一个），两处必须同源同状态 —— 都读 `collection.subscribed`。
  */
 @Composable
-private fun PanelIcon(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun PanelIcon(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    active: Boolean = false,
+) {
     Box(
         Modifier
             .size(40.dp)
@@ -1395,7 +1562,8 @@ private fun PanelIcon(icon: ImageVector, label: String, onClick: () -> Unit) {
         Icon(
             icon,
             contentDescription = label,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (active) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(22.dp),
         )
     }

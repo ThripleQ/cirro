@@ -1,6 +1,7 @@
 package com.thripleq.nume.ui.playerbar
 
 import android.provider.Settings
+import android.widget.Toast
 import com.thripleq.nume.ui.theme.Motion
 import com.thripleq.nume.ui.theme.NumeFade
 import com.thripleq.nume.ui.theme.NumeShape
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Repeat
@@ -123,7 +125,6 @@ internal fun PlayerPage(
     dockHeightPx: Float,
     /** 导航收起时整块壳要下移的量（px）；导航可见时为 0。 */
     dockShiftPx: Float,
-    onPlaceholderAction: () -> Unit,
     onComments: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -429,7 +430,6 @@ internal fun PlayerPage(
                 shellWidthPx = contentRect.width,
                 sleepEndAt = state.sleepEndAt,
                 onSleepEndAtChange = { state.sleepEndAt = it },
-                onPlaceholderAction = onPlaceholderAction,
                 onComments = onComments,
                 modifier = Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha },
             )
@@ -523,7 +523,6 @@ internal fun PlayerPageContent(
     shellWidthPx: Float,
     sleepEndAt: Long,
     onSleepEndAtChange: (Long) -> Unit,
-    onPlaceholderAction: () -> Unit,
     onComments: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -532,6 +531,15 @@ internal fun PlayerPageContent(
     var lyricsOpen by remember { mutableStateOf(false) }
     var commentRect by remember { mutableStateOf(Rect.Zero) }
     val state = rememberPlayerState(player)
+    // 红心：真状态 + 真接口（[PlayerActionsViewModel]）。状态来自进程级的「喜欢」集合，
+    // 切歌不产生网络请求；未载入完时显示空心的代价写在那个类的注释里。
+    val actionsVm: PlayerActionsViewModel = hiltViewModel()
+    val liked by actionsVm.liked.collectAsStateWithLifecycle()
+    LaunchedEffect(state.trackId) { actionsVm.onTrackChanged(state.trackId) }
+    val appContext = LocalContext.current.applicationContext
+    LaunchedEffect(actionsVm) {
+        actionsVm.message.collect { Toast.makeText(appContext, it, Toast.LENGTH_SHORT).show() }
+    }
     // 歌词：惰性加载 —— 只有歌词面板打开时才按当前曲目请求（切换曲目自动重载）。
     val lyricsVm: LyricsViewModel = hiltViewModel()
     val lyricsState by lyricsVm.state.collectAsStateWithLifecycle()
@@ -695,11 +703,17 @@ internal fun PlayerPageContent(
                         .graphicsLayer { alpha = sc },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onClick = onPlaceholderAction, modifier = Modifier.size(TitleActionButton)) {
+                    IconButton(
+                        onClick = actionsVm::toggleLike,
+                        modifier = Modifier.size(TitleActionButton),
+                    ) {
                         Icon(
-                            Icons.Filled.Favorite,
-                            "收藏",
-                            tint = MaterialTheme.colorScheme.primary,
+                            // 空/实心随真状态走：以前这颗心是「永远实心 + 主色」的假状态，
+                            // 点下去只弹「开发中」，读起来像「这首歌已经喜欢了」。
+                            imageVector = if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                            contentDescription = if (liked) "取消喜欢" else "喜欢",
+                            tint = if (liked) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(TitleActionIcon),
                         )
                     }

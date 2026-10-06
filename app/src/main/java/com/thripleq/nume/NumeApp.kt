@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
@@ -36,6 +37,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.thripleq.nume.core.playback.PlayerHolder
+import com.thripleq.nume.core.repo.CommentThread
+import com.thripleq.nume.ui.components.CommentsOpener
+import com.thripleq.nume.ui.components.LocalCommentsOpener
 import com.thripleq.nume.ui.components.RevealLayer
 import com.thripleq.nume.ui.playerbar.BottomTab
 import com.thripleq.nume.ui.playerbar.PlayerDock
@@ -196,24 +200,35 @@ fun NumeApp() {
         navController.popBackStack()
     }
 
-    // 评论浮层：点播放页「评论」按钮打开，**盖在播放页之上、播放页保持打开**（不再收起）。
-    // 以「从评论按钮处浮现」的 origin-reveal 进入/退出；关闭后回到播放页。
+    // 评论浮层：盖在被覆盖的页之上（那一页保持打开），不再是「只能从播放页进」——
+    // 歌单/榜单页头部的评论胶囊、专辑页也走这里。三个入口的区别只在 threadId
+    // （单曲 R_SO_4_ / 歌单 A_PL_0_ / 专辑 R_AL_3_），浮层本身是同一个。
+    // 以「从评论按钮处浮现」的 origin-reveal 进入/退出。
     // 系统返回键由浮层内的 BackHandler 拦截。
-    var commentsSongId by remember { mutableStateOf<String?>(null) }
-    // 收起期间仍要渲染内容：id/起点保留到浮现退场跑完（由下面的 derivedStateOf 控制卸载）。
-    var commentsShownId by remember { mutableStateOf("") }
+    var commentsThreadId by remember { mutableStateOf<String?>(null) }
+    // 收起期间仍要渲染内容：threadId/起点保留到浮现退场跑完（由下面的 derivedStateOf 控制卸载）。
+    var commentsShownThread by remember { mutableStateOf("") }
     var commentsOrigin by remember { mutableStateOf<Rect?>(null) }
     // 内容首次布局后才起手（否则重列表组合吃掉一两帧，第一个画出来的帧已长大）。
     var commentsArmed by remember { mutableStateOf(false) }
-    LaunchedEffect(commentsSongId) { if (commentsSongId == null) commentsArmed = false }
+    LaunchedEffect(commentsThreadId) { if (commentsThreadId == null) commentsArmed = false }
     val commentsProgress = animateFloatAsState(
-        targetValue = if (commentsSongId != null && commentsArmed) 1f else 0f,
-        animationSpec = if (commentsSongId != null && commentsArmed) Motion.revealEnter() else Motion.revealExit(),
+        targetValue = if (commentsThreadId != null && commentsArmed) 1f else 0f,
+        animationSpec = if (commentsThreadId != null && commentsArmed) Motion.revealEnter() else Motion.revealExit(),
         label = "commentsReveal",
     )
     // 只在「可见或退场未结束」时组合浮层；derivedStateOf 保证逐帧进度变化不触发重组。
     val commentsLayerVisible by remember {
-        derivedStateOf { commentsSongId != null || commentsProgress.value > 0.01f }
+        derivedStateOf { commentsThreadId != null || commentsProgress.value > 0.01f }
+    }
+    // 打开的入口。挂在根上交给内容深处取用（见 [LocalCommentsOpener] 的说明）：
+    // 浮层必须画在全屏最上层，而触发的按钮在展开壳/面板深处，就地画会被壳的圆角裁掉。
+    val commentsOpener = remember {
+        CommentsOpener { thread, origin ->
+            commentsShownThread = thread
+            commentsOrigin = origin?.takeIf { it.width > 0f && it.height > 0f }
+            commentsThreadId = thread
+        }
     }
 
     // 播放页状态：常驻 dock 与全屏播放页合体（同一组件/同一份 progress）。
@@ -229,6 +244,9 @@ fun NumeApp() {
     }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        // 评论浮层的入口交给内容深处（歌单页头部那枚胶囊在展开壳里，就地画会被壳的
+        // 圆角裁掉，所以浮层只能挂在根上）。见 [LocalCommentsOpener]。
+        CompositionLocalProvider(LocalCommentsOpener provides commentsOpener) {
         // 浮现目标的中性转场时长：**必须 ≥ RevealLayer 自己的动画**，否则 AnimatedContent
         // 会先结束、把下层来源页撤掉，而浮现窗口还没铺满 → 露背景。多给一点余量。
         val revealInMs = Motion.RevealEnterMs + Motion.RevealArmDelayMs + 120
@@ -445,16 +463,11 @@ fun NumeApp() {
                     }
                 },
                 navVisible = !shellOpen,
-                onPlaceholderAction = {
-                    android.widget.Toast.makeText(context, "开发中", android.widget.Toast.LENGTH_SHORT).show()
-                },
                 onComments = { rect ->
                     // 播放页盖在导航图之上：评论以浮层形式再盖在播放页之上，
                     // 播放页保持打开；以评论按钮矩形为起点浮现。
                     player.currentMediaItem?.mediaId?.let { id ->
-                        commentsShownId = id
-                        commentsOrigin = rect.takeIf { it.width > 0f && it.height > 0f }
-                        commentsSongId = id
+                        commentsOpener.open(CommentThread.song(id), rect)
                     }
                 },
                 onIslandHeightChange = { islandHeightDp = it },
@@ -464,18 +477,19 @@ fun NumeApp() {
         // ---- 评论浮层（最上层）----
         // 置于 PlayerDock 之后：绘制顺序在播放页之上；播放页仍在组合中、保持打开。
         // BackHandler 在 CommentsScreen 内，晚于 PlayerPage 注册，返回键优先关评论。
-        if (commentsLayerVisible && commentsShownId.isNotEmpty()) {
+        if (commentsLayerVisible && commentsShownThread.isNotEmpty()) {
             RevealLayer(
                 fromRect = commentsOrigin,
                 progress = commentsProgress,
                 onFirstLayout = { commentsArmed = true },
             ) {
                 CommentsScreen(
-                    songId = commentsShownId,
-                    onBack = { commentsSongId = null },
+                    threadId = commentsShownThread,
+                    onBack = { commentsThreadId = null },
                     islandHeight = 0f,
                 )
             }
+        }
         }
     }
 }
