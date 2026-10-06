@@ -40,8 +40,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.thripleq.cirro.core.repo.Album
-import com.thripleq.cirro.core.repo.PlaylistSummary
+import com.thripleq.cirro.core.model.Album
+import com.thripleq.cirro.core.model.PlaylistSummary
 import com.thripleq.cirro.ui.components.CirroErrorState
 import com.thripleq.cirro.ui.components.CirroPageTitleBar
 import com.thripleq.cirro.ui.components.ShellPanel

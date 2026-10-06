@@ -1,7 +1,7 @@
 package com.thripleq.cirro.core.playback
 
 import android.content.Context
-import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.model.Track
 import org.json.JSONArray
 import org.json.JSONObject
 

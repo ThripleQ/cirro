@@ -2,7 +2,7 @@ package com.thripleq.cirro.ui.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.thripleq.cirro.core.repo.Chart
+import com.thripleq.cirro.core.model.Chart
 import com.thripleq.cirro.core.repo.ChartRepository
 import com.thripleq.cirro.core.util.RefreshGate
 import dagger.hilt.android.lifecycle.HiltViewModel

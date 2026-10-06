@@ -1,6 +1,6 @@
 package com.thripleq.cirro.ui.screens
 
-import com.thripleq.cirro.core.repo.SearchAlbum
+import com.thripleq.cirro.core.model.SearchAlbum
 import com.thripleq.cirro.ui.search.SearchTab
 import com.thripleq.cirro.ui.search.SearchUiState
 import java.text.SimpleDateFormat

@@ -1,5 +1,10 @@
 package com.thripleq.cirro.core.repo
 
+import com.thripleq.cirro.core.model.SearchAlbum
+import com.thripleq.cirro.core.model.SearchArtist
+import com.thripleq.cirro.core.model.SearchPlaylist
+import com.thripleq.cirro.core.model.SearchRadio
+import com.thripleq.cirro.core.model.Track
 import com.thripleq.cirro.core.net.NetEaseGateway
 import com.thripleq.cirro.core.net.NeteaseOp
 import kotlinx.coroutines.Dispatchers
@@ -7,45 +12,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
-
-/** 搜索结果里的一个歌单（cloudsearch type=1000）。 */
-data class SearchPlaylist(
-    val id: String,
-    val name: String,
-    val coverUrl: String?,
-    val creator: String,
-    val trackCount: Long,
-    val playCount: Long,
-)
-
-/** 搜索结果里的一个专辑（cloudsearch type=10）。 */
-data class SearchAlbum(
-    val id: String,
-    val name: String,
-    val coverUrl: String?,
-    val artist: String,
-    val size: Long,
-    val publishTime: Long,
-)
-
-/** 搜索结果里的一个歌手（cloudsearch type=100）。 */
-data class SearchArtist(
-    val id: String,
-    val name: String,
-    val avatarUrl: String?,
-    val albumSize: Long,
-    val musicSize: Long,
-)
-
-/** 搜索结果里的一个播客/电台（cloudsearch type=1009）。 */
-data class SearchRadio(
-    val id: String,
-    val name: String,
-    val coverUrl: String?,
-    val djName: String,
-    val programCount: Long,
-    val playCount: Long,
-)
 
 /**
  * 搜索数据源：单曲 / 歌单 / 专辑 / 歌手 / 播客（电台）。

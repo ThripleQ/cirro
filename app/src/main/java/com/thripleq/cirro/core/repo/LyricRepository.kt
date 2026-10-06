@@ -1,5 +1,7 @@
 package com.thripleq.cirro.core.repo
 
+import com.thripleq.cirro.core.model.LyricLine
+import com.thripleq.cirro.core.model.Lyrics
 import android.util.Log
 import com.thripleq.cirro.core.net.NetEaseGateway
 import com.thripleq.cirro.core.net.NeteaseOp
@@ -8,21 +10,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
-
-/**
- * 一行歌词。[translation] 是同一时间戳的翻译（tlyric），无翻译为 null。
- * [timeMs] 用作自动滚动/高亮的锚点，也是点击跳转的定位。
- */
-data class LyricLine(
-    val timeMs: Long,
-    val text: String,
-    val translation: String? = null,
-)
-
-/** 一首歌的歌词（可能为空 = 纯音乐/未收录）。 */
-data class Lyrics(val lines: List<LyricLine>) {
-    val isEmpty: Boolean get() = lines.isEmpty()
-}
 
 /** `[mm:ss]` / `[mm:ss.xx]` / `[mm:ss.xxx]` 时间标签；一行可挂多个。 */
 private val LRC_TAG = Regex("\\[(\\d{1,3}):(\\d{1,2})(?:[.:](\\d{1,3}))?]")

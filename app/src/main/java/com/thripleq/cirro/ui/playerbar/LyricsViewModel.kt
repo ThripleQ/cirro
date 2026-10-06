@@ -3,7 +3,7 @@ package com.thripleq.cirro.ui.playerbar
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.thripleq.cirro.core.repo.LyricRepository
-import com.thripleq.cirro.core.repo.Lyrics
+import com.thripleq.cirro.core.model.Lyrics
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow

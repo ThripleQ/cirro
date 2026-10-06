@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
-import com.thripleq.cirro.core.repo.Chart
+import com.thripleq.cirro.core.model.Chart
 import com.thripleq.cirro.ui.components.CirroErrorState
 import com.thripleq.cirro.ui.components.CirroMediaRow
 import com.thripleq.cirro.ui.components.CirroMediaRowSkeleton

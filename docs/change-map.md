@@ -36,6 +36,7 @@
 | 单榜 / 歌单 / 专辑 / 喜欢 / 已购曲目列表的排序 / 筛选 | `ui/profile/TrackListViewModel.kt` | 统一详情页共用 |
 | 数据从哪取、怎么转换（网络规则） | `core/repo/ChartRepository.kt`、`core/repo/ProfileRepository.kt` |
 | 曲目 JSON 怎么解析成 `Track` | `core/repo/TrackParser.kt` |
+| **某个领域模型长什么样**（加减字段、改默认值） | `core/model/` —— 按领域聚合分文件：`Track` / `TrackCollection` / `Profile`（Account / Album / PlaylistSummary / ProfileData）/ `Artist` / `Chart` / `Comment` / `Lyric` / `Podcast` / `Search` / `Home`。2026-10-07 从 12 个 repo 文件的顶部收拢过来的 ⇒ **别再把 `data class` 写回 repo 文件**（判据与例外见 `architecture.md` §一） |
 | 网络请求 / 签名 / 解析（基本不用动） | `core/net/` |
 
 ## 2.5 我的 / 登录 / 账号数据

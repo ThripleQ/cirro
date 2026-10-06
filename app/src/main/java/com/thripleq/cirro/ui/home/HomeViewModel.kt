@@ -4,12 +4,12 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.thripleq.cirro.core.playback.PlaybackLauncher
-import com.thripleq.cirro.core.repo.Chart
+import com.thripleq.cirro.core.model.Chart
 import com.thripleq.cirro.core.repo.ChartRepository
 import com.thripleq.cirro.core.repo.HomeRepository
-import com.thripleq.cirro.core.repo.PlaylistCard
-import com.thripleq.cirro.core.repo.StyleTag
-import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.model.PlaylistCard
+import com.thripleq.cirro.core.model.StyleTag
+import com.thripleq.cirro.core.model.Track
 import com.thripleq.cirro.core.util.RefreshGate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext

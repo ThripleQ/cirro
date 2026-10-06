@@ -1,5 +1,9 @@
 package com.thripleq.cirro.core.repo
 
+import com.thripleq.cirro.core.model.ArtistAlbum
+import com.thripleq.cirro.core.model.ArtistPage
+import com.thripleq.cirro.core.model.ArtistProfile
+import com.thripleq.cirro.core.model.Track
 import com.thripleq.cirro.core.net.NetEaseGateway
 import com.thripleq.cirro.core.net.NeteaseOp
 import kotlinx.coroutines.Dispatchers
@@ -7,34 +11,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
-
-/** 歌手主页的头部信息（weapi/v1/artist/{id} 的 artist 对象）。 */
-data class ArtistProfile(
-    val id: String,
-    val name: String,
-    val avatarUrl: String?,
-    val briefDesc: String,
-    val albumSize: Long,
-    val musicSize: Long,
-    val aliases: List<String>,
-    val followed: Boolean,
-)
-
-/** 歌手专辑（weapi/artist/albums/{id} 的 hotAlbums 条目）。 */
-data class ArtistAlbum(
-    val id: String,
-    val name: String,
-    val coverUrl: String?,
-    val artist: String,
-    val size: Long,
-    val publishTime: Long,
-)
-
-/** 歌手主页首屏：资料 + 热门 50 首。 */
-data class ArtistPage(
-    val profile: ArtistProfile,
-    val hotSongs: List<Track>,
-)
 
 /**
  * 歌手主页数据源。

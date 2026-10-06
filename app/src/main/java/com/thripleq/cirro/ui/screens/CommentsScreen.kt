@@ -46,7 +46,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-import com.thripleq.cirro.core.repo.Comment
+import com.thripleq.cirro.core.model.Comment
 import com.thripleq.cirro.ui.comments.CommentsViewModel
 import com.thripleq.cirro.ui.components.CirroArt
 import com.thripleq.cirro.ui.components.CirroArtwork

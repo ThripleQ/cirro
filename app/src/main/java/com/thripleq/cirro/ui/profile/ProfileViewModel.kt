@@ -3,9 +3,8 @@ package com.thripleq.cirro.ui.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.thripleq.cirro.core.net.NetEaseGateway
-import com.thripleq.cirro.core.repo.Account
 import com.thripleq.cirro.core.repo.LibraryStateStore
-import com.thripleq.cirro.core.repo.ProfileData
+import com.thripleq.cirro.core.model.ProfileData
 import com.thripleq.cirro.core.repo.ProfileRepository
 import com.thripleq.cirro.core.util.RefreshGate
 import com.thripleq.cirro.ui.components.OwnedTracks

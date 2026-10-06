@@ -1,5 +1,6 @@
 package com.thripleq.cirro.core.repo
 
+import com.thripleq.cirro.core.model.TrackCollection
 import java.security.MessageDigest
 import org.json.JSONObject
 
@@ -15,39 +16,6 @@ class LruCache<K, V>(private val max: Int) {
     }
     fun clear() = synchronized(map) { map.clear() }
 }
-
-/**
- * 一个"壳子 + 列表"：榜单、歌单、专辑都是同一个结构——一段集合元数据
- * （封面/标题/播放量/收藏数/更新频率/描述/创建者）+ 曲目列表。喜欢/已购
- * 没有独立后端壳，由 ViewModel 用已有数据组装一份简化壳。
- *
- * [subscribed] 只对**歌单/榜单**有真值：`/weapi/v6/playlist/detail` 的 playlist
- * 对象自带这个布尔，所以收藏按钮的初始态跟着壳走，不需要额外请求。
- * 专辑没有对应字段（探针实测），专辑的收藏态由
- * [LibraryStateStore.subscribedAlbumIds] 提供；喜欢/已购/每日推荐这类本地
- * 组装的壳恒为 false（它们本来就不支持收藏）。
- */
-data class TrackCollection(
-    val id: String,
-    val name: String,
-    val coverUrl: String?,
-    val playCount: Long,
-    val subscribedCount: Long,
-    val trackCount: Long,
-    val updateFrequency: String,
-    val description: String,
-    val creator: String,
-    val tracks: List<Track>,
-    val subscribed: Boolean = false,
-    /**
-     * [playlistFingerprint] 算出的曲目指纹，空串 = 不知道（专辑、本地组装的壳、v1 迁移来的旧行）。
-     *
-     * 存在的理由是「判断要不要重新拉」：进页面时发一次轻量检查（`n=0`）拿新指纹，
-     * 与这份比 —— 相同就说明曲目表还能用，不必拉全量。见
-     * [com.thripleq.cirro.core.repo.CollectionRefresher]。
-     */
-    val fingerprint: String = "",
-)
 
 /** 接口常把缺失字段返回为 JSON null，org.json 的 optString 会得到字面量 "null"；
  *  统一清洗掉 "null"/"undefined"，避免直接显示在界面上。 */

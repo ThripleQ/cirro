@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.model.Track
 import com.thripleq.cirro.ui.components.LocalShellSettled
 import com.thripleq.cirro.ui.components.CirroErrorState
 import com.thripleq.cirro.ui.components.ShellPanel

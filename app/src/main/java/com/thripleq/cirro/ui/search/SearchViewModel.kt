@@ -4,12 +4,12 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.thripleq.cirro.core.playback.PlaybackLauncher
-import com.thripleq.cirro.core.repo.SearchAlbum
-import com.thripleq.cirro.core.repo.SearchArtist
-import com.thripleq.cirro.core.repo.SearchPlaylist
-import com.thripleq.cirro.core.repo.SearchRadio
+import com.thripleq.cirro.core.model.SearchAlbum
+import com.thripleq.cirro.core.model.SearchArtist
+import com.thripleq.cirro.core.model.SearchPlaylist
+import com.thripleq.cirro.core.model.SearchRadio
 import com.thripleq.cirro.core.repo.SearchRepository
-import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job

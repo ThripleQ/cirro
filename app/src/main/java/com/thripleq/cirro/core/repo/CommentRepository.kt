@@ -1,5 +1,7 @@
 package com.thripleq.cirro.core.repo
 
+import com.thripleq.cirro.core.model.Comment
+import com.thripleq.cirro.core.model.CommentPage
 import com.thripleq.cirro.core.net.NetEaseGateway
 import com.thripleq.cirro.core.net.NeteaseOp
 import kotlinx.coroutines.Dispatchers
@@ -7,31 +9,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
-
-/** 一条评论。 */
-data class Comment(
-    val id: String,
-    val nickname: String,
-    val avatarUrl: String?,
-    val content: String,
-    val timeMs: Long,
-    val likedCount: Long,
-    val liked: Boolean,
-    val location: String,
-    val repliedNickname: String,
-    val repliedContent: String,
-)
-
-/**
- * 评论页：首页含热门评论（hot）；latest 为按时间倒序的评论（翻页累积）。
- */
-data class CommentPage(
-    val hot: List<Comment>,
-    val hotHasMore: Boolean,
-    val latest: List<Comment>,
-    val total: Long,
-    val hasMore: Boolean,
-)
 
 /**
  * 评论数据源，走 [NeteaseOp.COMMENTS] / [NeteaseOp.COMMENTS_HOT]。

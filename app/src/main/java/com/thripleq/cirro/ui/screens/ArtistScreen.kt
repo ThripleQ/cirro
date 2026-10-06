@@ -50,9 +50,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-import com.thripleq.cirro.core.repo.ArtistAlbum
-import com.thripleq.cirro.core.repo.ArtistProfile
-import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.model.ArtistAlbum
+import com.thripleq.cirro.core.model.ArtistProfile
 import com.thripleq.cirro.ui.artist.ArtistUiState
 import com.thripleq.cirro.ui.artist.ArtistViewModel
 import com.thripleq.cirro.ui.components.ArtistAvatarSize

@@ -1,5 +1,6 @@
 package com.thripleq.cirro.core.repo
 
+import com.thripleq.cirro.core.model.Track
 import org.json.JSONObject
 
 /** `/api/v3/song/detail` 单批上限（见上游 song_detail.js 注释）。 */

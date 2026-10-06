@@ -1,5 +1,11 @@
 package com.thripleq.cirro.core.repo
 
+import com.thripleq.cirro.core.model.DragonBallEntry
+import com.thripleq.cirro.core.model.HomePageBlocks
+import com.thripleq.cirro.core.model.PlaylistCard
+import com.thripleq.cirro.core.model.SimiArtist
+import com.thripleq.cirro.core.model.StyleTag
+import com.thripleq.cirro.core.model.Track
 import android.util.Log
 import com.thripleq.cirro.BuildConfig
 import com.thripleq.cirro.core.net.NetEaseGateway

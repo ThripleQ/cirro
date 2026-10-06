@@ -44,8 +44,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-import com.thripleq.cirro.core.repo.Program
-import com.thripleq.cirro.core.repo.RadioDetail
+import com.thripleq.cirro.core.model.Program
+import com.thripleq.cirro.core.model.RadioDetail
 import com.thripleq.cirro.ui.components.CirroArt
 import com.thripleq.cirro.ui.components.CirroArtwork
 import com.thripleq.cirro.ui.components.CirroErrorState

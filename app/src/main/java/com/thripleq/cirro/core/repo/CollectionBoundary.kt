@@ -1,5 +1,6 @@
 package com.thripleq.cirro.core.repo
 
+import com.thripleq.cirro.core.model.TrackCollection
 import com.thripleq.cirro.core.net.ApiResult
 import com.thripleq.cirro.core.net.NetEaseGateway
 import com.thripleq.cirro.core.net.NeteaseOp

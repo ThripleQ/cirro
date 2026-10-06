@@ -5,9 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.thripleq.cirro.core.playback.PlaybackLauncher
 import com.thripleq.cirro.core.repo.PodcastRepository
-import com.thripleq.cirro.core.repo.Program
-import com.thripleq.cirro.core.repo.RadioDetail
-import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.model.Program
+import com.thripleq.cirro.core.model.RadioDetail
+import com.thripleq.cirro.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async

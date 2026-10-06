@@ -1,5 +1,7 @@
 package com.thripleq.cirro.core.repo
 
+import com.thripleq.cirro.core.model.Chart
+import com.thripleq.cirro.core.model.TrackCollection
 import com.thripleq.cirro.BuildConfig
 import com.thripleq.cirro.core.net.NetEaseGateway
 import com.thripleq.cirro.core.net.NeteaseOp
@@ -9,13 +11,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
-
-data class Chart(
-    val id: String,
-    val name: String,
-    val coverUrl: String?,
-    val tracks: List<Track>,
-)
 
 /**
  * No-login content source. /weapi/toplist/detail is served anonymously, so the

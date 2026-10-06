@@ -31,7 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
-import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.model.Track
 import com.thripleq.cirro.ui.components.BannerCoverSize
 import com.thripleq.cirro.ui.components.BigCoverVisual
 import com.thripleq.cirro.ui.components.LocalShellHeroAlpha

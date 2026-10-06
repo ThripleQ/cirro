@@ -62,10 +62,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.thripleq.cirro.core.repo.Account
-import com.thripleq.cirro.core.repo.Album
-import com.thripleq.cirro.core.repo.ProfileData
-import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.model.Account
+import com.thripleq.cirro.core.model.Album
+import com.thripleq.cirro.core.model.ProfileData
+import com.thripleq.cirro.core.model.Track
 import com.thripleq.cirro.ui.components.ArtistAvatarSize
 import com.thripleq.cirro.ui.components.BigCoverVisual
 import com.thripleq.cirro.ui.components.CirroArt

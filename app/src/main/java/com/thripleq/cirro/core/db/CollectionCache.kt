@@ -1,8 +1,8 @@
 package com.thripleq.cirro.core.db
 
 import com.thripleq.cirro.core.repo.CollectionStore
-import com.thripleq.cirro.core.repo.Track
-import com.thripleq.cirro.core.repo.TrackCollection
+import com.thripleq.cirro.core.model.Track
+import com.thripleq.cirro.core.model.TrackCollection
 import javax.inject.Inject
 import javax.inject.Singleton
 

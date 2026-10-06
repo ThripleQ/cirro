@@ -47,8 +47,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-import com.thripleq.cirro.core.repo.Album
-import com.thripleq.cirro.core.repo.PlaylistSummary
+import com.thripleq.cirro.core.model.Album
+import com.thripleq.cirro.core.model.PlaylistSummary
 import com.thripleq.cirro.ui.components.BannerCoverSize
 import com.thripleq.cirro.ui.components.BigCoverVisual
 import com.thripleq.cirro.ui.components.CoverExpandShell

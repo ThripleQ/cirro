@@ -57,7 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thripleq.cirro.core.repo.CommentThread
-import com.thripleq.cirro.core.repo.TrackCollection
+import com.thripleq.cirro.core.model.TrackCollection
 import com.thripleq.cirro.ui.components.CloseButtonRaise
 import com.thripleq.cirro.ui.components.LocalCommentsOpener
 import com.thripleq.cirro.ui.components.LocalShellSettled

@@ -2,7 +2,7 @@ package com.thripleq.cirro.ui.comments
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.thripleq.cirro.core.repo.Comment
+import com.thripleq.cirro.core.model.Comment
 import com.thripleq.cirro.core.repo.CommentRepository
 import com.thripleq.cirro.core.repo.CommentThread
 import com.thripleq.cirro.core.repo.InteractionRepository

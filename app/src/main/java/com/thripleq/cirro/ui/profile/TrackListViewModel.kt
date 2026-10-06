@@ -9,8 +9,8 @@ import com.thripleq.cirro.core.repo.HomeRepository
 import com.thripleq.cirro.core.repo.InteractionRepository
 import com.thripleq.cirro.core.repo.LibraryStateStore
 import com.thripleq.cirro.core.repo.ProfileRepository
-import com.thripleq.cirro.core.repo.Track
-import com.thripleq.cirro.core.repo.TrackCollection
+import com.thripleq.cirro.core.model.Track
+import com.thripleq.cirro.core.model.TrackCollection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.Collator

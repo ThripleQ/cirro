@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
-import com.thripleq.cirro.core.repo.LyricLine
+import com.thripleq.cirro.core.model.LyricLine
 import kotlinx.coroutines.flow.collect
 import kotlin.math.roundToInt
 

@@ -18,6 +18,7 @@ Cirro 是桌面端播放器 [Netune](https://github.com/ThripleQ/Netune) 的安�
                     ▼
 ┌───────────────────────────────────────────────┐
 │ 核心层 · Core                                    │
+│   Model                    领域模型（接口返回的形状）│
 │   Repository               数据聚合/编排         │
 │   Media3 ExoPlayer + MediaSessionService 播放  │
 │   SimpleCache + CacheDataSource ★  字节缓存    │
@@ -32,6 +33,17 @@ Cirro 是桌面端播放器 [Netune](https://github.com/ThripleQ/Netune) 的安�
 │   磁盘缓存         分段音频 + 封面图            │
 └───────────────────────────────────────────────┘
 ```
+
+**`core/model` 与 `core/repo` 的分工**（2026-10-07 收口）：模型原本作为 `data class` 散在
+12 个 Repository 文件里（各文件顶部一段），于是「数据长什么样」和「怎么取、怎么判」混在一处，
+改一个字段要在 repo 文件里翻。现在模型统一在 `core/model`（按领域聚合分文件：`Track` /
+`TrackCollection` / `Profile` / `Artist` / `Chart` / `Comment` / `Lyric` / `Podcast` / `Search` /
+`Home`），**自带零 Android / Compose / Dagger 依赖**，repo 文件只剩取数与判断。
+
+判据很简单：**模型 = 接口返回的东西的形状**（曲目、专辑、歌手、歌单、评论、歌词、电台、
+搜索条目、首页区块）。**控制流类型不进 `core/model`** —— `ActionResult`（写操作成败 + 人话
+message）住在 `core/repo/InteractionRepository.kt`，`RequestFailedException` 住在
+`core/repo/RepoErrors.kt`：它们描述「这次调用怎么样」，不是领域数据。
 
 ## 二、两条数据流
 

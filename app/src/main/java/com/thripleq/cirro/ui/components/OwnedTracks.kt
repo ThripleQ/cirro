@@ -3,7 +3,7 @@ package com.thripleq.cirro.ui.components
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.thripleq.cirro.core.repo.LibraryStateStore
-import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.model.Track
 
 /**
  * 「当前账号买了什么」在 UI 侧的只读快照：已购单曲 id + 已购数字专辑 id。

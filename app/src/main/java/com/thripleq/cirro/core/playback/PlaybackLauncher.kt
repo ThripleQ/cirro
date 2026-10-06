@@ -6,7 +6,7 @@ import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import com.thripleq.cirro.core.repo.Track
+import com.thripleq.cirro.core.model.Track
 import javax.inject.Inject
 import javax.inject.Singleton
 
