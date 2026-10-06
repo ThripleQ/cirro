@@ -19,7 +19,10 @@
 | 改 M3 角色 → `ColorScheme` 的映射 | `ui/theme/Theme.kt` | 角色必须逐个显式传，漏传会回落 M3 内置紫灰 |
 | 改图上文字/水印/遮罩等浮层墨色 | `ui/theme/Color.kt`（`NumeInk` / `NumeFade`） | 与 colorScheme 解耦，明暗共用 |
 | 改字号、字重、字体 | `ui/theme/Type.kt` |
-| 改歌曲行的**付费 / VIP 徽标**（样式、判据、位置） | `ui/components/PayBadge.kt`（`PayTag` / `payTagOf` / `NumePayBadge`）；挂载点：`NumeMediaRow` 的 `payTag` 参数、`TrackListScreen` 的 `TrackListRow` |
+| 改歌曲行的**付费 / VIP 徽标**（三态样式、判据、位置） | `ui/components/PayBadge.kt`（`PayTag` / `payTagsOf` / `NumePayBadge`）；挂载点：`NumeMediaRow` / `TrackListRow` 的 `payTags` 参数，调用处一律 `rememberPayTags(track)` |
+| 改徽标的**颜色**（红=需购买 / 蓝=已购） | `ui/theme/Color.kt` 的 `NumePay`（明暗各一档，按 `surface` 亮度选） |
+| 改**「我买了什么」的判据** | `core/repo/LibraryStateStore.kt` 的 `isOwned`（已购单曲 ∪ 已购数字专辑）；两份清单在 `ensureOwnedLoaded` 里拉全 |
+| 让徽标出现在**新的列表**里 | 该列表的行组件加 `payTags = rememberPayTags(track)`；不需要额外请求（镜像在 `NumeApp` 根上已经提供） |
 | 徽标用的圆角 | `ui/theme/Shape.kt` 的 `NumeShape.Badge`（2dp，实测 kanade 截图 4px@d3 ≈ 1.3dp） | |
 | 改底部导航胶囊：加删 tab、换图标、改顺序 | `NumeApp.kt` | 导航目的地也集中在这一个文件 |
 | 改点某处跳到哪个页面 | `NumeApp.kt` | 跳转逻辑只在这里 |
