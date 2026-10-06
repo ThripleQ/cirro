@@ -652,13 +652,21 @@ private fun parseBlockSongs(arr: JSONArray?): List<Track> {
             val name = ui?.optJSONObject("mainTitle")?.optString("title").orEmpty()
             if (name.isBlank()) continue
             val ext = o.optJSONObject("resourceExtInfo")
+            // 档位与专辑都在 `resourceExtInfo.song` 这个内嵌 song 对象上（实测它有 `fee`、
+            // 也有完整的 `al{id,name,picUrl}`）—— 不读它就等于「首页的歌永远是免费 + 没有
+            // 归属」，徽标在猜你喜欢里一个都画不出来（2026-10-06 修）。
+            val song = ext?.optJSONObject("song")
+            val al = song?.optJSONObject("al")
             add(
                 Track(
                     id = id.toString(),
                     name = name,
                     artist = ext?.optJSONArray("artists")?.optJSONObject(0)?.optString("name").orEmpty(),
                     artworkUrl = httpsUrl(ui?.optJSONObject("image")?.optString("imageUrl")),
-                    durationMs = ext?.optJSONObject("song")?.optLong("dt", 0L) ?: 0L,
+                    durationMs = song?.optLong("dt", 0L) ?: 0L,
+                    albumName = al?.optString("name").orEmpty(),
+                    albumId = al?.optLong("id", 0L)?.takeIf { it > 0L }?.toString() ?: "",
+                    fee = song?.optInt("fee", 0) ?: 0,
                 ),
             )
         }

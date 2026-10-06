@@ -36,6 +36,8 @@ class CollectionCache @Inject constructor(
                     artworkUrl = t.artworkUrl,
                     durationMs = t.durationMs,
                     albumName = t.albumName,
+                    albumId = t.albumId,
+                    fee = t.fee,
                 )
             },
             subscribed = c.subscribed,
@@ -57,6 +59,8 @@ class CollectionCache @Inject constructor(
                     artworkUrl = t.artworkUrl,
                     durationMs = t.durationMs,
                     albumName = t.albumName,
+                    fee = t.fee,
+                    albumId = t.albumId,
                 )
             },
         )

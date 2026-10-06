@@ -5,10 +5,10 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-/** 集合缓存库（壳 + 曲目）。当前版本 2，见 [MIGRATION_1_2]。 */
+/** 集合缓存库（壳 + 曲目）。当前版本 3，见 [MIGRATION_1_2] / [MIGRATION_2_3]。 */
 @Database(
     entities = [CollectionEntity::class, CollectionTrackEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class NumeDatabase : RoomDatabase() {
@@ -37,6 +37,30 @@ abstract class NumeDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE collection ADD COLUMN track_fingerprint TEXT NOT NULL DEFAULT ''",
                 )
+            }
+        }
+
+        /**
+         * v2 → v3：`collection_track` 加两列（`fee` / `albumId`），并把**所有壳的指纹清空**。
+         *
+         * 加列本身是常规操作（同 [MIGRATION_1_2]，必须 ALTER 就地加，不能重建表）。
+         * 清指纹才是这条迁移的重点：老行两列的默认值 `0`/`''` 与「免费歌 / 无归属」
+         * 完全同形，而 [com.thripleq.nume.core.repo.CollectionRefresher] 一旦看到
+         * 指纹相同就会**原样复用这些曲目行、连全量都不拉** —— 于是升级后那批缓存集合
+         * 会永远画不出徽标。清空指纹 ⇒ 下次进页面必走一次全量，把两列补齐，自愈。
+         *
+         * 只清指纹、**不删曲目行**：留着的旧曲目仍可先渲染（只是暂时没有徽标），
+         * 比让页面先空一下再长出来平滑。
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE collection_track ADD COLUMN fee INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
+                    "ALTER TABLE collection_track ADD COLUMN albumId TEXT NOT NULL DEFAULT ''",
+                )
+                db.execSQL("UPDATE collection SET track_fingerprint = ''")
             }
         }
     }

@@ -18,7 +18,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 「我收藏了什么」的进程级镜像：喜欢的歌曲 id 集合 + 已收藏专辑 id 集合。
+ * 「我收藏了什么 / 我买了什么」的进程级镜像：喜欢的歌曲 id 集合 + 已收藏专辑 id 集合
+ * + 已购（单曲 / 数字专辑）id 集合。
  *
  * ## 为什么需要它
  *
@@ -30,6 +31,11 @@ import javax.inject.Singleton
  *   本地查表才是对的。也正因为如此，切歌时不需要任何网络请求。
  * - 专辑收藏态：专辑详情里**根本没有** subscribed 字段（探针实测 29 个键里没有），
  *   只能查 `/weapi/album/sublist`。同样是「拉一次列表、本地查表」。
+ * - 已购（[isOwned]）：曲目对象上**没有任何字段**能表达「我买过这首」。唯一的
+ *   权威信号是 `privileges[].payed`，而它只在部分端点出现（实测 `v6/playlist/detail`
+ *   有且下标严格对齐，`/weapi/v1/album/{id}` **整个没有 privileges 数组**）——
+ *   偏偏专辑详情正是最需要它的地方（进了已购的数字专辑，整张都该标「已购」）。
+ *   所以走同一条路：拉两份「我买了什么」的清单，之后本地查表。
  *
  * 歌单不一样：`/weapi/v6/playlist/detail` 的 playlist 对象自带 `subscribed`，
  * 所以歌单收藏态跟着 [TrackCollection] 走，不进这里 —— 见 [TrackCollection.subscribed]。
@@ -57,8 +63,19 @@ class LibraryStateStore @Inject constructor(
     /** 当前账号已收藏的专辑 id。未加载完成时是空集。 */
     val subscribedAlbumIds: StateFlow<Set<String>> = _subscribedAlbumIds.asStateFlow()
 
+    private val _ownedSongIds = MutableStateFlow<Set<String>>(emptySet())
+
+    /** 已购单曲 id（`/weapi/single/mybought/song/list`）。未加载完成时是空集。 */
+    val ownedSongIds: StateFlow<Set<String>> = _ownedSongIds.asStateFlow()
+
+    private val _ownedAlbumIds = MutableStateFlow<Set<String>>(emptySet())
+
+    /** 已购数字专辑 id（`/weapi/digitalAlbum/purchased`）。未加载完成时是空集。 */
+    val ownedAlbumIds: StateFlow<Set<String>> = _ownedAlbumIds.asStateFlow()
+
     private val likedMutex = Mutex()
     private val albumMutex = Mutex()
+    private val ownedMutex = Mutex()
 
     /** 已成功载入的账号 uid；null = 还没载入过。 */
     @Volatile
@@ -66,6 +83,9 @@ class LibraryStateStore @Inject constructor(
 
     @Volatile
     private var albumsLoadedUid: Long? = null
+
+    @Volatile
+    private var ownedLoadedUid: Long? = null
 
     /**
      * 确保「喜欢的歌曲」已载入。同一账号只会真正请求一次；
@@ -92,6 +112,45 @@ class LibraryStateStore @Inject constructor(
             albumsLoadedUid = uid
             diag("albums loaded uid=$uid size=${ids.size}")
         }
+    }
+
+    /**
+     * 确保「已购」两份清单已载入（已购单曲 + 已购数字专辑）。同一账号只真正请求一次。
+     *
+     * 两份都拿到才算成功：只拿到一份就置位的话，另一份对应的歌会一律画成「未购」，
+     * 而那是**错的**（红 PAY 的含义是"需要买"）——宁可整体不置位，下次重试。
+     */
+    suspend fun ensureOwnedLoaded(uid: Long) {
+        if (ownedLoadedUid == uid) return
+        ownedMutex.withLock {
+            if (ownedLoadedUid == uid) return
+            val songs = fetchOwnedSongIds() ?: return
+            val albums = fetchOwnedAlbumIds() ?: return
+            _ownedSongIds.value = songs
+            _ownedAlbumIds.value = albums
+            ownedLoadedUid = uid
+            diag("owned loaded uid=$uid songs=${songs.size} albums=${albums.size}")
+        }
+    }
+
+    /**
+     * 「这首歌我买了没」—— [LibraryStateStore] 的唯一查询入口，同步、不发网络。
+     *
+     * 判据是**并集**，两个来源各管一类购买：
+     * - 单曲购买：`songId` 在已购单曲清单里。实测 VIP 歌可以单曲购买（买完 `fee`
+     *   仍是 1，只是 `privileges[].payed` 从 0 变 3），所以**「VIP」与「已购」不互斥**。
+     * - 数字专辑：整张购买，所以曲目只要 `albumId` 命中一张已购专辑就算。这也正是
+     *   [Track.albumId] 存在的唯一理由。
+     *
+     * 2026-10-06 交叉验证：用户「喜欢」的 116 首里，服务端 `payed != 0` 的 12 首
+     * 与本判据的结果**完全一致（0 处不一致）**——既没漏也没多。所以它等价于
+     * `privileges[].payed`，但**在任何端点都可用**（专辑详情没有那个数组）。
+     *
+     * 未载入完成时一律返回 false（保守：画成「需要购买」），与红心未载入时是空心同理。
+     */
+    fun isOwned(trackId: String, albumId: String?): Boolean {
+        if (trackId.isNotEmpty() && trackId in _ownedSongIds.value) return true
+        return !albumId.isNullOrEmpty() && albumId in _ownedAlbumIds.value
     }
 
     /** 乐观更新本地红心态。网络失败后调用方要用相反的值翻回来。 */
@@ -129,14 +188,18 @@ class LibraryStateStore @Inject constructor(
     fun markStale() {
         loadedUid = null
         albumsLoadedUid = null
+        ownedLoadedUid = null
     }
 
     /** 登出时调用：把镜像清空，避免下个账号看到上个人的红心。 */
     fun invalidate() {
         loadedUid = null
         albumsLoadedUid = null
+        ownedLoadedUid = null
         _likedIds.value = emptySet()
         _subscribedAlbumIds.value = emptySet()
+        _ownedSongIds.value = emptySet()
+        _ownedAlbumIds.value = emptySet()
     }
 
     private suspend fun fetchLikedIds(uid: Long): Set<String>? = withContext(Dispatchers.IO) {
@@ -173,6 +236,89 @@ class LibraryStateStore @Inject constructor(
             buildSet { for (i in 0 until arr.length()) add(arr.optLong(i, 0L).toString()) }
         } catch (e: Exception) {
             diag("$what parse failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * 已购单曲 id 全集。分页拉到底 —— 同 [fetchSubscribedAlbumIds]，这是「本地查表」
+     * 用的镜像，只拉一页会让买得多的用户漏判（那首歌明明买了却标红"需要购买"）。
+     * 失败返回 null（**不置位，下次重试**）。
+     */
+    private suspend fun fetchOwnedSongIds(): Set<String>? = withContext(Dispatchers.IO) {
+        val ids = mutableSetOf<String>()
+        var offset = 0
+        while (true) {
+            val r = gateway.call(NeteaseOp.SONG_PURCHASED, PAGE_SIZE.toString(), offset.toString())
+            val page = parseOwnedSongPage(r) ?: return@withContext null
+            val before = ids.size
+            ids += page
+            if (page.size < PAGE_SIZE || ids.size == before) break
+            offset += PAGE_SIZE
+        }
+        ids
+    }
+
+    /** 单页已购单曲。结构是 `{"code":200,"data":{"list":[{songId,...}]}}`（**不是** song 对象）。 */
+    private fun parseOwnedSongPage(r: ApiResult): Set<String>? {
+        if (r.err != 0 || r.body.isEmpty()) {
+            diag("single/mybought failed code=${r.code} err=${r.err}")
+            return null
+        }
+        return try {
+            val root = JSONObject(String(r.body, Charsets.UTF_8))
+            if (root.optInt("code", 200) != 200) return null
+            val list = root.optJSONObject("data")?.optJSONArray("list")
+                ?: root.optJSONArray("data")
+                ?: return emptySet()
+            buildSet {
+                for (i in 0 until list.length()) {
+                    val id = list.optJSONObject(i)?.optLong("songId", 0L) ?: 0L
+                    if (id > 0) add(id.toString())
+                }
+            }
+        } catch (e: Exception) {
+            diag("single/mybought parse failed: ${e.message}")
+            null
+        }
+    }
+
+    /** 已购数字专辑 id 全集。结构是 `{"total":N,"paidAlbums":[{albumId,...}]}`。 */
+    private suspend fun fetchOwnedAlbumIds(): Set<String>? = withContext(Dispatchers.IO) {
+        val ids = mutableSetOf<String>()
+        var offset = 0
+        while (true) {
+            val r = gateway.call(NeteaseOp.ALBUM_PURCHASED, PAGE_SIZE.toString(), offset.toString())
+            val page = parseOwnedAlbumPage(r) ?: return@withContext null
+            val before = ids.size
+            ids += page
+            if (page.size < PAGE_SIZE || ids.size == before) break
+            offset += PAGE_SIZE
+        }
+        ids
+    }
+
+    private fun parseOwnedAlbumPage(r: ApiResult): Set<String>? {
+        if (r.err != 0 || r.body.isEmpty()) {
+            diag("digitalAlbum/purchased failed code=${r.code} err=${r.err}")
+            return null
+        }
+        return try {
+            val root = JSONObject(String(r.body, Charsets.UTF_8))
+            if (root.optInt("code", 200) != 200) return null
+            val list = root.optJSONArray("paidAlbums")
+                ?: root.optJSONObject("data")?.optJSONArray("list")
+                ?: root.optJSONArray("data")
+                ?: return emptySet()
+            buildSet {
+                for (i in 0 until list.length()) {
+                    val o = list.optJSONObject(i) ?: continue
+                    val id = o.optLong("albumId", o.optLong("id", 0L))
+                    if (id > 0) add(id.toString())
+                }
+            }
+        } catch (e: Exception) {
+            diag("digitalAlbum/purchased parse failed: ${e.message}")
             null
         }
     }

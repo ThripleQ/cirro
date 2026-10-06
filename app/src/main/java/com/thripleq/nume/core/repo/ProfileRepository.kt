@@ -263,6 +263,10 @@ class ProfileRepository @Inject constructor(
                             artworkUrl = httpsUrl(o.optString("picUrl")),
                             durationMs = 0L,
                             albumName = o.optString("albumName"),
+                            albumId = o.optLong("albumId", 0L).takeIf { it > 0L }?.toString() ?: "",
+                            // 这一项**没有** `fee`（它只是购买记录，不是 song 对象）⇒ 档位未知、
+                            // 解析成 0，这一屏不画徽标。**别拿这里的 `vip` 去猜档位**：样本里
+                            // 9/9 都是 vip=true 且 fee=1，无法证伪，猜错会把免费歌标成 VIP。
                         ),
                     )
                 }

@@ -66,6 +66,16 @@ data class CollectionTrackEntity(
     val artworkUrl: String?,
     val durationMs: Long,
     val albumName: String,
+    /**
+     * 曲目展示要用的两个字段，必须跟着曲目一起落库。
+     *
+     * Room 是**常态读路径**（见 [CollectionEntity] 的说明），而 [com.thripleq.nume.core.repo.CollectionRefresher]
+     * 在「指纹没变」时会**原样复用这里的曲目行**、不重拉全量 —— 若这两列不存在，
+     * 那份复用的曲目就会读回 `fee=0`/`albumId=""`，徽标整批消失（且只在"曲目没变"时消失，
+     * 看起来毫无规律）。加列的迁移见 [NumeDatabase.MIGRATION_2_3]。
+     */
+    val fee: Int,
+    val albumId: String,
 )
 
 /** 壳 + 曲目的一次查询结果。 */
