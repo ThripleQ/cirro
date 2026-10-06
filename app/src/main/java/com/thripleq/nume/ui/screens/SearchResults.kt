@@ -50,7 +50,7 @@ import com.thripleq.nume.ui.components.NumeErrorState
 import com.thripleq.nume.ui.components.NumeLoadMoreFailed
 import com.thripleq.nume.ui.components.NumeLoadMoreIndicator
 import com.thripleq.nume.ui.components.NumeMediaRow
-import com.thripleq.nume.ui.components.payTagOf
+import com.thripleq.nume.ui.components.rememberPayTags
 import com.thripleq.nume.ui.components.SharedKeys
 import com.thripleq.nume.ui.search.SearchTab
 import com.thripleq.nume.ui.search.SearchUiState
@@ -200,7 +200,7 @@ private fun ResultList(
                     title = track.name,
                     subtitle = sub.ifBlank { null },
                     coverUrl = track.artworkUrl,
-                    payTag = payTagOf(track.fee),
+                    payTags = rememberPayTags(track),
                     onClick = { onPlayTrack(index) },
                     trailing = {
                         IconButton(onClick = { /* 三点菜单：暂无功能 */ }) {

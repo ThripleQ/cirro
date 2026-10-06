@@ -40,6 +40,7 @@ import com.thripleq.nume.core.playback.PlayerHolder
 import com.thripleq.nume.core.repo.CommentThread
 import com.thripleq.nume.ui.components.CommentsOpener
 import com.thripleq.nume.ui.components.LocalCommentsOpener
+import com.thripleq.nume.ui.components.LocalOwnedTracks
 import com.thripleq.nume.ui.components.RevealLayer
 import com.thripleq.nume.ui.playerbar.BottomTab
 import com.thripleq.nume.ui.playerbar.PlayerDock
@@ -231,6 +232,11 @@ fun NumeApp() {
         }
     }
 
+    // 已购镜像（已购单曲 / 已购数字专辑）：曲目行徽标要用它来区分红 PAY（需购买）与
+    // 蓝 PAY（已购）。和评论浮层同一类问题 —— 用它的行分布在所有列表深处，而数据的
+    // 来源（Activity 作用域的 ProfileViewModel，App 一启动就在加载）只在根上。
+    val ownedTracks by profileVm.owned.collectAsStateWithLifecycle()
+
     // 播放页状态：常驻 dock 与全屏播放页合体（同一组件/同一份 progress）。
     // **展开播放页只剩两个入口**（2026-10-03 起）：
     //   1. 点底部迷你条本身 —— 由 PlayerDock 内部直接调 state.open()，走点按专用动画；
@@ -246,7 +252,11 @@ fun NumeApp() {
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         // 评论浮层的入口交给内容深处（歌单页头部那枚胶囊在展开壳里，就地画会被壳的
         // 圆角裁掉，所以浮层只能挂在根上）。见 [LocalCommentsOpener]。
-        CompositionLocalProvider(LocalCommentsOpener provides commentsOpener) {
+        // 已购镜像同理：曲目徽标在任意列表里都要用，见 [LocalOwnedTracks]。
+        CompositionLocalProvider(
+            LocalCommentsOpener provides commentsOpener,
+            LocalOwnedTracks provides ownedTracks,
+        ) {
         // 浮现目标的中性转场时长：**必须 ≥ RevealLayer 自己的动画**，否则 AnimatedContent
         // 会先结束、把下层来源页撤掉，而浮现窗口还没铺满 → 露背景。多给一点余量。
         val revealInMs = Motion.RevealEnterMs + Motion.RevealArmDelayMs + 120

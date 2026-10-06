@@ -115,7 +115,7 @@ import com.thripleq.nume.ui.components.NumeEmptyState
 import com.thripleq.nume.ui.components.NumeErrorState
 import com.thripleq.nume.ui.components.NumePayBadge
 import com.thripleq.nume.ui.components.PayTag
-import com.thripleq.nume.ui.components.payTagOf
+import com.thripleq.nume.ui.components.rememberPayTags
 import com.thripleq.nume.ui.components.NumeArtwork
 import com.thripleq.nume.ui.components.NumeArt
 import com.thripleq.nume.ui.components.NumeTitleBarHeight
@@ -657,12 +657,11 @@ fun TrackListScreen(
                                     ) {
                                         TrackListRow(
                                             track = track,
-                                            // 徽标判据只有 `fee`（**内容属性**），与"是否已购"无关，
-                                            // 所有档一视同仁。早先这里对「已购」档做过抑制，理由是
-                                            // "会挂满 PAY" —— 2026-10-06 实测证伪：那 9 首已购单曲
-                                            // **全是 fee=1**（该标 VIP），且 kanade 对已购的
-                                            // Kids Return 照标 VIP ⇒ 抑制反而与 kanade 不一致。
-                                            payTag = payTagOf(track.fee),
+                                            // 徽标 = 付费档位（内容属性）× 「我买了没」（账号态）：
+                                            // fee=1 → VIP，fee=4 → PAY；买了的 PAY 变蓝，VIP 歌
+                                            // 买了则是「VIP + 蓝 PAY」两枚（实测确实存在：用户
+                                            // 已购的 9 首单曲全是 fee=1）。判定与颜色见 PayBadge.kt。
+                                            payTags = rememberPayTags(track),
                                             onClick = { vm.onTrackClick(target, index) },
                                         )
                                     }
@@ -1590,15 +1589,15 @@ private fun PanelIcon(
  * 浮在面板底上；卡内再内缩到 [TrackListMetrics.RowInset]。与官方一致的是**封面到屏边**的
  * 距离（8 + 8 = 16dp），卡边是 nume 自己的条目语言。行高由 44dp 封面 + 上下 8dp 内缩撑起。
  *
- * [payTag] 非空时在「歌手 - 专辑」前面贴一枚付费/VIP 徽标（kanade 的歌曲信息设计，
- * 位置与尺寸见 [NumePayBadge]）。
+ * [payTags] 非空时在「歌手 - 专辑」前面贴付费/VIP 徽标（kanade 的歌曲信息设计，
+ * 位置与尺寸见 [NumePayBadge]；取值见 [rememberPayTags]，别在调用点手工拼）。
  */
 @Composable
 private fun TrackListRow(
     track: Track,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    payTag: PayTag? = null,
+    payTags: List<PayTag> = emptyList(),
 ) {
     Row(
         modifier = modifier
@@ -1637,8 +1636,8 @@ private fun TrackListRow(
                 Spacer(Modifier.height(2.dp))
                 // 与 [NumeMediaRow] 同一形状：徽标在左、文字吃剩余宽度并在末尾省略号。
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (payTag != null) {
-                        NumePayBadge(payTag)
+                    payTags.forEach { tag ->
+                        NumePayBadge(tag)
                         Spacer(Modifier.width(2.dp))
                     }
                     Text(

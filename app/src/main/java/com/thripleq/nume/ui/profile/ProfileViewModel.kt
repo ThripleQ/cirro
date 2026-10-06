@@ -8,10 +8,14 @@ import com.thripleq.nume.core.repo.LibraryStateStore
 import com.thripleq.nume.core.repo.ProfileData
 import com.thripleq.nume.core.repo.ProfileRepository
 import com.thripleq.nume.core.util.RefreshGate
+import com.thripleq.nume.ui.components.OwnedTracks
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -44,6 +48,19 @@ class ProfileViewModel @Inject constructor(
 
     /** 见 [onEnterVisible]：反复切回「我的」tab 不该反复打网络。 */
     private val enterGate = RefreshGate()
+
+    /**
+     * 「我买了什么」的 UI 侧快照，供**所有**曲目列表画徽标用（见 `LocalOwnedTracks`）。
+     *
+     * 挂在 ProfileViewModel 上不是因为它属于「我的」页，而是**这个 VM 是 Activity 作用域的**
+     * —— 它在 [com.thripleq.nume.NumeApp] 根部就被创建，于是这份镜像跟着 App 启动一起加载，
+     * 与用户在哪个 tab 无关（徽标出现在歌单/榜单/搜索/首页，随便从哪进都得是准的）。
+     * [SharingStarted.Eagerly] 保证这两个 flow 一开始收集就不会因无人订阅而停。
+     */
+    val owned: StateFlow<OwnedTracks> =
+        combine(library.ownedSongIds, library.ownedAlbumIds) { songs, albums ->
+            OwnedTracks(songs, albums)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, OwnedTracks.None)
 
     init {
         // VM 提升到 Activity 作用域（Profile 页与 WebLogin 页共用），跨 tab 常驻；
@@ -97,6 +114,9 @@ class ProfileViewModel @Inject constructor(
                 if (!quiet) _uiState.value = ProfileUiState.LoggedOut
                 return@launch
             }
+            // 已购镜像（曲目徽标用的）与页面数据**并行**取：它服务于所有列表、不只是本页，
+            // 没必要让「我的」页在这上面等两个来回。
+            launch { library.ensureOwnedLoaded(account.uid) }
             val data = repository.loadProfile(account)
             _busy.value = false
             if (data != null) {
@@ -123,6 +143,7 @@ class ProfileViewModel @Inject constructor(
             } else {
                 onDone(true, "")
                 // 登录态变化，强制刷新并更新缓存。
+                library.ensureOwnedLoaded(account.uid)
                 val data = repository.loadProfile(account)
                 if (data != null) _uiState.value = ProfileUiState.LoggedIn(data)
             }

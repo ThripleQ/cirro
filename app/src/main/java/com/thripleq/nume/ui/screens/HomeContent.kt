@@ -58,7 +58,7 @@ import com.thripleq.nume.ui.components.NumePageTitleBar
 import com.thripleq.nume.ui.components.NumeSectionHeader
 import com.thripleq.nume.ui.components.SharedSourceGuard
 import com.thripleq.nume.ui.components.numeEntrySurface
-import com.thripleq.nume.ui.components.payTagOf
+import com.thripleq.nume.ui.components.rememberPayTags
 import com.thripleq.nume.ui.components.rememberSharedSourceGuard
 import com.thripleq.nume.ui.components.shellSharedCover
 import com.thripleq.nume.ui.home.HomeUiState
@@ -549,7 +549,7 @@ private fun GuessSongPager(
                             title = track.name,
                             subtitle = guessSubtitle(track),
                             coverUrl = track.artworkUrl,
-                            payTag = payTagOf(track.fee),
+                            payTags = rememberPayTags(track),
                             onClick = {
                                 val i = all.indexOfFirst { it.id == track.id }
                                 onPlay(all, if (i >= 0) i else 0)

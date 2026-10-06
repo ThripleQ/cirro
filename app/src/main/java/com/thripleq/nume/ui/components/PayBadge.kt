@@ -6,31 +6,53 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.thripleq.nume.ui.theme.NumePay
 import com.thripleq.nume.ui.theme.NumeShape
 
 /**
  * 歌曲行里紧跟歌手的付费标记 —— 照抄 kanade 的歌曲信息设计（2026-10-06 用户指定）。
  *
- * | 标记 | 含义 | 出现时机 |
- * |---|---|---|
- * | [VIP] | 需会员才能听 | `fee == 1` |
- * | [PAY] | 需购买（数字专辑 / 单曲） | `fee == 4` |
+ * 三态，**颜色**是唯一的区别所在（框、字号、描边完全一致）：
  *
- * **两者同时成立时优先 PAY**（用户口径）—— 所以 [payTagOf] 里 `4` 的分支写在 `1` 前面，
- * 将来若再加"会员"这一类别的独立信号源，也必须让 PAY 先判。
+ * | 标记 | 颜色 | 含义 | 出现时机 |
+ * |---|---|---|---|
+ * | [VIP] | 灰（跟随副标题） | 需会员才能听 | `fee == 1` |
+ * | [PAY] / [PayTag.PAY] | 红 | **需要购买，还没买** | `fee == 4` 且未购 |
+ * | [PAY] / [PayTag.PAID] | 蓝 | **已经购买** | 已购（单曲或数字专辑） |
+ *
+ * ## 为什么「需要购买」与「已购」是两个枚举、却是同一个字符串
+ *
+ * 用户口径（2026-10-06）：「所有歌曲都能购买，所以用红色的 pay 标记需要购买但没有买的，
+ * 用蓝色的 pay 标记已经购买的；如果是需要购买则把红色 pay 替换成蓝色的，vip 则加一个蓝色 pay」。
+ *
+ * 也就是说这两者是**同一枚徽标的两种状态**（文字都是 PAY），不是两种徽标 —— 拆成两个枚举
+ * 只是为了拿到两种颜色，[label] 故意相同。于是组合只有四种：
+ *
+ * - `fee=4` 未购 → `[PAY 红]`
+ * - `fee=4` 已购 → `[PAY 蓝]`（红的那枚被**替换**，不是并排）
+ * - `fee=1` 未购 → `[VIP]`
+ * - `fee=1` 已购 → `[VIP] [PAY 蓝]`（VIP 是"要会员"、蓝 PAY 是"我买过"，两件事都要说）
+ *
+ * 最后那条**不是理论情形**：实测用户的 9 首已购单曲全部 `fee=1`（VIP 歌可以单曲购买，
+ * 买完 `fee` 不变、只是 `privileges[].payed` 从 0 变 3），所以它出现在真实列表里。
  */
 enum class PayTag(val label: String) {
     VIP("VIP"),
     PAY("PAY"),
+    PAID("PAY"),
 }
 
 /**
- * `fee` → 徽标。判据是**实测反验过**的：用户给的 kanade 截图里
- * `Kids Return`（久石譲）标 VIP、`那些我尚未知道的美丽`（华晨宇）标 PAY，
- * 而这两首在 `/weapi/v3/song/detail` 里的 `fee` 分别是 **1** 和 **4**。
+ * `fee` + 「买了没」→ 徽标序列（空的、一枚、或 VIP+PAY 两枚）。
+ *
+ * 判据是**实测反验过**的：用户给的 kanade 截图里 `Kids Return`（久石譲）标 VIP、
+ * `那些我尚未知道的美丽`（华晨宇）标 PAY，而这两首在 `/weapi/v3/song/detail` 里的
+ * `fee` 分别是 **1** 和 **4**。
  *
  * 其余档位**不标**：
  * - `0` 免费；
@@ -38,20 +60,34 @@ enum class PayTag(val label: String) {
  *   会让半张榜单都挂上标，与截图里"只有个别行有标"的观感不符；
  * - 老端点缺字段 → `0`。
  *
- * ⚠️ **不区分"是否已购买"**：`fee` 是内容属性，所以你买过的歌在别的列表里照样标。
- * 这不是缺陷 —— 2026-10-06 实测两条证据都指向 kanade 也一样：
- * ① 它截图里那首 **Kids Return 就在用户的已购单曲列表里，却仍标 VIP**；
- * ② 它的 dex 里**完全没有** `paid / payed / purchase / bought` 任何标识符 ⇒
- * 它根本不存在"已购"状态可供判断。故 nume 也不为"已购"做任何特殊化。
- *
- * 也刻意**没有**用 `privileges[i].payed`（=3 才是已购）：要按下标去对齐另一个数组，
- * 而对齐关系没有保证（`song/like/get` 那种只回 id 的来源更是无从对齐）。
+ * [owned] 的含义见 [com.thripleq.nume.core.repo.LibraryStateStore.isOwned]：单曲购买 ∪
+ * 所属数字专辑已购。它只影响颜色、不影响「标不标」，所以**没载入完时退化成全红**，
+ * 而不是让徽标整体消失（那会显得列表被改坏了）。
  */
-fun payTagOf(fee: Int): PayTag? = when (fee) {
-    4 -> PayTag.PAY
-    1 -> PayTag.VIP
-    else -> null
+fun payTagsOf(fee: Int, owned: Boolean): List<PayTag> = when (fee) {
+    4 -> if (owned) listOf(PayTag.PAID) else listOf(PayTag.PAY)
+    1 -> if (owned) listOf(PayTag.VIP, PayTag.PAID) else listOf(PayTag.VIP)
+    else -> emptyList()
 }
+
+/**
+ * 徽标墨色。
+ *
+ * VIP 走 [MaterialTheme.colorScheme]，红/蓝**按主题底色的明暗各取一档**：这两个颜色要
+ * 在一行小字里被一眼分辨出来，就得让它们与所在底色保持足够对比 —— 一个色值包打两种
+ * 主题是做不到的（挑中间亮度则明底偏淡、暗底偏闷，两头都吃亏）。判据取 `surface` 的
+ * 亮度而不是 `isSystemInDarkTheme()`：主题是可以被覆盖的，而**能不能看清只取决于底色**。
+ */
+@Composable
+private fun payBadgeColor(tag: PayTag): Color = when (tag) {
+    PayTag.VIP -> MaterialTheme.colorScheme.onSurfaceVariant
+    PayTag.PAY -> if (onDarkSurface()) NumePay.PayDark else NumePay.PayLight
+    PayTag.PAID -> if (onDarkSurface()) NumePay.OwnedDark else NumePay.OwnedLight
+}
+
+@Composable
+private fun onDarkSurface(): Boolean =
+    MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
 /**
  * 徽标本体：**描边小框 + 大写字母**，无填充。尺寸照 kanade 截图逐像素量出来的
@@ -70,17 +106,13 @@ fun payTagOf(fee: Int): PayTag? = when (fee) {
  * 与截图等高；大写字母没有下伸部，墨迹（约 5.7dp）稳稳落在框内。改成默认行高
  * （≈1.17em）框就会长到 11.4dp，比截图高一头。
  *
- * 颜色用 [MaterialTheme.colorScheme.onSurfaceVariant]，**与副标题同色**。截图里 kanade
- * 的徽标比它自己的正文暗约 14%（其正文本就比副标题亮），nume 的副标题已经是这一档，
- * 再压一档会看不清，故取同色、靠描边区分层级（不是靠颜色差）。
- *
  * 徽标**必须贴着「歌手 - 专辑」的前面放**（截图位置），间隔见调用方：
  * 实测框右边框到歌手首墨 9px = 3dp，其中 CJK 字形自带约 1dp 侧边距，
- * 所以间距设 2dp 才能还原这个视觉间隙。
+ * 所以间距设 2dp 才能还原这个视觉间隙；两枚并排时（VIP + 蓝 PAY）同样用 2dp。
  */
 @Composable
 fun NumePayBadge(tag: PayTag, modifier: Modifier = Modifier) {
-    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    val color = payBadgeColor(tag)
     Text(
         text = tag.label,
         color = color,

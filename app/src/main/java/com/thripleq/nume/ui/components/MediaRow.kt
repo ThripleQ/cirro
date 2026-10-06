@@ -29,8 +29,9 @@ import com.thripleq.nume.ui.theme.NumeShape
  * - 封面 [NumeArt.Row]（52dp）+ [NumeShape.Chip]，解码 [NumeArt.RequestRow]；
  * - 标题 `bodyLarge`/`onSurface`，副标题 `bodySmall`/`onSurfaceVariant`；
  * - 行容器 `numeEntrySurface()` + 内缩 8/8；
- * - [payTag] 非空时在**副标题前面**贴一枚付费/VIP 徽标（[NumePayBadge]），与副标题同一行、
- *   垂直居中对齐 —— kanade 的歌曲信息设计，位置与间距见 `PayBadge.kt` 的注释。
+ * - [payTags] 非空时在**副标题前面**贴付费/VIP 徽标（[NumePayBadge]），与副标题同一行、
+ *   垂直居中对齐，多枚时按顺序紧排 —— kanade 的歌曲信息设计，位置与间距见 `PayBadge.kt`
+ *   的注释。取值用 [rememberPayTags]（它会去查「这歌买了没」），别在调用点手工拼。
  */
 @Composable
 fun NumeMediaRow(
@@ -44,7 +45,7 @@ fun NumeMediaRow(
     coverRequestSize: Int = NumeArt.RequestRow,
     coverModifier: Modifier = Modifier,
     titleMaxLines: Int = 1,
-    payTag: PayTag? = null,
+    payTags: List<PayTag> = emptyList(),
     trailing: (@Composable () -> Unit)? = null,
 ) {
     Row(
@@ -77,8 +78,8 @@ fun NumeMediaRow(
                 // 副标题这一行恒用 Row 包（无徽标时只有一个带权重的子项，观感与裸 Text 一致）：
                 // 徽标在左、文字吃剩余宽度并在末尾省略号，是唯一能让「徽标不被挤走」的形状。
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (payTag != null) {
-                        NumePayBadge(payTag)
+                    payTags.forEach { tag ->
+                        NumePayBadge(tag)
                         Spacer(Modifier.width(2.dp))
                     }
                     Text(
