@@ -115,8 +115,6 @@ fun PlayerDock(
     onSelectTab: (BottomTab) -> Unit,
     /** 是否显示底部导航行：展开壳看列表时收起，只保留迷你播放条。 */
     navVisible: Boolean = true,
-    /** 全屏播放页里的占位动作（尚未接通的入口统一给「开发中」）。 */
-    onPlaceholderAction: () -> Unit = {},
     /** 全屏播放页的评论键：打开当前曲目的评论页（携带按钮窗口矩形作浮现起点）。 */
     onComments: (Rect) -> Unit = {},
     /** dock 总高（dp）实时上报，供上层内容避让/Profile 展开壳让位。 */
@@ -352,7 +350,6 @@ fun PlayerDock(
                 fullHeightPx = fullHeightPx,
                 dockHeightPx = geometryDockHeightPx,
                 dockShiftPx = dockShiftPx,
-                onPlaceholderAction = onPlaceholderAction,
                 onComments = onComments,
                 modifier = Modifier.fillMaxSize(),
             )

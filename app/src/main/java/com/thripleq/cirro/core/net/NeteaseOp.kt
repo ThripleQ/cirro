@@ -14,6 +14,12 @@ object NeteaseOp {
     const val ALBUM_PURCHASED = 10
     const val ALBUM_DETAIL = 11
     const val SONG_DETAIL = 12
+    /**
+     * `/weapi/v6/playlist/detail`，参数 `(id, s, n)`。
+     * - `n` 空串 = 库内回落到上游默认的全量（曲目详情最多 1000 首，trackIds 不受限）；
+     * - `n = "0"` = **轻量检查**：只回元数据 + 完整 trackIds（约全量的 7~15%），
+     *   用来判曲目有没有变（见 [com.thripleq.nume.core.repo.CollectionRefresher]）。
+     */
     const val PLAYLIST_DETAIL = 13
     const val USER_PLAYLIST = 14
     const val LYRIC = 15
@@ -94,4 +100,26 @@ object NeteaseOp {
      * 字段名是 `artistid`（上游 module 原文）。
      */
     const val SIMI_ARTIST = 48
+
+    // ── 收藏 / 点赞（2026-10-06，占位按钮接线）─────────────────────────
+    // 这四条都是**写**接口。服务端把「下架歌曲无法收藏」这类失败放在 HTTP 200
+    // 的 body.message 里（code=401），所以调用方一律走
+    // [com.thripleq.nume.core.repo.InteractionRepository]，由它统一把 message
+    // 抽成 [com.thripleq.nume.core.repo.ActionResult] —— 别直接 gateway.call 后
+    // 只看 err/code，那样用户点了会「没反应」。
+
+    /** 红心 / 取消红心某首歌 `/weapi/song/like`（args: trackId, like）。like 传 "true"/"1" 为喜欢。 */
+    const val SONG_LIKE = 49
+
+    /** 评论点赞 / 取消 `/weapi/v1/comment/{like,unlike}`（args: threadId, commentId, like）。 */
+    const val COMMENT_LIKE = 50
+
+    /** 收藏 / 取消收藏专辑 `/weapi/album/{sub,unsub}`（args: albumId, t）。t "1" 为收藏。 */
+    const val ALBUM_SUBSCRIBE = 51
+
+    /**
+     * 已收藏专辑列表 `/weapi/album/sublist`（args: limit, offset）。
+     * 专辑详情里**没有** subscribed 字段，所以「这张专辑收没收藏」只能靠它查。
+     */
+    const val ALBUM_SUBLIST = 52
 }

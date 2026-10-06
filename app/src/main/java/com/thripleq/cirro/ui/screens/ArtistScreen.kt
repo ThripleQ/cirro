@@ -1,6 +1,6 @@
-package com.thripleq.cirro.ui.screens
+package com.thripleq.nume.ui.screens
 
-import com.thripleq.cirro.ui.theme.Motion
+import com.thripleq.nume.ui.theme.Motion
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -50,25 +50,26 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-import com.thripleq.cirro.core.repo.ArtistAlbum
-import com.thripleq.cirro.core.repo.ArtistProfile
-import com.thripleq.cirro.core.repo.Track
-import com.thripleq.cirro.ui.artist.ArtistUiState
-import com.thripleq.cirro.ui.artist.ArtistViewModel
-import com.thripleq.cirro.ui.components.ArtistAvatarSize
-import com.thripleq.cirro.ui.components.CirroArt
-import com.thripleq.cirro.ui.components.CirroArtwork
-import com.thripleq.cirro.ui.components.CirroMediaRow
-import com.thripleq.cirro.ui.components.CirroMediaRowSkeleton
-import com.thripleq.cirro.ui.components.CirroPaperPage
-import com.thripleq.cirro.ui.components.CirroSectionHeader
-import com.thripleq.cirro.ui.components.CirroSectionHeaderSkeleton
-import com.thripleq.cirro.ui.components.ShimmerImagePlaceholder
-import com.thripleq.cirro.ui.components.SharedKeys
-import com.thripleq.cirro.ui.components.SkeletonBox
-import com.thripleq.cirro.ui.components.SkeletonLine
-import com.thripleq.cirro.ui.components.cirroEntrySurface
-import com.thripleq.cirro.ui.theme.CirroShape
+import com.thripleq.nume.core.repo.ArtistAlbum
+import com.thripleq.nume.core.repo.ArtistProfile
+import com.thripleq.nume.core.repo.Track
+import com.thripleq.nume.ui.artist.ArtistUiState
+import com.thripleq.nume.ui.artist.ArtistViewModel
+import com.thripleq.nume.ui.components.ArtistAvatarSize
+import com.thripleq.nume.ui.components.NumeArt
+import com.thripleq.nume.ui.components.NumeArtwork
+import com.thripleq.nume.ui.components.NumeMediaRow
+import com.thripleq.nume.ui.components.NumeMediaRowSkeleton
+import com.thripleq.nume.ui.components.NumePaperPage
+import com.thripleq.nume.ui.components.NumeSectionHeader
+import com.thripleq.nume.ui.components.NumeSectionHeaderSkeleton
+import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
+import com.thripleq.nume.ui.components.SharedKeys
+import com.thripleq.nume.ui.components.SkeletonBox
+import com.thripleq.nume.ui.components.SkeletonLine
+import com.thripleq.nume.ui.components.numeEntrySurface
+import com.thripleq.nume.ui.components.rememberPayTags
+import com.thripleq.nume.ui.theme.NumeShape
 import com.valentinilk.shimmer.shimmer
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -120,11 +121,11 @@ fun ArtistScreen(
 
     val ready = state as? ArtistUiState.Ready
 
-    // 顶部换成站内统一的那一份（[CirroPaperPage]）：容器色条 + 大标题 + 圆角纸，
+    // 顶部换成站内统一的那一份（[NumePaperPage]）：容器色条 + 大标题 + 圆角纸，
     // 右上角一颗浮层收起键。原来这里是左上角返回箭头 + 小一号的 `titleLarge` 标题、
     // 且没有圆角纸 —— 与其它页并排看就是两套语言（2026-10-05 用户：
     // 「改成一模一样的，返回按钮也是一模一样」）。
-    CirroPaperPage(title = ready?.profile?.name ?: "歌手", onClose = onBack) {
+    NumePaperPage(title = ready?.profile?.name ?: "歌手", onClose = onBack) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = bottomPadding),
@@ -153,27 +154,28 @@ fun ArtistScreen(
                     }
                 }
                 ready == null -> {
-                    item(key = "albums_skel_header") { CirroSectionHeaderSkeleton() }
+                    item(key = "albums_skel_header") { NumeSectionHeaderSkeleton() }
                     item(key = "albums_skel") { AlbumSkeletonRow() }
-                    item(key = "songs_skel_header") { CirroSectionHeaderSkeleton() }
-                    items(6, key = { "song_skel_$it" }) { CirroMediaRowSkeleton() }
+                    item(key = "songs_skel_header") { NumeSectionHeaderSkeleton() }
+                    items(6, key = { "song_skel_$it" }) { NumeMediaRowSkeleton() }
                 }
                 else -> {
                     if (ready.albums.isNotEmpty()) {
-                        item(key = "albums_header") { CirroSectionHeader("专辑") }
+                        item(key = "albums_header") { NumeSectionHeader("专辑") }
                         item(key = "albums") { AlbumsRow(ready.albums, onOpenAlbum) }
                     }
                     if (ready.hotSongs.isNotEmpty()) {
-                        item(key = "songs_header") { CirroSectionHeader("热门歌曲") }
+                        item(key = "songs_header") { NumeSectionHeader("热门歌曲") }
                         itemsIndexed(
                             ready.hotSongs,
                             key = { _, t -> "s_${t.id}" },
                             contentType = { _, _ -> "song" },
                         ) { index, track ->
-                            CirroMediaRow(
+                            NumeMediaRow(
                                 title = track.name,
                                 subtitle = track.albumName.ifBlank { null },
                                 coverUrl = track.artworkUrl,
+                                payTags = rememberPayTags(track),
                                 onClick = { vm.onPlayTrack(index) },
                             )
                         }
@@ -200,11 +202,11 @@ private fun ArtistHeader(
             .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        CirroArtwork(
+        NumeArtwork(
             url = avatar,
             contentDescription = name,
             modifier = avatarModifier,
-            size = CirroArt.AvatarLg,
+            size = NumeArt.AvatarLg,
             shape = CircleShape,
             requestSize = ArtistAvatarSize,
         )
@@ -268,17 +270,17 @@ private fun AlbumCard(album: ArtistAlbum, onClick: (Rect) -> Unit) {
     Column(
         modifier = Modifier
             .width(134.dp)
-            .cirroEntrySurface(inset = 0.dp, vertical = 0.dp)
+            .numeEntrySurface(inset = 0.dp, vertical = 0.dp)
             .onGloballyPositioned { rect = it.boundsInWindow() }
             .clickable { onClick(rect) }
             .padding(8.dp),
     ) {
-        CirroArtwork(
+        NumeArtwork(
             url = album.coverUrl,
             contentDescription = album.name,
-            size = CirroArt.AlbumCard,
-            shape = CirroShape.CardSmall,
-            requestSize = CirroArt.RequestLarge,
+            size = NumeArt.AlbumCard,
+            shape = NumeShape.CardSmall,
+            requestSize = NumeArt.RequestLarge,
         )
         Spacer(Modifier.height(6.dp))
         Text(
@@ -315,7 +317,7 @@ private fun AlbumSkeletonRow() {
     ) {
         repeat(3) {
             Column(Modifier.width(118.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                SkeletonBox(Modifier.size(118.dp), CirroShape.CardSmall)
+                SkeletonBox(Modifier.size(118.dp), NumeShape.CardSmall)
                 SkeletonLine(widthFraction = 0.9f, height = 12.dp)
             }
         }

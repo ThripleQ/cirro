@@ -38,6 +38,28 @@ object CirroInk {
     val Scrim = Color.Black
 }
 
+/**
+ * 付费徽标的两种强调色（见 `ui/components/PayBadge.kt`）。
+ *
+ * 明暗主题**各取一档**：这两个颜色要在一行 8sp 小字里被一眼分辨出来，就得与所在底色
+ * 保持足够对比 —— 一个色值包打两种主题做不到（挑中间亮度则明底偏淡、暗底偏闷）。
+ * 与 [NumeInk] 那套「图上的固定白」不同：那些压在有遮罩的位图上，这些压在主题底色上，
+ * 所以必须跟着底色走。
+ */
+object NumePay {
+    /** 需要购买（尚未购买）—— 红。浅色底上的那一档。 */
+    val PayLight = Color(0xFFC4342F)
+
+    /** 需要购买 —— 红。深色底上的那一档（提亮，否则闷在深底里看不清）。 */
+    val PayDark = Color(0xFFEF6A63)
+
+    /** 已经购买 —— 蓝。浅色底。 */
+    val OwnedLight = Color(0xFF1F63C0)
+
+    /** 已经购买 —— 蓝。深色底。 */
+    val OwnedDark = Color(0xFF7AA9F0)
+}
+
 /** 需要「跟随主题色再乘透明度」的场景：只能给 alpha，不能给固化 Color。 */
 object CirroFade {
     /** 封面底部文字托底渐变的最暗端。原 `BigCoverVisual.scrimAlpha` 默认值。 */

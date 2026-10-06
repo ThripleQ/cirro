@@ -1,20 +1,22 @@
-package com.thripleq.cirro.ui.home
+package com.thripleq.nume.ui.home
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.thripleq.cirro.core.playback.PlaybackLauncher
-import com.thripleq.cirro.core.repo.Chart
-import com.thripleq.cirro.core.repo.ChartRepository
-import com.thripleq.cirro.core.repo.HomeRepository
-import com.thripleq.cirro.core.repo.PlaylistCard
-import com.thripleq.cirro.core.repo.StyleTag
-import com.thripleq.cirro.core.repo.Track
+import com.thripleq.nume.core.playback.PlaybackLauncher
+import com.thripleq.nume.core.repo.Chart
+import com.thripleq.nume.core.repo.ChartRepository
+import com.thripleq.nume.core.repo.HomeRepository
+import com.thripleq.nume.core.repo.PlaylistCard
+import com.thripleq.nume.core.repo.StyleTag
+import com.thripleq.nume.core.repo.Track
+import com.thripleq.nume.core.util.RefreshGate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -329,13 +331,67 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    /** 见 [onEnterVisible]：反复切回「探索」tab 不该反复打网络。 */
+    private val enterGate = RefreshGate()
+
+    /**
+     * 最后一次**发布出去**的完整内容。
+     *
+     * 为什么不直接从 `_uiState` 里读：手动刷新会先把 `_uiState` 置成
+     * [HomeUiState.Loading]（要显骨架屏），而那一刻恰恰是「这一块拉空了、要不要保留
+     * 旧值」需要旧内容的时候 —— 从 `_uiState` 读只会读到 Loading。所以单独留一份引用，
+     * 它**只被成功发布的内容覆盖**。见 [reload] 的起手值与 `keep` 的判据。
+     */
+    private var lastContent: HomeUiState.Ready? = null
+
+    /** 正在跑的那趟取数；新的一趟开始时把它取消，见 [reload]。 */
+    private var reloadJob: Job? = null
+
     init {
+        // 首次取数由 init 自己发起，所以先把门关上 —— 页面组合时那次 onEnterVisible()
+        // 会被冷却吃掉，不会跟着补一枪重复请求。
+        enterGate.mark()
         load()
     }
 
-    fun load() {
-        viewModelScope.launch {
-            _uiState.value = HomeUiState.Loading
+    /** 手动刷新（探索页顶栏那颗刷新键）：显示加载态、无条件重取。 */
+    fun load() = reload(quiet = false)
+
+    /**
+     * 页面重新可见（切回「探索」tab、从详情页返回）时调用。
+     *
+     * 冷却期内什么都不做；冷却之外**静默**重取 —— 页面上已经有内容，不该退回骨架屏。
+     * 页面的 VM 挂在导航回退栈上不会重建，刷新若只挂在 `init` 上就这辈子只跑一次，
+     * 见 [RefreshGate] 的类注释。
+     */
+    fun onEnterVisible() {
+        if (!enterGate.allow()) return
+        enterGate.mark()
+        reload(quiet = true)
+    }
+
+    /**
+     * [quiet] = 静默刷新：不置 Loading（不显骨架屏）。
+     *
+     * 另外，**任何一次刷新**（手动或静默）都以「页面上现有那份」为底、某一块拉空时
+     * 保留旧值 —— 一次失败的请求不该让区块从页面上消失。只有**首屏那趟**没有旧值
+     * 可保留：那时的「空」要如实反映，末了统一判空落到 Error。
+     */
+    private fun reload(quiet: Boolean) {
+        // [quiet] 与「有没有旧内容」是两件事，别混：
+        //   quiet      → 要不要显骨架屏（用户点了刷新键，该给个反馈）
+        //   hasContent → 拉空时要不要保留旧值
+        // 手动刷新同样是「刷新」而不是「清空重来」：点一下刷新就看到某个区块没了，
+        // 比"数据晚一点到"严重得多。所以保留旧值的判据是 hasContent。
+        val previous = lastContent
+        val hasContent = previous != null
+        val silent = quiet && hasContent
+        // 上一趟还在飞就先取消。两趟并发回填会各持一份 `ready` 交替发布，后发布的那份
+        // 可能恰好缺了某一块 —— 表现就是区块莫名消失、或闪回旧值。取消是安全的：
+        // 已经发布出去的内容留在 [lastContent] 里，新的一趟以它为底。
+        reloadJob?.cancel()
+        reloadJob = viewModelScope.launch {
+            if (!silent) _uiState.value = HomeUiState.Loading
 
             // 并行发起五块请求（登录态仅决定是否拉 daily）。
             // loggedIn 是网络调用（account 接口）：不能串行挡在内容块前面——
@@ -353,15 +409,26 @@ class HomeViewModel @Inject constructor(
             val radioCover = async { homeRepo.radioSongs("1").firstOrNull()?.artworkUrl }
             // 场景音乐：先拿场景/情感标签，再为每个标签各取一张热门歌单当封面
             // （分类表里标签没有封面）。标签之间无依赖 → 并行。
+            //
+            // **静默刷新（切回 tab）不打这一块**。它是全页唯一「1 次分类表 + 每标签
+            // 各 1 次歌单」= 9 个请求的区块，也是唯一一次对同一端点并发 8 枪的地方；
+            // 而场景标签与它们的热门歌单几乎不变 —— 每次回 tab 都重打 9 枪换不来任何
+            // 新东西，只让它成为全页最容易因抖动/限流而整块消失的一块（空结果会让
+            // UI 连「场景音乐」标题一起不画）。返回 null，由 `keep` 把上次那份留在
+            // 页面上；手动点刷新键仍然重取。
             val scene = async {
-                val tags = homeRepo.sceneTags(SCENE_TAG_COUNT)
-                coroutineScope {
-                    tags.map { tag ->
-                        async {
-                            homeRepo.playlistsByCat(tag, "1").firstOrNull()
-                                ?.let { SceneCard(tag, it.coverUrl, it.id) }
-                        }
-                    }.awaitAll().filterNotNull()
+                if (silent) {
+                    null
+                } else {
+                    val tags = homeRepo.sceneTags(SCENE_TAG_COUNT)
+                    coroutineScope {
+                        tags.map { tag ->
+                            async {
+                                homeRepo.playlistsByCat(tag, "1").firstOrNull()
+                                    ?.let { SceneCard(tag, it.coverUrl, it.id) }
+                            }
+                        }.awaitAll().filterNotNull()
+                    }
                 }
             }
             // account 慢只拖后 daily 一块，其余四块完全不受影响。
@@ -369,24 +436,39 @@ class HomeViewModel @Inject constructor(
 
             // 逐块回填：每一块一就绪就整体发布，最慢的那块不再拖慢整页首屏。
             // 全部聚齐后统一判空，全部为空才落到 Error。
-            var ready = HomeUiState.Ready(false, null, null, null, null)
+            // 有旧内容时以**它**为底（首屏那趟才从空壳起手）。
+            var ready = previous ?: HomeUiState.Ready(false, null, null, null, null)
+
+            /** 发布一块进度，并把这份记成「页面上现在有的内容」（见 [lastContent]）。 */
+            fun publish() {
+                lastContent = ready
+                _uiState.value = ready
+            }
+
+            /**
+             * 这一块拉空（含 null）就保留旧值 —— 一次失败的请求不该让区块从页面上消失。
+             * **首屏那趟不进这个分支**（[hasContent] 为 false）：那时「空」是要如实反映的
+             * （最后统一判空落到 Error），不该拿一个本来就没有的旧值去顶。
+             */
+            fun <T> keep(next: T?, old: T?, isEmpty: (T) -> Boolean): T? =
+                if (hasContent && (next == null || isEmpty(next))) old else next
 
             val pl = playlists.await()
-            ready = ready.copy(playlists = pl)
-            _uiState.value = ready
+            ready = ready.copy(playlists = keep(pl, ready.playlists) { it.isEmpty() })
+            publish()
 
             val ch = charts.await()
-            ready = ready.copy(charts = ch)
-            _uiState.value = ready
+            ready = ready.copy(charts = keep(ch, ready.charts) { it.isEmpty() })
+            publish()
 
             val hp = homePage.await()
             ready = ready.copy(
-                radar = hp.radar,
-                radarTitle = hp.radarTitle,
-                guessTitle = hp.guessTitle,
-                guessPages = hp.guessPages,
+                radar = keep(hp.radar, ready.radar) { it.isEmpty() },
+                radarTitle = keep(hp.radarTitle, ready.radarTitle) { it.isEmpty() },
+                guessTitle = keep(hp.guessTitle, ready.guessTitle) { it.isEmpty() },
+                guessPages = keep(hp.guessPages, ready.guessPages) { it.isEmpty() } ?: emptyList(),
             )
-            _uiState.value = ready
+            publish()
 
             // 「相似艺人」的卡面：要种子歌手 id，而它来自 homePage，所以只能等在这里发
             // （「私人漫游」那笔在开头就已发出，见 radioCover）。
@@ -397,27 +479,41 @@ class HomeViewModel @Inject constructor(
 
             // 曲风表：只为「XX日推」功能卡取风格词 / 该曲风下的歌单。
             val st = styles.await()
-            ready = ready.copy(styles = st)
-            _uiState.value = ready
+            ready = ready.copy(styles = keep(st, ready.styles) { it.isEmpty() })
+            publish()
             val tag2 = st.getOrNull(1)?.id
             val stylePlaylists = async {
                 if (tag2 != null) homeRepo.stylePlaylists(tag2, "6") else emptyList()
             }
 
             val da = daily.await()
-            ready = ready.copy(dailySongs = da, loggedIn = loggedInAsync.await())
-            _uiState.value = ready
+            val online = loggedInAsync.await()
+            ready = ready.copy(
+                dailySongs = keep(da, ready.dailySongs) { it.isEmpty() },
+                // 登录态是单向的上升：只有未登录 → 登录才有信息量。静默刷新时抖动返回的
+                // false 不该把已经登录的页面退回登录引导。
+                loggedIn = if (silent) ready.loggedIn || online else online,
+            )
+            publish()
 
-            ready = ready.copy(stylePlaylists = stylePlaylists.await())
-            _uiState.value = ready
-            ready = ready.copy(scene = scene.await())
+            // 曲风歌单与场景音乐**各自发布**：原来这一块是攒到最后跟卡面一起发的，
+            // 于是它的可见性被后面那两个 await（私人漫游 / 相似艺人的封面）拖住 ——
+            // 场景音乐那条链路本身就要 1 次分类表 + 每标签各 1 次歌单，是首页最慢的一块，
+            // 再让别人拖一道，表现就是「这一区迟迟不出现、甚至看着像没了」。
+            ready = ready.copy(
+                stylePlaylists = keep(stylePlaylists.await(), ready.stylePlaylists) { it.isEmpty() },
+            )
+            publish()
+
+            ready = ready.copy(scene = keep(scene.await(), ready.scene) { it.isEmpty() })
+            publish()
 
             // 卡面最后合入（不挡住上面任何一块的展示）。拿不到就为 null —— **不再借别人的图**
             // 兜底，由 UI 画中性空封面；这一笔同时把 cardFacesSettled 标上，微光到此为止
             // （否则未登录时 simiArtist 返 301、相似艺人卡的封面会永远闪，见 [Ready.cardFacesSettled]）。
             ready = ready.copy(
-                radioCover = radioCover.await(),
-                artistCover = artistCover.await(),
+                radioCover = keep(radioCover.await(), ready.radioCover) { it.isEmpty() },
+                artistCover = keep(artistCover.await(), ready.artistCover) { it.isEmpty() },
                 cardFacesSettled = true,
             )
 
@@ -428,7 +524,13 @@ class HomeViewModel @Inject constructor(
                 ready.guessPages.isEmpty() &&
                 ready.stylePlaylists.isNullOrEmpty() &&
                 ready.scene.isNullOrEmpty()
-            _uiState.value = if (allEmpty) HomeUiState.Error else ready
+            // 判 Error 的判据是「首屏且全空」：页面上已经有旧内容时（刷新），
+            // 没有理由因为这一趟全拉空就清掉它去显示错误页。
+            if (allEmpty && !hasContent) {
+                _uiState.value = HomeUiState.Error
+            } else {
+                publish()
+            }
         }
     }
 

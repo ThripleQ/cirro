@@ -1,6 +1,7 @@
-package com.thripleq.cirro.ui.screens
+package com.thripleq.nume.ui.screens
 
 import androidx.activity.compose.BackHandler
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -44,50 +46,59 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-import com.thripleq.cirro.core.repo.Comment
-import com.thripleq.cirro.ui.comments.CommentsViewModel
-import com.thripleq.cirro.ui.components.CirroArt
-import com.thripleq.cirro.ui.components.CirroArtwork
-import com.thripleq.cirro.ui.components.CirroEmptyState
-import com.thripleq.cirro.ui.components.CirroErrorState
-import com.thripleq.cirro.ui.components.CirroLoadMoreIndicator
-import com.thripleq.cirro.ui.components.CirroPaperPage
-import com.thripleq.cirro.ui.components.CirroSectionHeader
-import com.thripleq.cirro.ui.components.ShimmerImagePlaceholder
-import com.thripleq.cirro.ui.components.SkeletonBox
-import com.thripleq.cirro.ui.components.SkeletonLine
-import com.thripleq.cirro.ui.theme.CirroShape
+import com.thripleq.nume.core.repo.Comment
+import com.thripleq.nume.ui.comments.CommentsViewModel
+import com.thripleq.nume.ui.components.NumeArt
+import com.thripleq.nume.ui.components.NumeArtwork
+import com.thripleq.nume.ui.components.NumeEmptyState
+import com.thripleq.nume.ui.components.NumeErrorState
+import com.thripleq.nume.ui.components.NumeLoadMoreIndicator
+import com.thripleq.nume.ui.components.NumePaperPage
+import com.thripleq.nume.ui.components.NumeSectionHeader
+import com.thripleq.nume.ui.components.ShimmerImagePlaceholder
+import com.thripleq.nume.ui.components.SkeletonBox
+import com.thripleq.nume.ui.components.SkeletonLine
+import com.thripleq.nume.ui.theme.NumeShape
 import com.valentinilk.shimmer.shimmer
 
 /**
- * 歌曲评论页：热门评论 + 最新评论（触底翻页）。
- * 入口为播放页的「评论」按钮；作为浮层盖在播放页之上（播放页保持打开），
- * 因此根布局需要不透明底色，并自行处理系统返回键。
+ * 评论页（热门 + 最新，触底翻页）。
+ *
+ * 入口有三处，靠 [threadId] 区分资源：播放页的「评论」按钮（单曲 `R_SO_4_`）、
+ * 歌单 / 榜单页头部的「评论」胶囊（`A_PL_0_`）、专辑页（`R_AL_3_`）。
+ * 作为浮层盖在被覆盖的页之上（那一页保持打开），因此根布局需要不透明底色，
+ * 并自行处理系统返回键。
  */
 @Composable
 fun CommentsScreen(
-    songId: String,
+    threadId: String,
     onBack: () -> Unit,
     islandHeight: Float = 0f,
     vm: CommentsViewModel = hiltViewModel(),
 ) {
     BackHandler { onBack() }
-    LaunchedEffect(songId) { vm.load(songId) }
+    LaunchedEffect(threadId) { vm.load(threadId) }
     val state by vm.uiState.collectAsStateWithLifecycle()
     val bottomPadding = (islandHeight + 16f).dp
     val listState = rememberLazyListState()
 
-    // 顶部换成站内统一的那一份（[CirroPaperPage]）：容器色条 + 大标题 + 圆角纸，
+    // 点赞失败的提示（成功不打扰）：与站内其他写操作同一套语言。
+    val context = LocalContext.current.applicationContext
+    LaunchedEffect(vm) {
+        vm.message.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+    }
+
+    // 顶部换成站内统一的那一份（[NumePaperPage]）：容器色条 + 大标题 + 圆角纸，
     // 右上角一颗浮层收起键。原来这里是左上角返回箭头 + 小一号的 `titleLarge` 标题、
     // 且没有圆角纸（2026-10-05 用户：「改成一模一样的，返回按钮也是一模一样」）。
-    CirroPaperPage(
+    NumePaperPage(
         title = if (state.total > 0) "评论 ${state.total}" else "评论",
         onClose = onBack,
     ) {
         when {
             state.loading -> CommentsSkeleton()
-            state.error -> CirroErrorState(text = "评论加载失败，点此重试", onRetry = vm::retry)
-            state.hot.isEmpty() && state.latest.isEmpty() -> CirroEmptyState("还没有评论")
+            state.error -> NumeErrorState(text = "评论加载失败，点此重试", onRetry = vm::retry)
+            state.hot.isEmpty() && state.latest.isEmpty() -> NumeEmptyState("还没有评论")
             else -> {
                 LoadMoreWatcher(listState, vm::loadMore)
                 LazyColumn(
@@ -96,13 +107,13 @@ fun CommentsScreen(
                     contentPadding = PaddingValues(bottom = bottomPadding),
                 ) {
                     if (state.hot.isNotEmpty()) {
-                        item(key = "hot_header") { CirroSectionHeader("热门评论") }
-                        items(state.hot, key = { "h_${it.id}" }) { CommentRow(it) }
+                        item(key = "hot_header") { NumeSectionHeader("热门评论") }
+                        items(state.hot, key = { "h_${it.id}" }) { CommentRow(it, vm::toggleLike) }
                     }
-                    item(key = "latest_header") { CirroSectionHeader("最新评论") }
-                    items(state.latest, key = { "l_${it.id}" }) { CommentRow(it) }
+                    item(key = "latest_header") { NumeSectionHeader("最新评论") }
+                    items(state.latest, key = { "l_${it.id}" }) { CommentRow(it, vm::toggleLike) }
                     if (state.loadingMore) {
-                        item(key = "loading_more") { CirroLoadMoreIndicator() }
+                        item(key = "loading_more") { NumeLoadMoreIndicator() }
                     } else if (!state.hasMore && state.latest.isNotEmpty()) {
                         item(key = "end") {
                             Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
@@ -117,16 +128,16 @@ fun CommentsScreen(
 }
 
 @Composable
-private fun CommentRow(comment: Comment) {
+private fun CommentRow(comment: Comment, onLike: (Comment) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        CirroArtwork(
+        NumeArtwork(
             url = comment.avatarUrl,
             contentDescription = comment.nickname,
-            size = CirroArt.AvatarSm,
+            size = NumeArt.AvatarSm,
             shape = CircleShape,
             requestSize = 120,
         )
@@ -150,7 +161,7 @@ private fun CommentRow(comment: Comment) {
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .clip(CirroShape.Chip)
+                        .clip(NumeShape.Chip)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         .padding(8.dp),
                 ) {
@@ -186,19 +197,33 @@ private fun CommentRow(comment: Comment) {
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                Icon(
-                    Icons.Filled.FavoriteBorder,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp),
-                )
-                if (comment.likedCount > 0) {
-                    Spacer(Modifier.width(3.dp))
-                    Text(
-                        text = comment.likedCount.toString(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // 点赞：**整块（图标 + 数字）都是热区**，不只图标本身 —— 那个心只有
+                // 14dp，单独点它在真机上很别扭。热区往外撑到 32dp 高，视觉位置不变。
+                Row(
+                    modifier = Modifier
+                        .clip(NumeShape.Pill)
+                        .clickable { onLike(comment) }
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        // 空/实心两种心：点过就是实心 + 主色，与播放页那颗同一套语言。
+                        imageVector = if (comment.liked) Icons.Filled.Favorite
+                        else Icons.Filled.FavoriteBorder,
+                        contentDescription = if (comment.liked) "取消点赞" else "点赞",
+                        tint = if (comment.liked) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp),
                     )
+                    if (comment.likedCount > 0) {
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            text = comment.likedCount.toString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (comment.liked) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }

@@ -1,4 +1,4 @@
-package com.thripleq.cirro.ui.screens
+package com.thripleq.nume.ui.screens
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -16,8 +16,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -35,16 +40,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.thripleq.cirro.core.repo.Album
-import com.thripleq.cirro.core.repo.PlaylistSummary
-import com.thripleq.cirro.ui.components.CirroErrorState
-import com.thripleq.cirro.ui.components.CirroPageTitleBar
-import com.thripleq.cirro.ui.components.ShellPanel
-import com.thripleq.cirro.ui.components.rememberSharedSourceGuard
-import com.thripleq.cirro.ui.profile.ProfileUiState
-import com.thripleq.cirro.ui.profile.ProfileViewModel
-import com.thripleq.cirro.ui.theme.Motion
-import com.thripleq.cirro.ui.theme.CirroShape
+import com.thripleq.nume.core.repo.Album
+import com.thripleq.nume.core.repo.PlaylistSummary
+import com.thripleq.nume.ui.components.NumeErrorState
+import com.thripleq.nume.ui.components.NumePageTitleBar
+import com.thripleq.nume.ui.components.ShellPanel
+import com.thripleq.nume.ui.components.rememberSharedSourceGuard
+import com.thripleq.nume.ui.profile.ProfileUiState
+import com.thripleq.nume.ui.profile.ProfileViewModel
+import com.thripleq.nume.ui.theme.Motion
+import com.thripleq.nume.ui.theme.NumeShape
 
 /**
  * 我的页：账号抬头 + 「喜欢的音乐」全宽横幅 + 「已购」原地撑开的壳卡 + 创建/收藏两张行卡。
@@ -84,6 +89,12 @@ fun ProfileScreen(
     val shellOpen = panel != null
     LaunchedEffect(shellOpen) { onShellOpenChange(shellOpen) }
     DisposableEffect(Unit) { onDispose { onShellOpenChange(false) } }
+
+    // 页面重新可见（切回「我的」tab、从详情页返回）时问一句要不要取新数据：
+    // 已购、收藏镜像、红心数都会在**别处**（官方 App）变，原来只有 init 那一次。
+    // 本页是导航目的地，切走会移出组合、切回重新组合，所以这个 effect 每次可见都重跑；
+    // VM 提升到 Activity 作用域常驻，真正要不要发请求由 VM 里的冷却门决定。
+    LaunchedEffect(Unit) { vm.onEnterVisible() }
     val uid = (state as? ProfileUiState.LoggedIn)?.data?.account?.uid?.toString()
     // 胶囊壳底部让位量 = 导航岛实时高度（dp，由 PlayerCapsule 上报，含拉手+nav行+手势条 inset）。
     val islandClearance = with(LocalDensity.current) { islandHeight.dp }
@@ -101,7 +112,8 @@ fun ProfileScreen(
         }
     }
     val onDismiss = remember { { panel = null } }
-    val onRetry = remember(vm) { { vm.refresh() } }
+    // 「无条件重取一次」：错误态的重试与顶栏那颗刷新键共用同一个动作。
+    val onRefresh = remember(vm) { { vm.refresh() } }
 
     if (Motion.SharedShellEnabled && shared != null) {
         // 官方容器变换：源大卡封面与面板 banner 封面挂同一 key 的 sharedBounds，
@@ -131,7 +143,7 @@ fun ProfileScreen(
                         onOpenTracks = onOpenTracks,
                         onOpenPanel = onOpenPanel,
                         onWebLogin = onWebLogin,
-                        onRetry = onRetry,
+                        onRefresh = onRefresh,
                         shared = shared,
                         avScope = scope,
                         bottomPadding = panelBottomPad,
@@ -162,7 +174,7 @@ fun ProfileScreen(
                 onOpenTracks = onOpenTracks,
                 onOpenPanel = onOpenPanel,
                 onWebLogin = onWebLogin,
-                onRetry = onRetry,
+                onRefresh = onRefresh,
                 shared = null,
                 avScope = null,
                 bottomPadding = panelBottomPad,
@@ -191,21 +203,31 @@ private fun ProfileBodyUi(
     onOpenTracks: (source: String, id: String, title: String) -> Unit,
     onOpenPanel: (ProfilePanel, Rect?, morphable: Boolean) -> Unit,
     onWebLogin: () -> Unit,
-    onRetry: () -> Unit,
+    onRefresh: () -> Unit,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
     bottomPadding: Dp,
 ) {
     // 与探索页 / 搜索页同一套外壳：顶层铺 `surfaceContainer` 放「我的」大标题，内容是一张
     // `surface` 圆角纸 —— 纸的顶角把容器色露出来，就是状态栏那条容器色 + 下方圆角内容的关系。
-    // 标题条走 [CirroPageTitleBar]（三页共用一份实现，内缩 24dp 与字形永远一致），
+    // 标题条走 [NumePageTitleBar]（三页共用一份实现，内缩 24dp 与字形永远一致），
     // 状态栏让位随之从内容挪到标题条上。
     Column(
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        CirroPageTitleBar("我的")
+        // 顶栏刷新键与探索页**同规格**：28dp 的 IconButton、默认右侧内缩
+        // （[TitleBarEndInset]），三个 tab 页看起来是一套。
+        NumePageTitleBar("我的") {
+            IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    Icons.Filled.Refresh,
+                    contentDescription = "刷新",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
 
         // 源可见性守卫：卡片被这张圆角纸的顶边切掉时不许挂共享元素
         // （overlay 不裁，飞的那份会画在纸上方 —— 见 [SharedSourceGuard]）。
@@ -219,7 +241,7 @@ private fun ProfileBodyUi(
             Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .clip(CirroShape.SheetTop)
+                .clip(NumeShape.SheetTop)
                 .background(MaterialTheme.colorScheme.surface)
                 // 视口 = 这张纸的裁切边界。**必须挂在 `.padding(...)` 之前**：
                 // onGloballyPositioned 量的是它所在链条位置的尺寸，放到 padding 之后
@@ -231,7 +253,7 @@ private fun ProfileBodyUi(
             Spacer(Modifier.height(20.dp))
             when (val s = state) {
                 ProfileUiState.Loading -> ProfileSkeleton()
-                is ProfileUiState.Error -> CirroErrorState(onRetry = onRetry)
+                is ProfileUiState.Error -> NumeErrorState(onRetry = onRefresh)
                 // 未登录也先把完整窗口摆好：登录卡置顶，四个区块以占位呈现，
                 // 结构与已登录完全一致，点击任意区块引导登录。
                 ProfileUiState.LoggedOut -> LoggedOutContent(onWebLogin)

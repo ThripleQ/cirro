@@ -1,4 +1,4 @@
-package com.thripleq.cirro.ui.screens
+package com.thripleq.nume.ui.screens
 
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
@@ -44,17 +44,18 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.thripleq.cirro.ui.components.ArtistAvatarSize
-import com.thripleq.cirro.ui.components.CirroEmptyState
-import com.thripleq.cirro.ui.components.CirroErrorState
-import com.thripleq.cirro.ui.components.CirroLoadMoreFailed
-import com.thripleq.cirro.ui.components.CirroLoadMoreIndicator
-import com.thripleq.cirro.ui.components.CirroMediaRow
-import com.thripleq.cirro.ui.components.SharedKeys
-import com.thripleq.cirro.ui.search.SearchTab
-import com.thripleq.cirro.ui.search.SearchUiState
-import com.thripleq.cirro.ui.theme.Motion
-import com.thripleq.cirro.ui.theme.CirroShape
+import com.thripleq.nume.ui.components.ArtistAvatarSize
+import com.thripleq.nume.ui.components.NumeEmptyState
+import com.thripleq.nume.ui.components.NumeErrorState
+import com.thripleq.nume.ui.components.NumeLoadMoreFailed
+import com.thripleq.nume.ui.components.NumeLoadMoreIndicator
+import com.thripleq.nume.ui.components.NumeMediaRow
+import com.thripleq.nume.ui.components.rememberPayTags
+import com.thripleq.nume.ui.components.SharedKeys
+import com.thripleq.nume.ui.search.SearchTab
+import com.thripleq.nume.ui.search.SearchUiState
+import com.thripleq.nume.ui.theme.Motion
+import com.thripleq.nume.ui.theme.NumeShape
 
 /* ── 结果页：分类页签 + 列表 ─────────────────────────────── */
 
@@ -103,9 +104,9 @@ internal fun ResultsContent(
             state.loading -> SearchSkeleton()
             // 错误必须给出路：错误态可点重试（与播客/评论/歌手/曲目页同一交互语言）。
             empty -> if (state.error) {
-                CirroErrorState(text = "搜索失败，点此重试", onRetry = onRetry)
+                NumeErrorState(text = "搜索失败，点此重试", onRetry = onRetry)
             } else {
-                CirroEmptyState("没有找到相关内容")
+                NumeEmptyState("没有找到相关内容")
             }
             else -> {
                 LoadMoreWatcher(listState, onLoadMore)
@@ -152,7 +153,7 @@ private fun TabStrip(selected: SearchTab, onSelect: (SearchTab) -> Unit) {
                 modifier = Modifier
                     .weight(1f)
                     .height(36.dp)
-                    .clip(CirroShape.Capsule)
+                    .clip(NumeShape.Capsule)
                     .background(bg)
                     .clickable { onSelect(tab) },
                 contentAlignment = Alignment.Center,
@@ -195,10 +196,11 @@ private fun ResultList(
                 val sub = listOf(track.artist, track.albumName)
                     .filter { it.isNotBlank() }
                     .joinToString(" - ")
-                CirroMediaRow(
+                NumeMediaRow(
                     title = track.name,
                     subtitle = sub.ifBlank { null },
                     coverUrl = track.artworkUrl,
+                    payTags = rememberPayTags(track),
                     onClick = { onPlayTrack(index) },
                     trailing = {
                         IconButton(onClick = { /* 三点菜单：暂无功能 */ }) {
@@ -218,7 +220,7 @@ private fun ResultList(
                 contentType = { _, _ -> "playlist" },
             ) { _, p ->
                 var rect by remember { mutableStateOf(Rect.Zero) }
-                CirroMediaRow(
+                NumeMediaRow(
                     title = p.name,
                     subtitle = mediaSubtitle(
                         "${p.trackCount}首",
@@ -237,7 +239,7 @@ private fun ResultList(
                 contentType = { _, _ -> "radio" },
             ) { _, r ->
                 var rect by remember { mutableStateOf(Rect.Zero) }
-                CirroMediaRow(
+                NumeMediaRow(
                     title = r.name,
                     subtitle = mediaSubtitle("${r.programCount}个声音", r.djName, r.playCount),
                     coverUrl = r.coverUrl,
@@ -252,7 +254,7 @@ private fun ResultList(
                 contentType = { _, _ -> "album" },
             ) { _, a ->
                 var rect by remember { mutableStateOf(Rect.Zero) }
-                CirroMediaRow(
+                NumeMediaRow(
                     title = a.name,
                     subtitle = albumSubtitle(a),
                     coverUrl = a.coverUrl,
@@ -280,7 +282,7 @@ private fun ResultList(
                 } else {
                     Modifier
                 }
-                CirroMediaRow(
+                NumeMediaRow(
                     title = a.name,
                     coverUrl = a.avatarUrl,
                     coverShape = CircleShape,
@@ -294,9 +296,9 @@ private fun ResultList(
         }
 
         if (state.loadingMore) {
-            item(key = "loading_more") { CirroLoadMoreIndicator() }
+            item(key = "loading_more") { NumeLoadMoreIndicator() }
         } else if (state.loadMoreFailed) {
-            item(key = "load_more_failed") { CirroLoadMoreFailed(onRetry = onLoadMore) }
+            item(key = "load_more_failed") { NumeLoadMoreFailed(onRetry = onLoadMore) }
         }
     }
 }

@@ -58,6 +58,21 @@ jobs:
       - name: Make wrapper executable
         run: chmod +x gradlew
 
+      - name: Unit tests
+        # **在出包之前**跑：这些接口没有公开文档，键名是探针实测猜出来的，壳子随时会变，
+        # 而漏读一个字段不会崩、只会变成「封面全灰 / 徽标不画」这类静默错误 —— 单测是
+        # 唯一的护栏。纯 JVM，不需要模拟器，几十秒；挂了就不必再花几分钟打两个包。
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Upload unit test report
+        # always()：测试红的时候也要能下载报告看是哪条断言挂了。
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
+
       - name: Build APKs
         # debug 包留着排障（日志全开、LeakCanary 在线）；日常装的是 release ——
         # debug 版 Compose 没优化、R8 没跑，滚动和转场明显更卡。

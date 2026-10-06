@@ -36,8 +36,19 @@ Cirro 是桌面端播放器 [Netune](https://github.com/ThripleQ/Netune) 的安�
 ## 二、两条数据流
 
 - **元数据路径**（歌单 / 歌词 / 封面 / 账号）：
-  `Repository → NetEaseGateway → libnetease(JNI 签名与解析) → OkHttp → 网易云 API`，
-  结果落 Room，供 UI 复用。
+  `Repository → NetEaseGateway → libnetease(JNI 签名与解析) → OkHttp → 网易云 API`。
+  集合（歌单 / 榜单 / 专辑）**先把 Room 里的副本交出去渲染，再判要不要重拉**：距上次真正
+  打过网络超过冷却（30s）才发一次 `n=0` 轻量检查（只回元数据 + 完整 trackIds，实测约全量的
+  7~15%），**指纹未变就复用 Room 的曲目表**，变了才拉全量 —— 见
+  `core/repo/CollectionRefresher.kt`。Room 因此是**常态读路径**，「离线可读」只是副产品。
+- **「什么时候去取新数据」统一由两扇冷却门管**，都不带 TTL：
+  1. 集合壳（歌单/榜单/专辑）：`CollectionRefresher` 的 30s 检查冷却（上一条）；
+  2. 页面（三个 tab + 详情页）：`core/util/RefreshGate` —— 页面 ViewModel 挂在导航回退栈上
+     **切走再切回不会重建**，刷新若只挂在 `init` 上就这辈子只跑一次（「有数据的地方拿新数据
+     不及时」的结构性来源）。所以页面在**重新可见**时调 `vm.onEnterVisible()`，冷却期内
+     零请求、冷却之外**静默**重取（不置 Loading、拉空不覆盖已显示内容）。
+     默认 30s：秒级的反复切 tab 全挡掉，几十秒级的「去官方 App 改了数据再回来看」仍能在
+     半分钟内看到。**收关在 ViewModel，不在页面** —— 页面只负责「我可见了」这个事实。
 - **播放 / 缓存路径**（核心亮点）：
   `Player → Media3 ExoPlayer → CachingDataSource → 分段缓存 + 原子索引`。
   未命中时 CachingDataSource 触发 **Range 分段下载**（走 libnetease 生成的签名 URL + OkHttp），
@@ -52,6 +63,10 @@ Cirro 是桌面端播放器 [Netune](https://github.com/ThripleQ/Netune) 的安�
 | JNI 边界 | 传输注入 | libnetease 照常跑高层调用，仅在发 HTTP 一刻经注册的 transport 回调到 Kotlin(OkHttp)。 |
 | libnetease 接入 | git submodule 钉版 | 单一事实源，`git pull` 升级即可。 |
 | 线程契约 | 串行派发 | request-kernel 全局单线程，`NetEaseGateway` 用单派发 + 锁串行所有调用。 |
+| 集合刷新 | Room 先出 + 指纹检查 | 既不用 TTL、也不无条件重拉：`n=0` 检查很便宜（7~15%）且**完整回 trackIds**，指纹（trackIds 的 md5）未变就直接复用 Room 的曲目表。判定要点与踩过的坑见 `CollectionRefresher.kt`。 |
+| 页面刷新 | 重新可见 + 冷却门 | `RefreshGate`（30s）：冷却内零请求，冷却外静默重取。**刻意不用 TTL** —— TTL 对「在别处改了数据」是概率性的（得恰好过期才看得到），而「重新可见」是确定的事件。别再把刷新挂回 `init`。 |
+| 专辑收藏态 | 出口处查镜像 | 专辑详情**没有** `subscribed` 字段（album 对象 29 个键里没有），所以壳的出口处按 `LibraryStateStore` 那份「我收藏的专辑」覆写；镜像没载入时**保持原值**，绝不把「没拉到」当「没收藏」。歌单不走这条（详情自带该字段）。 |
+| 曲目付费徽标 | 内容档位 × 账号镜像 | 画不画由 `fee`（内容属性）定，红还是蓝由「买了没」定。后者**不能靠 `privileges[].payed`** —— 那个数组在 `/weapi/v1/album/{id}` 里整个不存在，而专辑详情恰恰最需要它。于是同收藏态一路：`LibraryStateStore` 拉一份「已购单曲 ∪ 已购数字专辑」的 id 全集，之后本地查表、零额外请求。判据与颜色见 `ui/components/PayBadge.kt`。**「已购单曲」屏是唯一例外**：那个端点回的是购买记录、不是 song 对象（没有 `fee`），所以 `ProfileRepository.purchasedSongs` 拉完后按 songId 另发一次 `v3/song/detail` 补档位 |
 
 ## 四、原生桥（libnetease，当前已落地）
 
@@ -197,6 +212,39 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 - **构建提速**：`gradle.properties` 开 configuration cache + build cache。
 - CI：GitHub Actions 在 push 到 `main`/`beta` 时构建并上传 debug APK。
 
+### 八·补 单元测试（2026-10-06 起，此前一个测试都没有）
+
+**只测一层：JSON → 领域对象（纯解析）。** 这些端点没有公开文档，键名是探针实测猜出来的，
+壳子会变；漏读一个字段**不崩**，只会变成「封面全灰 / 徽标不画 / 已购的歌标成红色」这类
+静默错误 —— 没有断言就只有真机截图能发现。
+
+- 位置：`app/src/test/java/com/thripleq/nume/…`，`./gradlew :app:testDebugUnitTest`（纯 JVM）。
+- 前提：`build.gradle.kts` 挂了 `testImplementation(libs.json)` —— **android.jar 里的
+  `org.json` 是空壳**（方法体一律 throw），不挂真实现任何 `JSONObject` 调用都会抛 not mocked。
+- **配套的结构约束**：解析函数必须放在**零 Android 依赖**的文件里（`TrackParser.kt` /
+  `HomeParsers.kt` / `OwnedParsers.kt` / `ui/components/PayTagRules.kt`）。它们原先是
+  Repository 的 `private` 成员，和 `Log` / `BuildConfig` / Compose 同处一个文件，
+  **一个都测不了** —— 抽出来才有的测。新写的解析别再放回 Repository。
+- CI（build.yml / release.yml）在**出包前**跑一遍：判据挂了就不必再花几分钟打两个包。
+
+**第二层（同日）：取数编排。** 「JSON 怎么读」只是静默错误的一半；另一半是「要不要发请求、
+发哪种请求、失败怎么兜」—— 表现是「数据永远不更新」或「每次偷偷全量拉」，同样不崩。
+编排的代表是 `CollectionRefresher`（Room 先出 → 冷却 → `n=0` 检查 → 指纹变了才拉全量），
+它原本直接依赖三样在 JVM 上碰不得的东西，于是一条断言都写不了。现在换成接口：
+
+| 外部依赖 | 接口 | 生产实现 |
+|---|---|---|
+| JNI 网关 | `CollectionRemote` | `GatewayCollectionRemote` |
+| Room 缓存 | `CollectionStore` | `CollectionCache`（直接实现，不包一层） |
+| 墙上时钟 | `Clock` | `WallClock` |
+| 诊断日志 | `Diagnostics` | `AndroidDiagnostics` |
+
+⚠️ 绑定的坑：Dagger 眼里 `@Inject` 构造**只绑定实现类自己**，不会因为它实现了某个接口
+就连接口一起绑 ⇒ 四个都必须在 `di/RepoModule` 里显式 `@Binds`，否则 `Dagger/MissingBinding`。
+
+其余十几个 Repository 仍是 concrete class，**不是遗漏**：要么还没轮到，要么（如
+`HomeRepository`）编排与 ViewModel 的「逐块回填」状态缠在一起，抽接口前得先拆开。
+
 ## 九、色彩体系（生成式调色板）
 
 **单一 seed 推导全套 M3 角色**：`tools/gen_palette.py` 改一行 `SEED` 重跑，即产出
@@ -266,5 +314,7 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 - [x] 我的页：登录（Cookie 粘贴 / 短信验证码）+ 喜欢的音乐 + 已购 + 收藏/创建的歌单
 - [ ] 登录二维码（另做）
 - [x] 播放页打磨（PlayerDock 合体：迷你条↔卡片↔全屏两段式、单布局连续形变、随机/循环接 ExoPlayer）
-- [ ] 探索(Home) / 搜索页（目前仍是占位，纯展示）
-- [ ] 离线下载（DownloadManager）
+- [x] 探索(Home) / 搜索页（2026-10 起已实现：探索页横滑卡片行 + 展开壳，搜索页落地页 + 结果列表）
+- [x] 交互按钮接线（2026-10-06）：歌单页 分享 / 评论 / 收藏 / 排序、播放页 红心、评论页 点赞
+      —— 写操作统一走 `core/repo/InteractionRepository.kt`，收藏态走 `core/repo/LibraryStateStore.kt`
+- [ ] 离线下载（DownloadManager）—— 歌单页那枚「下载」图标仍是占位

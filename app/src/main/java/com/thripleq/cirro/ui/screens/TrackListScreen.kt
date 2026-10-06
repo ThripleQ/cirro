@@ -1,5 +1,6 @@
-package com.thripleq.cirro.ui.screens
+package com.thripleq.nume.ui.screens
 
+import android.content.Intent
 import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -28,6 +29,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -36,9 +38,13 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Sort
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -48,6 +54,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -69,6 +76,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -92,44 +100,51 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-import com.thripleq.cirro.core.repo.Track
-import com.thripleq.cirro.core.repo.TrackCollection
-import com.thripleq.cirro.ui.components.BannerCoverSize
-import com.thripleq.cirro.ui.components.BigCoverVisual
-import com.thripleq.cirro.ui.components.CloseButtonRaise
-import com.thripleq.cirro.ui.components.LocalShellHeroAlpha
-import com.thripleq.cirro.ui.components.LocalShellSettled
-import com.thripleq.cirro.ui.components.CirroCloseButton
-import com.thripleq.cirro.ui.components.CirroContainer
-import com.thripleq.cirro.ui.components.CirroEmptyState
-import com.thripleq.cirro.ui.components.CirroErrorState
-import com.thripleq.cirro.ui.components.CirroArtwork
-import com.thripleq.cirro.ui.components.CirroArt
-import com.thripleq.cirro.ui.components.CirroTitleBarHeight
-import com.thripleq.cirro.ui.components.SkeletonBox
-import com.thripleq.cirro.ui.components.SkeletonLine
-import com.thripleq.cirro.ui.components.TitleBarCloseInset
-import com.thripleq.cirro.ui.components.TitleBarStartInset
-import com.thripleq.cirro.ui.components.cirroEntrySurface
-import com.thripleq.cirro.ui.components.rememberCoverAccent
-import com.thripleq.cirro.ui.profile.TrackListSource
-import com.thripleq.cirro.ui.profile.TrackListUiState
-import com.thripleq.cirro.ui.profile.TrackListViewModel
-import com.thripleq.cirro.ui.theme.CirroShape
+import com.thripleq.nume.core.repo.CommentThread
+import com.thripleq.nume.core.repo.Track
+import com.thripleq.nume.core.repo.TrackCollection
+import com.thripleq.nume.ui.components.BannerCoverSize
+import com.thripleq.nume.ui.components.BigCoverVisual
+import com.thripleq.nume.ui.components.CloseButtonRaise
+import com.thripleq.nume.ui.components.LocalCommentsOpener
+import com.thripleq.nume.ui.components.LocalShellHeroAlpha
+import com.thripleq.nume.ui.components.LocalShellSettled
+import com.thripleq.nume.ui.components.NumeCloseButton
+import com.thripleq.nume.ui.components.NumeContainer
+import com.thripleq.nume.ui.components.NumeEmptyState
+import com.thripleq.nume.ui.components.NumeErrorState
+import com.thripleq.nume.ui.components.NumePayBadge
+import com.thripleq.nume.ui.components.PayTag
+import com.thripleq.nume.ui.components.rememberPayTags
+import com.thripleq.nume.ui.components.NumeArtwork
+import com.thripleq.nume.ui.components.NumeArt
+import com.thripleq.nume.ui.components.NumeTitleBarHeight
+import com.thripleq.nume.ui.components.SkeletonBox
+import com.thripleq.nume.ui.components.SkeletonLine
+import com.thripleq.nume.ui.components.TitleBarCloseInset
+import com.thripleq.nume.ui.components.TitleBarStartInset
+import com.thripleq.nume.ui.components.numeEntrySurface
+import com.thripleq.nume.ui.components.rememberCoverAccent
+import com.thripleq.nume.ui.profile.TrackListSource
+import com.thripleq.nume.ui.profile.TrackListUiState
+import com.thripleq.nume.ui.profile.TrackListViewModel
+import com.thripleq.nume.ui.profile.TrackSort
+import com.thripleq.nume.ui.theme.NumeShape
 import com.valentinilk.shimmer.shimmer
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * 歌单页版式令牌 —— 2026-10-03 按官方歌单页实机抄量（1080×2400@480dpi，px÷3 换成 dp）。
  *
  * 内缩统一 16dp（头部 / 「播放全部」/ 曲目行封面同一根竖线，与探索、搜索两页齐平；官方原本
  * 头部 20dp、曲目行 16dp 两档错位，未照抄那一处），方封面 98dp、「播放全部」圆钮 38dp
- * （取整 40dp）、曲目行封面 44dp。曲目行本身仍是 cirro 的条目卡
+ * （取整 40dp）、曲目行封面 44dp。曲目行本身仍是 nume 的条目卡
  * （见 [TrackListRow]）——官方那套紧挨的平铺行只借了封面尺寸与「歌手 - 专辑」这一行信息。
  *
- * [HeroCoverTop] 同时是 [com.thripleq.cirro.ui.components.CoverExpandShell] 的 hero 终点
+ * [HeroCoverTop] 同时是 [com.thripleq.nume.ui.components.CoverExpandShell] 的 hero 终点
  * 预测值（封面相对内容顶的偏移）——两边必须同源，改一处就够。
  */
 object TrackListMetrics {
@@ -147,7 +162,7 @@ object TrackListMetrics {
     val SideInset = 16.dp
 
     /**
-     * 曲目行**封面**距屏幕边：条目卡外缩（[CirroContainer.Inset]）+ 卡内缩，两者相加是这个值。
+     * 曲目行**封面**距屏幕边：条目卡外缩（[NumeContainer.Inset]）+ 卡内缩，两者相加是这个值。
      *
      * 与 [SideInset] 当前同值但**不是同一个东西**：[SideInset] 是本屏自己加的 padding，
      * 本值要减去卡片自带的内缩才是行内 padding（见 [TrackListRow]），卡片换外缩时必须各自改。
@@ -160,7 +175,7 @@ object TrackListMetrics {
     /**
      * 头部空档的**基准高度**（头部封面落点 [HeroCoverTop] 的口径，不是标题条高度）。
      *
-     * 2026-10-05 起标题条两条路径都统一成 [com.thripleq.cirro.ui.components.CirroTitleBarHeight]，
+     * 2026-10-05 起标题条两条路径都统一成 [com.thripleq.nume.ui.components.NumeTitleBarHeight]，
      * 本值不再是「返回栏 / 收起键那一行」的净高；它只作为 [HeroCoverTop] 的基数存在，
      * 保证 nav 与壳两条路径的**头部封面落在同一屏上位置**。真正的空档由
      * `HeroCoverTop - 标题条实测高度` 记在头部 item 自己的上内缩里（见 LazyColumn 的头部 item）。
@@ -177,7 +192,7 @@ object TrackListMetrics {
      * 面板首行（「播放全部」）吸顶停靠线 = 顶部标题条（`TrackListTitleBar`）的下沿。
      *
      * 2026-10-03 照抄搜索页后标题条**高度跟着字体走**（headlineSmall + 行高裁剪，不再是
-     * 固定 56dp）；2026-10-05 与三个 tab 页统一到同一个 [CirroTitleBarHeight]（站内一份）。
+     * 固定 56dp）；2026-10-05 与三个 tab 页统一到同一个 [NumeTitleBarHeight]（站内一份）。
      * 停靠线仍由标题条 `onSizeChanged` 运行时测出（stickyTopPx）—— 值现在是确定的，但
      * 让它跟着实测走，将来标题条再改也不会与列表内缩脱节；列表内缩与头部内缩共用该值，
      * 头部封面落点仍是 [HeroCoverTop]，差额记在头部自己的上内缩里。
@@ -187,11 +202,11 @@ object TrackListMetrics {
      * 标题条文字的起始内缩 —— 与探索页 / 搜索页 / 我的页的大标题左起**逐像素齐平**。
      *
      * 2026-10-03 用户：「标题的内缩去看搜索页面和探索，和他们保持一致」——那几页的标题条都
-     * 是 `padding(start = 24.dp)`（[com.thripleq.cirro.ui.components.CirroPageTitleBar]），
+     * 是 `padding(start = 24.dp)`（[com.thripleq.nume.ui.components.NumePageTitleBar]），
      * 本屏原先走 [SideInset]（当时 20dp），比它们少，三页并排看就是不齐。
      *
      * **不复用 [SideInset]，两个值本来就不该相等**：探索页也是「标题 24dp / 内容 16dp」这组
-     * 关系（[CirroPageTitleBar] 的 24 与下方列表的 16）。大标题比内容多缩一档、压在内容竖线外
+     * 关系（[NumePageTitleBar] 的 24 与下方列表的 16）。大标题比内容多缩一档、压在内容竖线外
      * 一点，是站内共用的排版关系；把标题拉到 16 反而会与探索页错开。
      *
      * 2026-10-05 起 **nav / 壳两条路径同用本值**（用户：详情页顶部「跟探索页不一样，改成
@@ -209,21 +224,21 @@ object TrackListMetrics {
      * 就压在这一排上，标题再长也不能钻到它下面去（标题是 `maxLines = 1` + Ellipsis，收在键之前）。
      *
      * 两条路径同用：壳路径的键由壳画（[ShellPanel] / `CoverExpandShell`），nav 路径的键由本屏
-     * 画（[CirroCloseButton]，同位同规格）—— 键都在右上角，让位方向自然也一致。
+     * 画（[NumeCloseButton]，同位同规格）—— 键都在右上角，让位方向自然也一致。
      *
      * 2026-10-05 晚：改引站内共用的 [TitleBarCloseInset]，与歌手 / 播客 / 评论三页
-     * （[CirroPaperPage]）同一份 —— 那三页的键也从左上翻到了右上角。
+     * （[NumePaperPage]）同一份 —— 那三页的键也从左上翻到了右上角。
      */
     val TitleBarTextEnd = TitleBarCloseInset
 
     /**
      * 内容圆角纸的顶角半径。
      *
-     * **站内一份**：[CirroShape.SheetRadius]（28dp）—— 与探索 / 搜索 / 我的三张纸同源。
+     * **站内一份**：[NumeShape.SheetRadius]（28dp）—— 与探索 / 搜索 / 我的三张纸同源。
      * 详情页从 2026-10-03 起也走「容器色条 + 圆角纸」这套关系（见 [TrackListScreen] 里的
      * 圆角纸层），半径必须同一个值，否则站内几张纸的圆角并排看就是不齐。
      */
-    val SheetCorner = CirroShape.SheetRadius
+    val SheetCorner = NumeShape.SheetRadius
 
     /** 「播放全部」圆钮直径。 */
     val DiscSize = 40.dp
@@ -251,7 +266,7 @@ fun TrackListScreen(
     onBack: () -> Unit,
     onOpenPlayer: () -> Unit,
     /**
-     * 是否由本屏画顶部那颗键（**右上角**，[CirroCloseButton]，与壳路径那颗同规格同位置）。
+     * 是否由本屏画顶部那颗键（**右上角**，[NumeCloseButton]，与壳路径那颗同规格同位置）。
      *
      * 作为 **nav 详情页**时 true（本屏自己画）；作为**面板壳内容**时 false——
      * 壳自带同一颗键（同位、同浮层语言），再画一个就重叠了。
@@ -312,7 +327,7 @@ fun TrackListScreen(
     // 就进入「已经能滚、hero 却因为大图没到还顶着」的窗口——hero 是浮层、不随列表滚动，
     // 封面看着像卡住。把切换也压到大封面就绪之后，则列表出现与 hero 交接同一刻发生，
     // 而等待期间是不可滚的骨架（还已挂着高清封面），观感无感。
-    // previewCoverUrl 为空表示无可等之图；非壳环境（CirroApp 导航）不传该值 → 天然不等待。
+    // previewCoverUrl 为空表示无可等之图；非壳环境（NumeApp 导航）不传该值 → 天然不等待。
     var coverReady by remember { mutableStateOf(previewCoverUrl == null) }
     val onCoverDrawn: () -> Unit = remember(onCoverReady) {
         {
@@ -330,11 +345,48 @@ fun TrackListScreen(
     // 封面没到（previewCoverUrl 为空）就先用正片的 URL，两者同源，取出来的色一致。
     val coverAccent = rememberCoverAccent(previewCoverUrl ?: collection?.coverUrl)
 
-    // 尚未接通的入口（分享 / 评论 / 收藏 / 下载 / 排序）统一给一句「开发中」，
+    // 分享 / 评论 / 收藏 / 排序四件事都接上了真功能；本屏只剩「下载」还是占位
+    // （离线下载要连播放器一起改，是单独一轮的事），它给一句「开发中」，
     // 与底部浮岛的占位反馈同一套语言——空点没反应会被当成坏了。
-    val context = LocalContext.current.applicationContext
-    val onPlaceholder = remember(context) {
-        { Toast.makeText(context, "开发中", Toast.LENGTH_SHORT).show() }
+    val appContext = LocalContext.current.applicationContext
+    // 分享要拿 **Activity context** 起选择器：applicationContext 起 chooser 得加
+    // FLAG_ACTIVITY_NEW_TASK，且部分 ROM 上会丢掉调用方身份、选择器样式异常。
+    val shareContext = LocalContext.current
+    val onDownloadNotYet = remember(appContext) {
+        { Toast.makeText(appContext, "开发中", Toast.LENGTH_SHORT).show() }
+    }
+    val onShare: () -> Unit = {
+        val c = collection
+        if (c != null) {
+            val url = shareUrlOf(src, c.id)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                if (url != null) putExtra(Intent.EXTRA_TEXT, "${c.name}\n$url") else putExtra(Intent.EXTRA_TEXT, c.name)
+                putExtra(Intent.EXTRA_SUBJECT, c.name)
+            }
+            shareContext.startActivity(Intent.createChooser(send, "分享到"))
+        }
+    }
+    // 评论浮层挂在根上（见 [LocalCommentsOpener]）：本屏可能正被展开壳裁着，
+    // 就地画会被壳的圆角连内容一起切掉。拿不到宿主时安静地不动。
+    val commentsOpener = LocalCommentsOpener.current
+    val onComments: (Rect) -> Unit = { rect ->
+        val c = collection
+        if (c != null) {
+            val thread = commentThreadOf(src, c.id)
+            if (thread == null) {
+                // 喜欢 / 已购 / 每日推荐是本地组装的列表，服务端没有它们的评论线。
+                Toast.makeText(appContext, "这个列表没有评论", Toast.LENGTH_SHORT).show()
+            } else {
+                commentsOpener?.open(thread, rect)
+            }
+        }
+    }
+    var sortSheetOpen by remember { mutableStateOf(false) }
+    val sort by vm.sort.collectAsStateWithLifecycle()
+    // 收藏 / 排序失败的提示（成功不打扰）。
+    LaunchedEffect(vm) {
+        vm.message.collect { Toast.makeText(appContext, it, Toast.LENGTH_SHORT).show() }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -428,10 +480,10 @@ fun TrackListScreen(
             // 即上报修正（跳变发生在壳动画/骨架期，不可见）。
             var stickyTopPx by remember { mutableIntStateOf(0) }
             val stickyTopDp = with(density) { stickyTopPx.toDp() }
-            // 纸的顶角形状：**直接引用站内那一份 token**（[CirroShape.SheetTop]）—— 与探索 /
+            // 纸的顶角形状：**直接引用站内那一份 token**（[NumeShape.SheetTop]）—— 与探索 /
             // 搜索 / 我的三页那张纸是**同一个对象**，不再本地拼一份同参数的 RoundedCornerShape
             // （那样 token 以后调整半径，详情页会静默留在旧值）。token 是常量，不必 remember。
-            val paperShape = CirroShape.SheetTop
+            val paperShape = NumeShape.SheetTop
             // 「播放全部」这一行的**面**：四角都是普通圆角，半径与纸同源
             // [TrackListMetrics.SheetCorner] —— 吸顶时上边两角正好与壳子裁出来的纸角重合
             // （角外露容器色条），下边两角则切进**面板自己的底色**里。
@@ -468,8 +520,8 @@ fun TrackListScreen(
             // 「详情页顶栏」与「探索 / 搜索 / 我的」三页的大标题逐像素齐平，纸顶也落在同一条线。
             //
             // 唯一按路径分的是**键在哪一侧**：nav 路径的键是浮层（见本屏外层 Box 里的
-            // [CirroCloseButton]，与壳路径那颗同位同规格），壳路径的键由壳自己画（[ShellPanel]
-            // / [com.thripleq.cirro.ui.components.CoverExpandShell]），本屏不重复画。
+            // [NumeCloseButton]，与壳路径那颗同位同规格），壳路径的键由壳自己画（[ShellPanel]
+            // / [com.thripleq.nume.ui.components.CoverExpandShell]），本屏不重复画。
             Box {
                 TrackListTitleBar(
                     label = src.label,
@@ -525,7 +577,9 @@ fun TrackListScreen(
                                             watermarkIcon,
                                             textAlpha = contentReveal,
                                             exit = washExit,
-                                            onPlaceholder = onPlaceholder,
+                                            onShare = onShare,
+                                            onComments = onComments,
+                                            onSubscribe = vm::toggleSubscribe,
                                             // 骨架还在时共享元素挂骨架（见 skeletonGone），避免同 key 双宿主。
                                             coverSharedModifier =
                                                 if (skeletonGone) coverSharedModifier else Modifier,
@@ -579,7 +633,9 @@ fun TrackListScreen(
                                             target,
                                             accent = coverAccent,
                                             onPlayAll = { vm.onPlayAll(target) },
-                                            onPlaceholder = onPlaceholder,
+                                            onSubscribe = vm::toggleSubscribe,
+                                            onDownload = onDownloadNotYet,
+                                            onSort = { sortSheetOpen = true },
                                         )
                                     }
                                 }
@@ -599,7 +655,15 @@ fun TrackListScreen(
                                             // 一路变色。（壳的 `surface` 底在糊底**之下**，盖不住它。）
                                             .background(MaterialTheme.colorScheme.surface),
                                     ) {
-                                        TrackListRow(track, onClick = { vm.onTrackClick(target, index) })
+                                        TrackListRow(
+                                            track = track,
+                                            // 徽标 = 付费档位（内容属性）× 「我买了没」（账号态）：
+                                            // fee=1 → VIP，fee=4 → PAY；买了的 PAY 变蓝，VIP 歌
+                                            // 买了则是「VIP + 蓝 PAY」两枚（实测确实存在：用户
+                                            // 已购的 9 首单曲全是 fee=1）。判定与颜色见 PayBadge.kt。
+                                            payTags = rememberPayTags(track),
+                                            onClick = { vm.onTrackClick(target, index) },
+                                        )
                                     }
                                 }
                                 item(key = "sheetTail") {
@@ -613,12 +677,12 @@ fun TrackListScreen(
                                 }
                             }
                         }
-                        TrackListUiState.Empty -> CirroEmptyState(
+                        TrackListUiState.Empty -> NumeEmptyState(
                             "暂无曲目",
                             modifier = Modifier.background(MaterialTheme.colorScheme.surface),
                         )
                         // 错误必须给出路：文案本身可点重试（与播客/评论/歌手页同交互语言）。
-                        TrackListUiState.Error -> CirroErrorState(
+                        TrackListUiState.Error -> NumeErrorState(
                             text = "曲目加载失败，点此重试",
                             onRetry = vm::retry,
                             modifier = Modifier.background(MaterialTheme.colorScheme.surface),
@@ -643,7 +707,7 @@ fun TrackListScreen(
             }
         }
 
-        // 顶部那颗键（**只在 nav 路径**）：与壳路径那颗 [CirroCloseButton] **同位同规格**
+        // 顶部那颗键（**只在 nav 路径**）：与壳路径那颗 [NumeCloseButton] **同位同规格**
         // —— 36dp 圆 + 黑底白下箭头、右上角、12dp 外边距、上提一档让圆心压在标题条中线上。
         //
         // ## 为什么它跑到右上角、又为什么必须浮在这一层
@@ -651,13 +715,13 @@ fun TrackListScreen(
         // 1. 右上角：左上放返回箭头时，标题得给它让出一档内缩（左起 64dp），而探索页的大标题
         //    左起 24dp —— 并排看就是「标题位置不一样」。把键翻到右端后两处标题左起同一根线，
         //    让位翻到右边，与壳路径也统一了（2026-10-05 用户：「改成一样的」）。
-        // 2. 浮在这一层：36dp 的圆比标题条（[com.thripleq.cirro.ui.components.CirroTitleBarHeight]）
+        // 2. 浮在这一层：36dp 的圆比标题条（[com.thripleq.nume.ui.components.NumeTitleBarHeight]）
         //    高，塞进上面那个标题条 Box 会把它撑到 36dp，**下方的圆角纸整体下移** —— 纸顶又与
         //    探索页错开。浮层不参与 Column 测量，纸顶只由标题条决定。
         //
         // 键常驻这里：吸顶行会滚走，键不能跟着滚（骨架期也要能退出）。
         if (showBackButton) {
-            CirroCloseButton(
+            NumeCloseButton(
                 onClick = onBack,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -666,7 +730,87 @@ fun TrackListScreen(
                     .padding(12.dp),
             )
         }
+
+        // 排序面板：与播放页的「播放音质」面板同一套语言（ModalBottomSheet + RadioButton）。
+        // 排序是**纯本地重排**（不重拉网络），所以这里没有任何加载态——选完即生效。
+        if (sortSheetOpen) {
+            TrackListSortSheet(
+                current = sort,
+                onPick = {
+                    vm.setSort(it)
+                    sortSheetOpen = false
+                },
+                onDismiss = { sortSheetOpen = false },
+            )
+        }
     }
+}
+
+/**
+ * 排序面板。抄 [com.thripleq.nume.ui.playerbar.PlayerSettingsSheet] 那套
+ * 「ModalBottomSheet + RadioButton」：站内两处选择类面板长得一样。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrackListSortSheet(
+    current: TrackSort,
+    onPick: (TrackSort) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    ModalBottomSheet(
+        // 先跑完自身收起动画再移除组合，否则面板会被当场拆掉、看不出收起（见
+        // [com.thripleq.nume.ui.playerbar.PlayerQueueSheet] 的同一处处理）。
+        onDismissRequest = {
+            scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+        },
+        sheetState = sheetState,
+    ) {
+        Text(
+            text = "排序",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+        TrackSort.entries.forEach { mode ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPick(mode) }
+                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = current == mode, onClick = { onPick(mode) })
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = mode.label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+/**
+ * 分享用的官方链接。**只有歌单 / 榜单 / 专辑有公开页面** —— 喜欢 / 已购 / 每日推荐
+ * 是本地组装的列表，它们的 id 分别是 uid、无意义串，硬拼进 `playlist?id=` 会打开
+ * 一张不相干的歌单（比不给链接更糟）。这几类只分享文字。
+ */
+private fun shareUrlOf(source: TrackListSource, id: String): String? = when (source) {
+    TrackListSource.PLAYLIST, TrackListSource.CHART -> "https://music.163.com/#/playlist?id=$id"
+    TrackListSource.ALBUM -> "https://music.163.com/#/album?id=$id"
+    else -> null
+}
+
+/** 评论线程序号；返回 null 表示这个列表没有评论线（本地组装的那三类）。 */
+private fun commentThreadOf(source: TrackListSource, id: String): String? = when (source) {
+    // 榜单本身就是歌单，共用 `A_PL_0_`。
+    TrackListSource.PLAYLIST, TrackListSource.CHART -> CommentThread.playlist(id)
+    TrackListSource.ALBUM -> CommentThread.album(id)
+    else -> null
 }
 
 /* ── 页底 ──────────────────────────────────────────────────────── */
@@ -1021,7 +1165,10 @@ private fun TrackListHeader(
     textAlpha: State<Float>?,
     /** 头部滚出进度 0..1（= `washExit`）：驱动封面的退场微缩（见 [HeaderExitShrink]）。 */
     exit: State<Float>,
-    onPlaceholder: () -> Unit,
+    onShare: () -> Unit,
+    /** 评论键：参数是按钮自己的窗口矩形，作为评论浮层的浮现起点。 */
+    onComments: (Rect) -> Unit,
+    onSubscribe: () -> Unit,
     coverSharedModifier: Modifier = Modifier,
 ) {
     // 展开动画期间 hero 正顶着封面：本封面与 hero 互补，避免两层重影（见 LocalShellHeroAlpha）。
@@ -1049,7 +1196,7 @@ private fun TrackListHeader(
                     )
                     // 官方共享元素：与入口卡片封面同 key，框架 morph 位置/尺寸（不重排内容）。
                     .then(coverSharedModifier)
-                    .clip(CirroShape.CardSmall)
+                    .clip(NumeShape.CardSmall)
                     // hero 顶着时透明；hero 一开始淡出即变为不透明底板、hero 在其上渐隐（draw 阶段读，不重组）。
                     .graphicsLayer {
                         alpha = if (heroAlpha.value >= 1f) 0f else 1f
@@ -1128,7 +1275,12 @@ private fun TrackListHeader(
             }
         }
         Spacer(Modifier.height(16.dp))
-        // 三枚等宽操作胶囊（分享 / 评论 / 收藏，均为占位）。
+        // 三枚等宽操作胶囊（分享 / 评论 / 收藏）。三枚都是真动作：
+        // 分享走系统分享面板（带官方链接）、评论打开歌单评论线、收藏切换订阅。
+        //
+        // 评论键要把自己的窗口矩形交出去（评论浮层从这颗按钮处浮现），所以这一枚
+        // 单独挂 `onGloballyPositioned` —— 另外两枚不需要，别顺手全挂上（每次布局
+        // 都会回调）。
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1137,19 +1289,24 @@ private fun TrackListHeader(
                 icon = Icons.Outlined.Share,
                 label = "分享",
                 modifier = Modifier.weight(1f),
-                onClick = onPlaceholder,
+                onClick = onShare,
             )
+            var commentRect by remember { mutableStateOf(Rect.Zero) }
             TrackListAction(
                 icon = Icons.Outlined.ChatBubbleOutline,
                 label = "评论",
-                modifier = Modifier.weight(1f),
-                onClick = onPlaceholder,
+                modifier = Modifier
+                    .weight(1f)
+                    .onGloballyPositioned { commentRect = it.boundsInWindow() },
+                onClick = { onComments(commentRect) },
             )
             TrackListAction(
-                icon = Icons.Outlined.FavoriteBorder,
+                // 已收藏给实心 + 主色：与播放页那颗红心同一套「点亮」语言。
+                icon = if (collection.subscribed) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                 label = collection.subscribedCount.takeIf { it > 0 }?.let(::formatCount) ?: "收藏",
                 modifier = Modifier.weight(1f),
-                onClick = onPlaceholder,
+                onClick = onSubscribe,
+                active = collection.subscribed,
             )
         }
         //
@@ -1176,11 +1333,16 @@ private fun TrackListAction(
     label: String,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
+    /** 点亮态（收藏）：图标与文字转主色。底不变——胶囊自己在糊底上，改底色会跟封面色打架。 */
+    active: Boolean = false,
 ) {
+    // 点亮色与「未点亮」色的分工：图标承状态、文字保持墨色。文字也染主色时，整条胶囊在
+    // 浅色主题下会变成一块粉色，与三枚里的另外两枚失衡。
+    val tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
     Row(
         modifier = modifier
             .height(40.dp)
-            .clip(CirroShape.Pill)
+            .clip(NumeShape.Pill)
             // onSurface 低透明度当底：浅色主题下是压暗的灰片、深色主题下是提亮的白片，
             // 一两行代码同时满足两套，不用为「透明白」再开一个固定色。
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
@@ -1191,7 +1353,7 @@ private fun TrackListAction(
         Icon(
             icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
+            tint = tint,
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(6.dp))
@@ -1239,7 +1401,7 @@ private fun TrackListTitleBar(
     }
     // 2026-10-03 照抄 SearchTitleBar 的写法：headlineSmall + 行高居中裁剪
     // （LineHeightStyle Center / Trim.Both）+ 粗体。
-    // 2026-10-05：高度不再"由文字撑"，改为共用 [CirroTitleBarHeight]（= headlineSmall 行高）
+    // 2026-10-05：高度不再"由文字撑"，改为共用 [NumeTitleBarHeight]（= headlineSmall 行高）
     // —— 与探索 / 搜索 / 我的三页的标题条同一份规格，详情页的圆角纸顶边因此与三个 tab 页
     // 落在同一条线上；取值仍是字体行高，所以系统字体放大时标题不会被裁。
     // 两条 Text 的 style 同源，交叉淡变时行盒不变、不跳。
@@ -1252,7 +1414,7 @@ private fun TrackListTitleBar(
     Box(
         modifier
             .fillMaxWidth()
-            .height(CirroTitleBarHeight)
+            .height(NumeTitleBarHeight)
             .padding(start = textStart, end = textEnd),
     ) {
         Text(
@@ -1297,7 +1459,10 @@ private fun PlayAllRow(
     collection: TrackCollection,
     accent: Color,
     onPlayAll: () -> Unit,
-    onPlaceholder: () -> Unit,
+    onSubscribe: () -> Unit,
+    /** 下载：仍是占位（离线下载要连播放器一起改，单独一轮）。 */
+    onDownload: () -> Unit,
+    onSort: () -> Unit,
 ) {
     Row(
         Modifier
@@ -1373,18 +1538,31 @@ private fun PlayAllRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        PanelIcon(Icons.Outlined.FavoriteBorder, "收藏", onPlaceholder)
-        PanelIcon(Icons.Outlined.Download, "下载", onPlaceholder)
-        PanelIcon(Icons.Outlined.Sort, "排序", onPlaceholder)
+        PanelIcon(
+            icon = if (collection.subscribed) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+            label = "收藏",
+            onClick = onSubscribe,
+            active = collection.subscribed,
+        )
+        PanelIcon(Icons.Outlined.Download, "下载", onDownload)
+        PanelIcon(Icons.Outlined.Sort, "排序", onSort)
     }
 }
 
 /**
  * 面板行尾的图标钮：40dp 触控盒，不是 [IconButton] —— M3 的 IconButton 有 48dp 最小尺寸，
  * 三枚就把中间那段挤窄到副标题放不下（官方实测图标间距约 43dp，本行照此收紧）。
+ *
+ * [active] 是点亮态（收藏）：图标转主色。这枚钮是**同一个动作的第二个入口**（头部那枚
+ * 胶囊才是第一个），两处必须同源同状态 —— 都读 `collection.subscribed`。
  */
 @Composable
-private fun PanelIcon(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun PanelIcon(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    active: Boolean = false,
+) {
     Box(
         Modifier
             .size(40.dp)
@@ -1395,7 +1573,8 @@ private fun PanelIcon(icon: ImageVector, label: String, onClick: () -> Unit) {
         Icon(
             icon,
             contentDescription = label,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (active) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(22.dp),
         )
     }
@@ -1406,31 +1585,39 @@ private fun PanelIcon(icon: ImageVector, label: String, onClick: () -> Unit) {
 /**
  * 曲目行：封面 + 标题 + 「歌手 - 专辑」+ 右侧 ⋮。
  *
- * 行仍是 cirro 的**条目卡**（[cirroEntrySurface]：8dp 外缩 + 圆角 + `surfaceContainer`），
+ * 行仍是 nume 的**条目卡**（[numeEntrySurface]：8dp 外缩 + 圆角 + `surfaceContainer`），
  * 浮在面板底上；卡内再内缩到 [TrackListMetrics.RowInset]。与官方一致的是**封面到屏边**的
- * 距离（8 + 8 = 16dp），卡边是 cirro 自己的条目语言。行高由 44dp 封面 + 上下 8dp 内缩撑起。
+ * 距离（8 + 8 = 16dp），卡边是 nume 自己的条目语言。行高由 44dp 封面 + 上下 8dp 内缩撑起。
+ *
+ * [payTags] 非空时在「歌手 - 专辑」前面贴付费/VIP 徽标（kanade 的歌曲信息设计，
+ * 位置与尺寸见 [NumePayBadge]；取值见 [rememberPayTags]，别在调用点手工拼）。
  */
 @Composable
-private fun TrackListRow(track: Track, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun TrackListRow(
+    track: Track,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    payTags: List<PayTag> = emptyList(),
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .cirroEntrySurface()
+            .numeEntrySurface()
             .clickable(onClick = onClick)
             .padding(
-                start = TrackListMetrics.RowInset - CirroContainer.Inset,
+                start = TrackListMetrics.RowInset - NumeContainer.Inset,
                 end = 4.dp,
                 top = 8.dp,
                 bottom = 8.dp,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CirroArtwork(
+        NumeArtwork(
             url = track.artworkUrl,
             contentDescription = track.name,
             size = TrackListMetrics.RowCover,
-            shape = CirroShape.Chip,
-            requestSize = CirroArt.RequestRow,
+            shape = NumeShape.Chip,
+            requestSize = NumeArt.RequestRow,
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -1447,13 +1634,21 @@ private fun TrackListRow(track: Track, onClick: () -> Unit, modifier: Modifier =
             ).joinToString(" - ")
             if (sub.isNotEmpty()) {
                 Spacer(Modifier.height(2.dp))
-                Text(
-                    text = sub,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // 与 [NumeMediaRow] 同一形状：徽标在左、文字吃剩余宽度并在末尾省略号。
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    payTags.forEach { tag ->
+                        NumePayBadge(tag)
+                        Spacer(Modifier.width(2.dp))
+                    }
+                    Text(
+                        text = sub,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
             }
         }
         // ⋮ 用 44dp 触控盒而不是 [IconButton]：M3 的 IconButton 有 48dp 最小高度，
@@ -1533,7 +1728,7 @@ private fun TrackListSkeleton(
                 // hero 顶着时透明；hero 一开始淡出即变为不透明底板、hero 在其上渐隐。
                 .graphicsLayer { alpha = if (heroAlpha.value >= 1f) 0f else 1f }
             if (coverUrl != null) {
-                Box(coverModifier.clip(CirroShape.CardSmall)) {
+                Box(coverModifier.clip(NumeShape.CardSmall)) {
                     BigCoverVisual(
                         coverUrl = coverUrl,
                         name = title,
@@ -1545,7 +1740,7 @@ private fun TrackListSkeleton(
                     )
                 }
             } else {
-                SkeletonBox(coverModifier, CirroShape.CardSmall)
+                SkeletonBox(coverModifier, NumeShape.CardSmall)
             }
             Spacer(Modifier.width(12.dp))
             Column(
@@ -1569,7 +1764,7 @@ private fun TrackListSkeleton(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             repeat(3) {
-                SkeletonBox(Modifier.weight(1f).height(40.dp), CirroShape.Pill)
+                SkeletonBox(Modifier.weight(1f).height(40.dp), NumeShape.Pill)
             }
         }
         Spacer(Modifier.height(24.dp))
@@ -1598,19 +1793,19 @@ private fun TrackListSkeleton(
             repeat(6) {
                 // 与真行同一套容器与内缩（条目卡 + 16dp 封面内缩）：骨架↔列表是直接切，
                 // 差一点就是「跳一下」。
-                Box(Modifier.fillMaxWidth().cirroEntrySurface()) {
+                Box(Modifier.fillMaxWidth().numeEntrySurface()) {
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .padding(
-                                start = TrackListMetrics.RowInset - CirroContainer.Inset,
+                                start = TrackListMetrics.RowInset - NumeContainer.Inset,
                                 end = 4.dp,
                                 top = 8.dp,
                                 bottom = 8.dp,
                             ),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        SkeletonBox(Modifier.size(TrackListMetrics.RowCover), CirroShape.Chip)
+                        SkeletonBox(Modifier.size(TrackListMetrics.RowCover), NumeShape.Chip)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             SkeletonLine(widthFraction = 0.6f, height = 14.dp)

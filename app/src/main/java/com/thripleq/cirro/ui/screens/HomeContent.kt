@@ -1,4 +1,4 @@
-package com.thripleq.cirro.ui.screens
+package com.thripleq.nume.ui.screens
 
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
@@ -51,18 +51,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
-import com.thripleq.cirro.core.repo.Track
-import com.thripleq.cirro.ui.components.BigCoverVisual
-import com.thripleq.cirro.ui.components.CirroMediaRow
-import com.thripleq.cirro.ui.components.CirroPageTitleBar
-import com.thripleq.cirro.ui.components.CirroSectionHeader
-import com.thripleq.cirro.ui.components.SharedSourceGuard
-import com.thripleq.cirro.ui.components.cirroEntrySurface
-import com.thripleq.cirro.ui.components.rememberSharedSourceGuard
-import com.thripleq.cirro.ui.components.shellSharedCover
-import com.thripleq.cirro.ui.home.HomeUiState
-import com.thripleq.cirro.ui.home.HomeViewModel
-import com.thripleq.cirro.ui.theme.CirroShape
+import com.thripleq.nume.core.repo.Track
+import com.thripleq.nume.ui.components.BigCoverVisual
+import com.thripleq.nume.ui.components.NumeMediaRow
+import com.thripleq.nume.ui.components.NumePageTitleBar
+import com.thripleq.nume.ui.components.NumeSectionHeader
+import com.thripleq.nume.ui.components.SharedSourceGuard
+import com.thripleq.nume.ui.components.numeEntrySurface
+import com.thripleq.nume.ui.components.rememberPayTags
+import com.thripleq.nume.ui.components.rememberSharedSourceGuard
+import com.thripleq.nume.ui.components.shellSharedCover
+import com.thripleq.nume.ui.home.HomeUiState
+import com.thripleq.nume.ui.home.HomeViewModel
+import com.thripleq.nume.ui.theme.NumeShape
 import com.valentinilk.shimmer.shimmer
 
 /**
@@ -105,7 +106,7 @@ internal fun HomeContent(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        CirroPageTitleBar("探索") {
+        NumePageTitleBar("探索") {
             IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
                 Icon(
                     Icons.Filled.Refresh,
@@ -119,7 +120,7 @@ internal fun HomeContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .clip(CirroShape.SheetTop)
+                .clip(NumeShape.SheetTop)
                 .background(MaterialTheme.colorScheme.surface)
                 // 视口 = 这张纸的裁切边界（列表就在纸里，标题条在纸外）。
                 .then(guard.viewportModifier()),
@@ -135,7 +136,7 @@ internal fun HomeContent(
         // HomeUiState.Ready.featured），逐块就绪后这张行会自动长齐。
         val featured = data.featured
         if (featured.isNotEmpty()) {
-            item(key = "h_featured") { CirroSectionHeader("精选推荐") }
+            item(key = "h_featured") { NumeSectionHeader("精选推荐") }
             item(key = "row_featured") {
                 // remember(featured)：卡片模型只在数据本身变时重建。否则每次重组都会新建
                 // 一整列 KanadeCardModel（12 个对象）—— 下游 KanadeCardRow 即便 key 相同，
@@ -196,7 +197,7 @@ internal fun HomeContent(
                 .orEmpty()
         }
         if (guessPages.isNotEmpty() || data.dailySongs != null) {
-            item(key = "h_guess") { CirroSectionHeader(data.guessHeadline) }
+            item(key = "h_guess") { NumeSectionHeader(data.guessHeadline) }
             if (guessPages.isNotEmpty()) {
                 item(key = "row_guess") {
                     GuessSongPager(guessPages, rowStates.guess, onPlay)
@@ -221,7 +222,7 @@ internal fun HomeContent(
             // 标题用**服务端的原文**，不写死「雷达歌单」：同一个 block 在未登录时给
             // 「网易云音乐的雷达歌单」、登录后给「<昵称>的雷达歌单」（2026-10-05 两态实测），
             // 写死就丢掉了这个区别。
-            item(key = "h_radar") { CirroSectionHeader(data.radarTitle ?: "雷达歌单") }
+            item(key = "h_radar") { NumeSectionHeader(data.radarTitle ?: "雷达歌单") }
             item(key = "row_radar") {
                 // 同 row_featured：卡片模型按数据 remember，别每次重组重建（见那里的注释）。
                 val cards = remember(radarCards) {
@@ -259,7 +260,7 @@ internal fun HomeContent(
         // 所以用标签卡；封面取该标签下第一张热门歌单（分类表里的标签本身没图）。
         val scene = data.sceneCards.take(SCENE_CARD_COUNT)
         if (scene.isNotEmpty()) {
-            item(key = "h_scene") { CirroSectionHeader("场景音乐") }
+            item(key = "h_scene") { NumeSectionHeader("场景音乐") }
             item(key = "row_scene") {
                 // 同 row_featured：卡片模型按数据 remember，别每次重组重建（见那里的注释）。
                 val cards = remember(scene) {
@@ -290,10 +291,10 @@ internal fun HomeContent(
     }
 }
 
-/** 内容圆角纸的顶角半径见 [com.thripleq.cirro.ui.theme.CirroShape.SheetTop]（站内一份，不再本地定义）。 */
+/** 内容圆角纸的顶角半径见 [com.thripleq.nume.ui.theme.NumeShape.SheetTop]（站内一份，不再本地定义）。 */
 
 /**
- * 钉在顶部的「探索」大标题条由 [CirroPageTitleBar] 担当（与搜索页 / 我的页共用一份实现）。
+ * 钉在顶部的「探索」大标题条由 [NumePageTitleBar] 担当（与搜索页 / 我的页共用一份实现）。
  * 它本身透明，铺在 [HomeContent] 顶层的 `surfaceContainer` 之上；下方 [LazyColumn] 那张
  * `surface` 圆角纸的顶角会把容器色露出来。标题固定，内容在圆角纸里滚。
  */
@@ -311,7 +312,7 @@ internal data class KanadeCardModel(
     val playKind: String? = null,
     /**
      * 卡面**还在路上**（只有「私人漫游 / 相似艺人」会为 true，见
-     * [com.thripleq.cirro.ui.home.HomeViewModel.FeaturedCard.coverPending]）：
+     * [com.thripleq.nume.ui.home.HomeViewModel.FeaturedCard.coverPending]）：
      * 画微光占位，而不是退到空封面 —— 空封面看着像「这张卡没有图」，微光才读得出「在加载」。
      *
      * 与之配对的是**出场条件**：卡面落定后仍为 null 的卡根本不会进这个列表
@@ -363,7 +364,7 @@ private const val GUESS_ROW_COUNT = 3
 /** 场景音乐展示张数（kanade 频道首屏 3 张，多给几张可横滑）。 */
 private const val SCENE_CARD_COUNT = 6
 
-/** 卡片封面（上半部）圆角：与 [CirroShape.Card] 同半径，只用于共享元素内层的 clip。 */
+/** 卡片封面（上半部）圆角：与 [NumeShape.Card] 同半径，只用于共享元素内层的 clip。 */
 private val CardCoverRadius = 16.dp
 
 /** 横滑卡片行：三处横滑行共用，视觉规格由 [spec] 决定。 */
@@ -407,7 +408,7 @@ private fun KanadeCard(
     Column(
         Modifier
             .width(spec.width)
-            .clip(CirroShape.Card)
+            .clip(NumeShape.Card)
             // 点击时把「当时可见吗」一起交出去：目标端据此决定要不要飞
             // （关闭面板时本卡会重新组合、state 归位，判断只有记在目标数据上才留得住）。
             .clickable { rect?.let { onClick(card, it, shareable) } },
@@ -447,7 +448,7 @@ private fun KanadeCard(
                     if (showTitleBar) {
                         RoundedCornerShape(topStart = CardCoverRadius, topEnd = CardCoverRadius)
                     } else {
-                        CirroShape.Card
+                        NumeShape.Card
                     },
                 ),
         ) {
@@ -478,7 +479,7 @@ private fun KanadeCard(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(8.dp)
-                        .clip(CirroShape.Chip)
+                        .clip(NumeShape.Chip)
                         .background(MaterialTheme.colorScheme.surface)
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
@@ -544,10 +545,11 @@ private fun GuessSongPager(
             itemsIndexed(pages, key = { i, _ -> "guess_page_$i" }) { _, page ->
                 Column(Modifier.width(pageWidth)) {
                     page.forEach { track ->
-                        CirroMediaRow(
+                        NumeMediaRow(
                             title = track.name,
                             subtitle = guessSubtitle(track),
                             coverUrl = track.artworkUrl,
+                            payTags = rememberPayTags(track),
                             onClick = {
                                 val i = all.indexOfFirst { it.id == track.id }
                                 onPlay(all, if (i >= 0) i else 0)
@@ -567,7 +569,7 @@ private fun LoginPrompt(onLogin: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clip(CirroShape.Card)
+            .clip(NumeShape.Card)
             .background(MaterialTheme.colorScheme.secondaryContainer)
             .clickable(onClick = onLogin)
             .padding(horizontal = 16.dp, vertical = 14.dp),

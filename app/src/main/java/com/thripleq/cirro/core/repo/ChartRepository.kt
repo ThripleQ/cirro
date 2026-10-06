@@ -1,9 +1,8 @@
-package com.thripleq.cirro.core.repo
+package com.thripleq.nume.core.repo
 
-import com.thripleq.cirro.BuildConfig
-import com.thripleq.cirro.core.db.CollectionCache
-import com.thripleq.cirro.core.net.NetEaseGateway
-import com.thripleq.cirro.core.net.NeteaseOp
+import com.thripleq.nume.BuildConfig
+import com.thripleq.nume.core.net.NetEaseGateway
+import com.thripleq.nume.core.net.NeteaseOp
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -25,10 +24,8 @@ data class Chart(
 @Singleton
 class ChartRepository @Inject constructor(
     private val gateway: NetEaseGateway,
-    private val collectionCache: CollectionCache,
+    private val refresher: CollectionRefresher,
 ) {
-    // 集合（榜单详情）内存缓存：列表页返回再进不重拉 JSON。Room 为二级（离线）缓存。
-    private val collectionMemory = LruCache<String, TrackCollection>(16)
 
     suspend fun charts(): List<Chart> = withContext(Dispatchers.IO) {
         val r = gateway.call(NeteaseOp.TOPLIST_DETAIL)
@@ -69,38 +66,17 @@ class ChartRepository @Inject constructor(
     }
 
     /**
-     * 一个榜单的完整壳（元数据 + 曲目）。匿名 /weapi/toplist/detail 里
-     * per-chart 的 `tracks` 预览是空的；榜单 id 本身就是歌单 id，改从
-     * /api/v6/playlist/detail 拉完整集合。网络成功写内存 + Room；网络失败
-     * 回退 Room 里的离线副本（断网仍可看打开过的榜单）。
+     * 一个榜单的完整壳（元数据 + 曲目）。匿名 /weapi/toplist/detail 里 per-chart 的
+     * `tracks` 预览是空的；榜单 id 本身就是歌单 id，所以直接走歌单详情那条路 ——
+     * 连「要不要重新拉」的变更检查也是同一套（见 [CollectionRefresher]）。
+     *
+     * cacheKey 与 [ProfileRepository.playlistCollection] 共用 `pl:<id>`：同一个歌单无论
+     * 从「榜单」还是「歌单」进来，都是同一份副本。[force] 用于错误态重试。
      */
-    suspend fun chartCollection(chartId: String): TrackCollection? = withContext(Dispatchers.IO) {
-        // 榜单 id 即歌单 id，与 ProfileRepository.playlistCollection 共用同一 cacheKey。
-        val key = "pl:$chartId"
-        collectionMemory[key]?.let { return@withContext it }
-        val fresh = fetchCollection(chartId)
-        if (fresh != null) {
-            collectionMemory[key] = fresh
-            collectionCache.put(key, fresh)
-            return@withContext fresh
-        }
-        collectionCache.get(key)?.also { collectionMemory[key] = it }
-    }
+    suspend fun chartCollection(chartId: String, force: Boolean = false): TrackCollection? =
+        refresher.playlist("pl:$chartId", chartId, force)
 
-    /** 拉一个榜单/歌单的完整集合；失败返回 null。 */
-    private suspend fun fetchCollection(chartId: String): TrackCollection? {
-        val r = gateway.call(NeteaseOp.PLAYLIST_DETAIL, chartId, "0")
-        if (r.err != 0) {
-            Log.e("ChartRepository", "playlist detail failed: err=${r.err} code=${r.code}")
-            return null
-        }
-        return try {
-            val root = JSONObject(String(r.body, Charsets.UTF_8))
-            val playlist = root.optJSONObject("playlist") ?: return null
-            val base = parsePlaylistObject(playlist)
-            base.copy(tracks = completePlaylistTracks(gateway, playlist, base.tracks))
-        } catch (_: Exception) {
-            null
-        }
-    }
+    /** 只读 Room 副本（不发网络），进页面第一段渲染用。 */
+    suspend fun cachedChartCollection(chartId: String): TrackCollection? =
+        refresher.cached("pl:$chartId")
 }
