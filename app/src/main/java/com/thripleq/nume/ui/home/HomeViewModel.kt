@@ -10,6 +10,7 @@ import com.thripleq.nume.core.repo.HomeRepository
 import com.thripleq.nume.core.repo.PlaylistCard
 import com.thripleq.nume.core.repo.StyleTag
 import com.thripleq.nume.core.repo.Track
+import com.thripleq.nume.core.util.RefreshGate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
@@ -329,13 +330,42 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    /** 见 [onEnterVisible]：反复切回「探索」tab 不该反复打网络。 */
+    private val enterGate = RefreshGate()
+
     init {
+        // 首次取数由 init 自己发起，所以先把门关上 —— 页面组合时那次 onEnterVisible()
+        // 会被冷却吃掉，不会跟着补一枪重复请求。
+        enterGate.mark()
         load()
     }
 
-    fun load() {
+    /** 手动刷新（探索页顶栏那颗刷新键）：显示加载态、无条件重取。 */
+    fun load() = reload(quiet = false)
+
+    /**
+     * 页面重新可见（切回「探索」tab、从详情页返回）时调用。
+     *
+     * 冷却期内什么都不做；冷却之外**静默**重取 —— 页面上已经有内容，不该退回骨架屏。
+     * 页面的 VM 挂在导航回退栈上不会重建，刷新若只挂在 `init` 上就这辈子只跑一次，
+     * 见 [RefreshGate] 的类注释。
+     */
+    fun onEnterVisible() {
+        if (!enterGate.allow()) return
+        enterGate.mark()
+        reload(quiet = true)
+    }
+
+    /**
+     * [quiet] = 静默刷新：不置 Loading、以页面上现有那份为底，并且**某一块拉空时不覆盖
+     * 旧值**（一次网络抖动不该把首页抹成半空）。
+     */
+    private fun reload(quiet: Boolean) {
+        // 静默只在「页面上确实有内容」时成立：首屏那次加载还在飞、手上什么都没有时，
+        // 静默没有意义（既不给骨架屏也没数据可显示），退化成普通加载。
+        val silent = quiet && _uiState.value is HomeUiState.Ready
         viewModelScope.launch {
-            _uiState.value = HomeUiState.Loading
+            if (!silent) _uiState.value = HomeUiState.Loading
 
             // 并行发起五块请求（登录态仅决定是否拉 daily）。
             // loggedIn 是网络调用（account 接口）：不能串行挡在内容块前面——
@@ -369,22 +399,32 @@ class HomeViewModel @Inject constructor(
 
             // 逐块回填：每一块一就绪就整体发布，最慢的那块不再拖慢整页首屏。
             // 全部聚齐后统一判空，全部为空才落到 Error。
-            var ready = HomeUiState.Ready(false, null, null, null, null)
+            // 静默刷新以**页面上现有那份**为底，首屏那趟才从空壳起手。
+            var ready = (if (silent) _uiState.value as? HomeUiState.Ready else null)
+                ?: HomeUiState.Ready(false, null, null, null, null)
+
+            /**
+             * 静默刷新的一块结果：拉空（含 null）就保留旧值 —— 一次抖动的网络不该让区块
+             * 从页面上消失。首屏加载**不进这个分支**：那时「空」是要如实反映的（最后
+             * 统一判空落到 Error），不该拿一个本来就没有的旧值去顶。
+             */
+            fun <T> keep(next: T?, old: T?, isEmpty: (T) -> Boolean): T? =
+                if (silent && (next == null || isEmpty(next))) old else next
 
             val pl = playlists.await()
-            ready = ready.copy(playlists = pl)
+            ready = ready.copy(playlists = keep(pl, ready.playlists) { it.isEmpty() })
             _uiState.value = ready
 
             val ch = charts.await()
-            ready = ready.copy(charts = ch)
+            ready = ready.copy(charts = keep(ch, ready.charts) { it.isEmpty() })
             _uiState.value = ready
 
             val hp = homePage.await()
             ready = ready.copy(
-                radar = hp.radar,
-                radarTitle = hp.radarTitle,
-                guessTitle = hp.guessTitle,
-                guessPages = hp.guessPages,
+                radar = keep(hp.radar, ready.radar) { it.isEmpty() },
+                radarTitle = keep(hp.radarTitle, ready.radarTitle) { it.isEmpty() },
+                guessTitle = keep(hp.guessTitle, ready.guessTitle) { it.isEmpty() },
+                guessPages = keep(hp.guessPages, ready.guessPages) { it.isEmpty() } ?: emptyList(),
             )
             _uiState.value = ready
 
@@ -397,7 +437,7 @@ class HomeViewModel @Inject constructor(
 
             // 曲风表：只为「XX日推」功能卡取风格词 / 该曲风下的歌单。
             val st = styles.await()
-            ready = ready.copy(styles = st)
+            ready = ready.copy(styles = keep(st, ready.styles) { it.isEmpty() })
             _uiState.value = ready
             val tag2 = st.getOrNull(1)?.id
             val stylePlaylists = async {
@@ -405,19 +445,27 @@ class HomeViewModel @Inject constructor(
             }
 
             val da = daily.await()
-            ready = ready.copy(dailySongs = da, loggedIn = loggedInAsync.await())
+            val online = loggedInAsync.await()
+            ready = ready.copy(
+                dailySongs = keep(da, ready.dailySongs) { it.isEmpty() },
+                // 登录态是单向的上升：只有未登录 → 登录才有信息量。静默刷新时抖动返回的
+                // false 不该把已经登录的页面退回登录引导。
+                loggedIn = if (silent) ready.loggedIn || online else online,
+            )
             _uiState.value = ready
 
-            ready = ready.copy(stylePlaylists = stylePlaylists.await())
+            ready = ready.copy(
+                stylePlaylists = keep(stylePlaylists.await(), ready.stylePlaylists) { it.isEmpty() },
+            )
             _uiState.value = ready
-            ready = ready.copy(scene = scene.await())
+            ready = ready.copy(scene = keep(scene.await(), ready.scene) { it.isEmpty() })
 
             // 卡面最后合入（不挡住上面任何一块的展示）。拿不到就为 null —— **不再借别人的图**
             // 兜底，由 UI 画中性空封面；这一笔同时把 cardFacesSettled 标上，微光到此为止
             // （否则未登录时 simiArtist 返 301、相似艺人卡的封面会永远闪，见 [Ready.cardFacesSettled]）。
             ready = ready.copy(
-                radioCover = radioCover.await(),
-                artistCover = artistCover.await(),
+                radioCover = keep(radioCover.await(), ready.radioCover) { it.isEmpty() },
+                artistCover = keep(artistCover.await(), ready.artistCover) { it.isEmpty() },
                 cardFacesSettled = true,
             )
 
@@ -428,7 +476,8 @@ class HomeViewModel @Inject constructor(
                 ready.guessPages.isEmpty() &&
                 ready.stylePlaylists.isNullOrEmpty() &&
                 ready.scene.isNullOrEmpty()
-            _uiState.value = if (allEmpty) HomeUiState.Error else ready
+            // 静默刷新不判 Error：页面上那份旧内容还在，没有理由清掉它去显示错误页。
+            _uiState.value = if (allEmpty && !silent) HomeUiState.Error else ready
         }
     }
 

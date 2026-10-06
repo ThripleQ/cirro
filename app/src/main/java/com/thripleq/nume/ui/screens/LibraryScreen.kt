@@ -24,6 +24,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +61,10 @@ fun LibraryScreen(
 ) {
     val vm: LibraryViewModel = hiltViewModel()
     val state by vm.uiState.collectAsStateWithLifecycle()
+
+    // 页面重新可见时问一句要不要取新数据（冷却门在 VM 里，见 RefreshGate）。榜单的
+    // 名称/封面会随官方调整而变，只靠 init 那一次就永远是第一次进页面时那份。
+    LaunchedEffect(Unit) { vm.onEnterVisible() }
 
     when (val s = state) {
         is LibraryUiState.Loading -> LibrarySkeleton()

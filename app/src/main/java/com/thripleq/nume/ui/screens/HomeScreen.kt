@@ -75,6 +75,12 @@ fun HomeScreen(
     LaunchedEffect(shellOpen) { onShellOpenChange(shellOpen) }
     DisposableEffect(Unit) { onDispose { onShellOpenChange(false) } }
 
+    // 页面重新可见（切回「探索」tab、从详情页返回）时问一句要不要取新数据。
+    // 本页是导航目的地，切走会被移出组合、切回重新组合，所以这个 effect 每次可见都会重跑；
+    // 但 VM 挂在回退栈上不销毁 —— 真正要不要发请求由 VM 里的冷却门决定
+    // （core/util/RefreshGate：秒级的反复可见不发请求，几十秒后才真刷一次）。
+    LaunchedEffect(Unit) { vm.onEnterVisible() }
+
     // 稳定的回调：开/关壳只改 expand，若 lambda 每次重组都新建会把整页列表（HomeContent）
     // 一起重组，产生尖峰帧。用 remember 固定后 expand 变化不会再重组底下列表。
     val onPlay = remember(vm) { vm::onPlayTrack }

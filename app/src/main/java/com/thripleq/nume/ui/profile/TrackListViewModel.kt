@@ -7,6 +7,7 @@ import com.thripleq.nume.core.playback.PlaybackLauncher
 import com.thripleq.nume.core.repo.ChartRepository
 import com.thripleq.nume.core.repo.HomeRepository
 import com.thripleq.nume.core.repo.InteractionRepository
+import com.thripleq.nume.core.repo.LibraryStateStore
 import com.thripleq.nume.core.repo.ProfileRepository
 import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.core.repo.TrackCollection
@@ -76,6 +77,7 @@ class TrackListViewModel @Inject constructor(
     private val profileRepo: ProfileRepository,
     private val homeRepo: HomeRepository,
     private val interactions: InteractionRepository,
+    private val library: LibraryStateStore,
     private val playback: PlaybackLauncher,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
@@ -246,10 +248,13 @@ class TrackListViewModel @Inject constructor(
             subscribedCount = (base.subscribedCount + delta).coerceAtLeast(0L),
         )
         loaded = next
-        // 落进 Room：它是列表页的常态读路径，只改内存的话冷却期内再进页面会读回旧值。
-        // 专辑例外 —— 专辑没有 `pl:` 那份副本，它的收藏态由 LibraryStateStore 管
-        // （那条链路还没接上，见 `数据刷新问题清单.md` A1）。
-        if (lastArgs?.first != TrackListSource.ALBUM) {
+        // 落进本地：它是列表页的常态读路径，只改内存的话冷却期内再进页面会读回旧值。
+        // 歌单/榜单落 Room（`collection` 表有 subscribed 列）；**专辑落收藏镜像** ——
+        // 专辑的收藏态不来自 Room（那里那一列是解析结果的死值，恒 false），而是出口处
+        // 就着 LibraryStateStore 现覆写，见 `ProfileRepository.albumCollection`。
+        if (lastArgs?.first == TrackListSource.ALBUM) {
+            library.markAlbumSubscribed(next.id, subscribed)
+        } else {
             profileRepo.cacheSubscribed(next.id, subscribed, next.subscribedCount)
         }
         _uiState.value = readyOr(next)
