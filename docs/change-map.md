@@ -115,12 +115,20 @@
 | 改「已购 / 收藏 / 红心」的 id 镜像解析 | `core/repo/OwnedParsers.kt` | `OwnedParsersTest.kt` |
 | 改付费 / VIP 徽标的**判据**（哪个 fee 标什么） | `ui/components/PayTagRules.kt`（纯 Kotlin，别搬回 `PayBadge.kt`） | `app/src/test/.../ui/components/PayTagRulesTest.kt` |
 | 改徽标的**画法**（框、字号、颜色、间距） | `ui/components/PayBadge.kt` | 尺寸是照 kanade 截图逐像素量的，改前先读那里的注释 |
+| 改取数编排（冷却 / `n=0` 指纹检查 / 失败兜底 / 大歌单分批补） | `core/repo/CollectionRefresher.kt`（依赖走 `CollectionRemote` / `CollectionStore` / `Clock`） | `CollectionRefresherTest.kt` |
+| 改「页面重新可见时刷不刷新」 | `core/util/RefreshGate.kt` | `app/src/test/.../core/util/RefreshGateTest.kt` |
+| 加 / 改接口与实现的绑定 | `di/RepoModule.kt`（`@Binds`） | 缺一个就是 `Dagger/MissingBinding`，编译期报 |
 | 跑全部单测 | `./gradlew :app:testDebugUnitTest` | 纯 JVM，不需模拟器；CI（build.yml / release.yml）在出包前必跑 |
 
 **加新解析时的两条纪律**：① 解析函数放进上面那几个 `*Parsers.kt`，**不要**塞进带
 `Log` / `BuildConfig` / Compose 的 Repository 文件里（那样就测不了）；
 ② 断言里写清「这条判据是哪次实测来的」。**别为了让测试变绿而改断言** —— 那等于把实测
 过的口径换成猜测。
+
+**要测编排就得先换依赖**：JNI 网关 / Room / `System.currentTimeMillis` /
+`android.util.Log`（空壳，调就抛）这四样在 JVM 上都碰不得。做法是照
+`CollectionRefresher` 的样子把它们换成窄接口 + `@Binds`，**不要**为了测一个函数去引入
+Robolectric 或 mock 框架。
 
 ---
 

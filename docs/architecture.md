@@ -227,6 +227,24 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
   **一个都测不了** —— 抽出来才有的测。新写的解析别再放回 Repository。
 - CI（build.yml / release.yml）在**出包前**跑一遍：判据挂了就不必再花几分钟打两个包。
 
+**第二层（同日）：取数编排。** 「JSON 怎么读」只是静默错误的一半；另一半是「要不要发请求、
+发哪种请求、失败怎么兜」—— 表现是「数据永远不更新」或「每次偷偷全量拉」，同样不崩。
+编排的代表是 `CollectionRefresher`（Room 先出 → 冷却 → `n=0` 检查 → 指纹变了才拉全量），
+它原本直接依赖三样在 JVM 上碰不得的东西，于是一条断言都写不了。现在换成接口：
+
+| 外部依赖 | 接口 | 生产实现 |
+|---|---|---|
+| JNI 网关 | `CollectionRemote` | `GatewayCollectionRemote` |
+| Room 缓存 | `CollectionStore` | `CollectionCache`（直接实现，不包一层） |
+| 墙上时钟 | `Clock` | `WallClock` |
+| 诊断日志 | `Diagnostics` | `AndroidDiagnostics` |
+
+⚠️ 绑定的坑：Dagger 眼里 `@Inject` 构造**只绑定实现类自己**，不会因为它实现了某个接口
+就连接口一起绑 ⇒ 四个都必须在 `di/RepoModule` 里显式 `@Binds`，否则 `Dagger/MissingBinding`。
+
+其余十几个 Repository 仍是 concrete class，**不是遗漏**：要么还没轮到，要么（如
+`HomeRepository`）编排与 ViewModel 的「逐块回填」状态缠在一起，抽接口前得先拆开。
+
 ## 九、色彩体系（生成式调色板）
 
 **单一 seed 推导全套 M3 角色**：`tools/gen_palette.py` 改一行 `SEED` 重跑，即产出
