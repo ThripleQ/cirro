@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-nume 调色板生成器 —— 单一 seed 推导全套 M3 角色色，并用 WCAG 对比度逐对验证。
+cirro 调色板生成器 —— 单一 seed 推导全套 M3 角色色，并用 WCAG 对比度逐对验证。
 
-产物：app/src/main/java/com/thripleq/nume/ui/theme/Palette.kt（纯字面量，勿手改）
+产物：app/src/main/java/com/thripleq/cirro/ui/theme/Palette.kt（纯字面量，勿手改）
 
 ## 为什么是「生成器 + 字面量」而不是运行时算色
 本仓库落到 Kotlin/Compose，但开发环境无 Android SDK、编译不了。把 HCT/OKLab 色彩引擎
@@ -330,7 +330,7 @@ def verify(schemes: dict) -> bool:
 
 
 # ── 产出 Kotlin ───────────────────────────────────────────────────
-KOTLIN = '''package com.thripleq.nume.ui.theme
+KOTLIN = '''package com.thripleq.cirro.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
@@ -357,8 +357,8 @@ import androidx.compose.ui.graphics.Color
 {ramp_doc}
  */
 
-/** 一整套 M3 颜色角色；浅色 / 深色各一份实例，由 [NumeTheme] 映射进 colorScheme。 */
-data class NumeColorRoles(
+/** 一整套 M3 颜色角色；浅色 / 深色各一份实例，由 [CirroTheme] 映射进 colorScheme。 */
+data class CirroColorRoles(
     val primary: Color, val onPrimary: Color,
     val primaryContainer: Color, val onPrimaryContainer: Color,
     val secondary: Color, val onSecondary: Color,
@@ -379,11 +379,11 @@ data class NumeColorRoles(
 )
 
 // ── 浅色 ────────────────────────────────────────────────────────
-val NumeLightColors = NumeColorRoles(
+val CirroLightColors = CirroColorRoles(
 {light})
 
 // ── 深色 ────────────────────────────────────────────────────────
-val NumeDarkColors = NumeColorRoles(
+val CirroDarkColors = CirroColorRoles(
 {dark})
 '''
 
@@ -419,7 +419,7 @@ def emit_ramp_doc(ramps: dict) -> str:
     )
 
 
-OUT = Path("app/src/main/java/com/thripleq/nume/ui/theme/Palette.kt")
+OUT = Path("app/src/main/java/com/thripleq/cirro/ui/theme/Palette.kt")
 
 
 def main() -> int:

@@ -1,14 +1,14 @@
 /*
- * Nume JNI glue — bridges libnetease to the App's Kotlin/OkHttp network layer.
+ * Cirro JNI glue — bridges libnetease to the App's Kotlin/OkHttp network layer.
  *
  * Architecture (option A, transport injection):
  *   - libnetease is built WITHOUT libcurl (NE_USE_CURL=OFF). Its request layer
  *     (ne_call_* / services) stays intact and, when it needs to send HTTP,
  *     calls the installed transport.
  *   - Here we install that transport (via ne_http_set_transport): a C shim that
- *     jumps over JNI to the Kotlin singleton NumeTransport.httpRequest(...),
+ *     jumps over JNI to the Kotlin singleton CirroTransport.httpRequest(...),
  *     which runs OkHttp synchronously and returns status/body/Set-Cookie.
- *   - Kotlin talks back into the library through the three NumeNative methods
+ *   - Kotlin talks back into the library through the three CirroNative methods
  *     bound below (setCookieFile / setApiBase / request). The cookie jar is
  *     internally mutex-guarded (see the thread contract in netease/request.h),
  *     so multiple request threads can drive the library concurrently.
@@ -22,7 +22,7 @@
 #include "netease/services.h"
 #include "netease/util.h"
 
-#define NE_NS "com/thripleq/nume/core/net/"
+#define NE_NS "com/thripleq/cirro/core/net/"
 
 static JavaVM *g_vm = NULL;
 
@@ -74,7 +74,7 @@ static ne_http_resp *jni_transport_request(
     JNIEnv *env = attached();
     if (!env) return transport_error_resp("jni attach failed");
 
-    /* Kotlin NumeTransport.httpRequest(method, url, body, contentType,
+    /* Kotlin CirroTransport.httpRequest(method, url, body, contentType,
        cookieHeader, userAgent, realIp); the C transport is (url, method, ...),
        so reorder the first two here to match the Kotlin order. realIp is the
        X-Real-IP value from ne_http_get_real_ip() — NULL when no IP injection
@@ -241,7 +241,7 @@ static ne_resp *dispatch(int op, int narg, const char *const a[]) {
 #undef A
 }
 
-/* ── native entry points (bound to NumeNative) ───────── */
+/* ── native entry points (bound to CirroNative) ───────── */
 static void native_set_cookie_file(JNIEnv *env, jobject thiz, jstring path) {
     char *p = copy_jstring(env, path);
     ne_set_cookie_file(p ? p : "");
@@ -310,19 +310,19 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     JNIEnv *e = NULL;
     if ((*vm)->GetEnv(vm, (void **)&e, JNI_VERSION_1_6) != JNI_OK) return JNI_ERR;
 
-    jclass nc = (*e)->FindClass(e, NE_NS "NumeNative");
+    jclass nc = (*e)->FindClass(e, NE_NS "CirroNative");
     if (nc) {
         (*e)->RegisterNatives(e, nc, g_methods, 4);
         (*e)->DeleteLocalRef(e, nc);
     }
 
     g_transport_cls = (*e)->NewGlobalRef(e,
-        (*e)->FindClass(e, NE_NS "NumeTransport"));
+        (*e)->FindClass(e, NE_NS "CirroTransport"));
     g_transport_http = (*e)->GetStaticMethodID(e, g_transport_cls, "httpRequest",
         "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;"
-        "Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)L" NE_NS "NumeTransportOut;");
+        "Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)L" NE_NS "CirroTransportOut;");
     g_out_cls = (*e)->NewGlobalRef(e,
-        (*e)->FindClass(e, NE_NS "NumeTransportOut"));
+        (*e)->FindClass(e, NE_NS "CirroTransportOut"));
     g_out_status = (*e)->GetFieldID(e, g_out_cls, "status", "I");
     g_out_err = (*e)->GetFieldID(e, g_out_cls, "err", "Ljava/lang/String;");
     g_out_body = (*e)->GetFieldID(e, g_out_cls, "body", "[B");

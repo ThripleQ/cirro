@@ -5,6 +5,6 @@
     <!-- 与 theme/Palette.kt 的 `surface` 同值（浅色 F6F9FD / 深色 121417，夜间由
          values-night 覆盖）。这两处是平台在 Compose 第一帧之前画的底色，值不一致
          就会在启动时闪一帧反差色 —— splash 与窗口背景锚到同一档即可。 -->
-    <color name="nume_splash_background">#F6F9FD</color>
-    <color name="nume_window_background">#F6F9FD</color>
+    <color name="cirro_splash_background">#F6F9FD</color>
+    <color name="cirro_window_background">#F6F9FD</color>
 </resources>

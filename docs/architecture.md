@@ -1,6 +1,6 @@
-# Nume 架构
+# Cirro 架构
 
-Nume 是桌面端播放器 [Netune](https://github.com/ThripleQ/Netune) 的安卓版，
+Cirro 是桌面端播放器 [Netune](https://github.com/ThripleQ/Netune) 的安卓版，
 共享同一个网易云数据网关 [libnetease](https://github.com/ThripleQ/libnetease)。
 核心目标是：**把 Netune 桌面端的缓存能力（分段缓存、Range 断点续传、seek 冷区并行下载、真实总时长）
 原样搬进安卓**，同时让 UI / 播放 / 网络完全由 Kotlin 掌控。
@@ -59,10 +59,10 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 （`ne_search` / `ne_song_url_v1` / `ne_lyric` …），只是真正发送时由注入的 transport 承接。
 
 - `libnetease_jni.c`：`JNI_OnLoad` 保存 `JavaVM` + 注册 natives；安装 transport
-  （C→Kotlin 的 `NumeTransport.httpRequest` shim），组 `ne_http_resp`；一张 op 派发表覆盖 29 个服务函数。
-- Kotlin `core/net/`：`NumeNative`(JNI 声明)、`NumeTransport`(OkHttp 同步发 + 收 Set-Cookie)、
-  `ApiResult` / `NumeTransportOut`、`NeteaseOp`(与 C 对齐的 op 码)、`NetEaseGateway`(串行派发)。
-- Cookie jar 由 `NumeApplication` 接 `filesDir/netease_cookies.json`，`setApiBase` 可显式覆盖默认
+  （C→Kotlin 的 `CirroTransport.httpRequest` shim），组 `ne_http_resp`；一张 op 派发表覆盖 29 个服务函数。
+- Kotlin `core/net/`：`CirroNative`(JNI 声明)、`CirroTransport`(OkHttp 同步发 + 收 Set-Cookie)、
+  `ApiResult` / `CirroTransportOut`、`NeteaseOp`(与 C 对齐的 op 码)、`NetEaseGateway`(串行派发)。
+- Cookie jar 由 `CirroApplication` 接 `filesDir/netease_cookies.json`，`setApiBase` 可显式覆盖默认
   `https://music.163.com`。
 
 > 澄清：这不是"零反向回调"。C 侧保留了**一个窄的 transport 回调**（仅 HTTP 发送原语），
@@ -166,7 +166,7 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 - **顶部让位 68dp**：两条入口路径的头部封面必须落在同一屏上位置——nav 路径用
   `statusBarsPadding()` 让开状态栏，壳路径由 `shellTopInset` / `ShellPanel.statusBarsPadding()`
   让开。标题条那一档（56dp）与封面之间再留 12dp（`HeaderTopInset`），所以封面仍在 68dp。
-- **曲目行**：仍是 nume 的**条目卡**（`numeEntrySurface`，8dp 外缩 + `surfaceContainer`），
+- **曲目行**：仍是 cirro 的**条目卡**（`cirroEntrySurface`，8dp 外缩 + `surfaceContainer`），
   浮在面板底上；卡内封面 44dp、内缩 8dp，合计封面到屏边 16dp（= 官方的实测值）。面板底铺在
   **整条 item** 上，卡片之间那几 dp 的缝才不会漏出糊底。
 - **hero 终点是参数**：自研壳 `CoverExpandShell` 不再假定「满宽方封面」，终点几何由调用方
@@ -187,13 +187,13 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
   足以让最简列表在 90Hz（预算 11.1ms）掉帧。真机实测 release 90th≈12–14ms / janky≈1%，
   debug 18–22ms / 3–9%。
 - **R8 keep 规则**：`app/proguard-rules.pro` 保住 JNI 按「名字」引用的类/成员
-  （`NumeNative` / `NumeTransport` / `NumeTransportOut` / `ApiResult`），否则原生传输运行期崩。
+  （`CirroNative` / `CirroTransport` / `CirroTransportOut` / `ApiResult`），否则原生传输运行期崩。
 - **Baseline Profile**：`:baselineprofile` 模块（官方 `androidx.baselineprofile` + macrobenchmark），
   `./gradlew :app:generateReleaseBaselineProfile` 产出安装期 AOT profile；部分 ROM（如 vivo）的
   安装拦截会挡住 UTP 自动安装，需换设备/模拟器生成。
 - **诊断工具**：Compose 编译器报告（`app/build/compose-reports|metrics`，查稳定性/可跳过性）、
   JankStats（`MainActivity`，按生命周期启停）、LeakCanary / OkHttp 日志 / StrictMode（仅 debug）、
-  `Theme.Nume.Starting` 冷启动 splash。
+  `Theme.Cirro.Starting` 冷启动 splash。
 - **构建提速**：`gradle.properties` 开 configuration cache + build cache。
 - CI：GitHub Actions 在 push 到 `main`/`beta` 时构建并上传 debug APK。
 
@@ -234,22 +234,22 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 
 ### on-image 墨色与 colorScheme 刻意解耦
 封面是不受控位图，主题色压上去都可能不可读。可读性由图上暗色渐变保证，不由主题保证，
-所以 `NumeInk.*`（图上文字/水印）在明暗主题下是同一组白色。若改用 `onSurface`，浅色主题
-下深字压中亮度封面直接看不清。`NumeFade.*` 收纳必须"主题色 × 透明度"的散落的魔数。
+所以 `CirroInk.*`（图上文字/水印）在明暗主题下是同一组白色。若改用 `onSurface`，浅色主题
+下深字压中亮度封面直接看不清。`CirroFade.*` 收纳必须"主题色 × 透明度"的散落的魔数。
 
 ### 明暗跟随系统
-`NumeTheme(darkTheme = isSystemInDarkTheme())` 默认跟随系统的深色开关（含 Android 的
+`CirroTheme(darkTheme = isSystemInDarkTheme())` 默认跟随系统的深色开关（含 Android 的
 「自动/按时间切换」）。平台侧另有两个「Compose 第一帧之前」的底色必须与主题同步：
-`values/colors.xml` 与 `values-night/colors.xml` 里的 `nume_splash_background` /
-`nume_window_background`（都锚 `surface`），以及 `themes.xml` 里 `Theme.Nume` 的
+`values/colors.xml` 与 `values-night/colors.xml` 里的 `cirro_splash_background` /
+`cirro_window_background`（都锚 `surface`），以及 `themes.xml` 里 `Theme.Cirro` 的
 `android:windowBackground`。值不同步就会在启动/旋转时闪一帧反差色。
 
 ### 动态取色（Material You）
 `dynamicColor = true` 时 Android 12+ 会用壁纸色**整套替换**本调色板（`Palette.kt` 与
-`NumeInk` 全失效），界面长相变成「用户壁纸的函数」。`MainActivity` 当前显式传 false 是
+`CirroInk` 全失效），界面长相变成「用户壁纸的函数」。`MainActivity` 当前显式传 false 是
 **有意的取舍**（保住品牌红），不是没接；另一个历史原因是部分机型派生偏深的 `onBackground`
 会让暗色下未指定 color 的 `Text` 看不见。想跟随壁纸就把 `MainActivity` 那一行改成 true
-（`NumeTheme` 的默认值本来就是 true）。
+（`CirroTheme` 的默认值本来就是 true）。
 
 ## 十、路线图 / 当前状态
 

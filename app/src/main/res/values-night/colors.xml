@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- 深色主题下的平台底色，取 theme/Palette.kt 的 `surface`（深色）。 -->
-    <color name="nume_splash_background">#121417</color>
-    <color name="nume_window_background">#121417</color>
+    <color name="cirro_splash_background">#121417</color>
+    <color name="cirro_window_background">#121417</color>
 </resources>

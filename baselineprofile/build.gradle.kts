@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.thripleq.nume.baselineprofile"
+    namespace = "com.thripleq.cirro.baselineprofile"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {

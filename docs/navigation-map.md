@@ -52,7 +52,7 @@ core/
 > 注：原 `ui/chart/` 包与 `PlayerScreen.kt` 已删除——单榜曲目列表并入统一
 > `ui/screens/TrackListScreen.kt` + `ui/profile/TrackListViewModel.kt`；播放页并入 `ui/playerbar/PlayerDock.kt`。
 
-新增偶发：`ui/<功能>/` 建"Screen + ViewModel + UiState"，再把导航目的地加进 `NumeApp`。三步，无其他。
+新增偶发：`ui/<功能>/` 建"Screen + ViewModel + UiState"，再把导航目的地加进 `CirroApp`。三步，无其他。
 
 ## 3. 找到一件东西的三步
 
@@ -67,7 +67,7 @@ core/
 - 播放状态统一走 `rememberPlayerState` / `rememberPlayerPosition`（`ui/playerbar/PlayerDock.kt`），迷你条与播放页共用，不再各写各的 listener + 轮询。
 - 播放控制（播放/暂停/切歌/seek/随机/循环）统一走 `PlayerHolder.togglePlay/skipNext/skipPrevious/seekTo/toggleShuffle/cycleRepeat`，含错误状态恢复。
 - 事件触发统一走 ViewModel。
-- 目的地类型统一 `@Serializable`，集中在 `NumeApp`。
+- 目的地类型统一 `@Serializable`，集中在 `CirroApp`。
 
 命名乱 → 全局搜搜不齐 → 找不到。这是"找不到"的第一杀手。
 

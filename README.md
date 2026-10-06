@@ -1,4 +1,4 @@
-# Nume
+# Cirro
 
 **new music** — an Android music player. The mobile counterpart to the desktop player
 [Netune](https://github.com/ThripleQ/Netune), sharing the same NetEase Cloud data gateway,
@@ -16,9 +16,9 @@
 
 ```
 app/
-  src/main/java/com/thripleq/nume/
+  src/main/java/com/thripleq/cirro/
     MainActivity.kt        # single activity, Compose entry (@AndroidEntryPoint)
-    NumeApp.kt             # root UI + type-safe navigation graph
+    CirroApp.kt             # root UI + type-safe navigation graph
     di/                    # Hilt wiring (AppModule provides the gateway)
     ui/                    # Compose 屏 + 各功能 ViewModel/UiState
       playerbar/           # 常驻 dock + 全屏播放页合体（PlayerDock）、列表操作按钮

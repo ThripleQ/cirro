@@ -1,4 +1,4 @@
-# Nume version catalog. Curated to what the app actually needs.
+# Cirro version catalog. Curated to what the app actually needs.
 # AGP/Kotlin/Compose versions match the current android compose-samples set
 # (verified-buildable combination with AGP 9 built-in Kotlin).
 [versions]

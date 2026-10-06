@@ -17,10 +17,10 @@
 | 改品牌色 / 整套配色（明暗一起变） | `tools/gen_palette.py` 顶部配置块 → 重跑生成 | `SEED` 换品牌色；`SECONDARY_HUE` / `TERTIARY_HUE` / `NEUTRAL_HUE` / `CHROMA` 换色相分工；`DARK_SURFACE_TONE` 换暗色黑度。**别手改 `Palette.kt`**（机器生成）；`--write` 会先验 WCAG 与层级再落盘，不通过拒绝写入 |
 | 改启动图 / 窗口底色（与主题同步的两处平台色） | `res/values/colors.xml` + `res/values-night/colors.xml` + `res/values/themes.xml` | 都锚 Compose 的 `surface`；不同步会在启动/旋转时闪一帧反差色 |
 | 改 M3 角色 → `ColorScheme` 的映射 | `ui/theme/Theme.kt` | 角色必须逐个显式传，漏传会回落 M3 内置紫灰 |
-| 改图上文字/水印/遮罩等浮层墨色 | `ui/theme/Color.kt`（`NumeInk` / `NumeFade`） | 与 colorScheme 解耦，明暗共用 |
+| 改图上文字/水印/遮罩等浮层墨色 | `ui/theme/Color.kt`（`CirroInk` / `CirroFade`） | 与 colorScheme 解耦，明暗共用 |
 | 改字号、字重、字体 | `ui/theme/Type.kt` | |
-| 改底部导航胶囊：加删 tab、换图标、改顺序 | `NumeApp.kt` | 导航目的地也集中在这一个文件 |
-| 改点某处跳到哪个页面 | `NumeApp.kt` | 跳转逻辑只在这里 |
+| 改底部导航胶囊：加删 tab、换图标、改顺序 | `CirroApp.kt` | 导航目的地也集中在这一个文件 |
+| 改点某处跳到哪个页面 | `CirroApp.kt` | 跳转逻辑只在这里 |
 
 ## 2. 数据：列表里有什么、怎么排
 
@@ -42,7 +42,7 @@
 | 账号 / 喜欢 / 已购 / 歌单的数据获取与解析 | `core/repo/ProfileRepository.kt` |
 | 曲目列表页（喜欢 / 已购 / 歌单 / 专辑） | `ui/screens/TrackListScreen.kt` + `ui/profile/TrackListViewModel.kt` |
 | 曲目列表页的版式与间距（头部 / 胶囊 / 面板 / 糊底 / 行） | `ui/screens/TrackListScreen.kt`：令牌在 `TrackListMetrics`，各区块是紧随其后的 private 组件 |
-| 曲目行 = nume 条目卡（8dp 外缩 + `surfaceContainer`） | `TrackListRow` 里用 `ui/components/Containers.kt` 的 `numeEntrySurface()`；面板底铺在整条 item 上，卡缝才不漏糊底 |
+| 曲目行 = cirro 条目卡（8dp 外缩 + `surfaceContainer`） | `TrackListRow` 里用 `ui/components/Containers.kt` 的 `cirroEntrySurface()`；面板底铺在整条 item 上，卡缝才不漏糊底 |
 | 「播放全部」行吸顶 + 糊底随头部退场 | `TrackListScreen` 的 `stickyHeader(key = "playall")` + `washExit`（头部 item 的偏移）；停靠线由 `LazyColumn` 的固定 `padding(top = TrackListMetrics.PanelStickyTop)` 撑出（8dp，只在状态栏下一点），糊底见 `TrackListBackdrop` |
 | 顶部标题条（类型标签 ↔ 实际标题随滚动交叉淡变、单行截断） | `TrackListScreen` 的 `TrackListTitleBar`（高度 = `TrackListMetrics.PanelStickyTop`，底色随 `washExit` 淡入）；类型标签取 `TrackListSource.label` |
 | 吸顶后的容器色条 + 内容圆角纸（纸的上沿 = 标题条下沿） | 容器色：`TrackListBackdrop` 里 `graphicsLayer { alpha = exit }` + `background(surfaceContainer)`；纸：`TrackListScreen` 内层 `Box` 的 `.offset { paperTop }` + `Modifier.clip(SheetCorner)` + `background(surface)`（半径同 `ui/screens/HomeContent.kt` 的 `HomeSheetRadius`） |
@@ -67,7 +67,7 @@
 | 我想… | 去改 |
 |---|---|
 | 谁注入了谁、换个实现 | `di/AppModule.kt` |
-| 应用启动时做的初始化 | `NumeApplication.kt`、`MainActivity.kt` |
+| 应用启动时做的初始化 | `CirroApplication.kt`、`MainActivity.kt` |
 
 ## 5. 性能 / 诊断 / 构建
 
@@ -77,8 +77,8 @@
 | JNI 被 R8 裁剪/改名导致运行期崩 | `app/proguard-rules.pro` |
 | 看 Compose 类稳定性 / composable 可跳过性 | 构建后 `app/build/compose-reports/`、`compose-metrics/`（开关在 `app/build.gradle.kts` 的 `composeCompiler{}`） |
 | 线上掉帧统计 / 冷启动 splash / 启动初始化 | `MainActivity.kt`（JankStats、installSplashScreen） |
-| StrictMode / 全局初始化 / 图片加载 | `NumeApplication.kt` |
-| HTTP 请求日志（仅 debug） | `core/net/NumeTransport.kt`（`BuildConfig.DEBUG` 下 BASIC 级） |
+| StrictMode / 全局初始化 / 图片加载 | `CirroApplication.kt` |
+| HTTP 请求日志（仅 debug） | `core/net/CirroTransport.kt`（`BuildConfig.DEBUG` 下 BASIC 级） |
 | 生成/调整 Baseline Profile | `baselineprofile/`（`BaselineProfileGenerator.kt`）、`./gradlew :app:generateReleaseBaselineProfile` |
 | 构建提速（配置/构建缓存） | `gradle.properties` |
 

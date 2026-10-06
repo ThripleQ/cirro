@@ -11,11 +11,11 @@ plugins {
 
 android {
     compileSdk = libs.versions.compileSdk.get().toInt()
-    namespace = "com.thripleq.nume"
+    namespace = "com.thripleq.cirro"
     ndkVersion = "27.2.12479018"
 
     defaultConfig {
-        applicationId = "com.thripleq.nume"
+        applicationId = "com.thripleq.cirro"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
@@ -23,7 +23,7 @@ android {
         vectorDrawables.useSupportLibrary = true
 
         // libnetease is compiled without curl; the app installs an OkHttp
-        // transport over JNI at runtime (see jni_glue.c / NumeTransport).
+        // transport over JNI at runtime (see jni_glue.c / CirroTransport).
         externalNativeBuild {
             cmake {
                 arguments += listOf("-DNE_USE_CURL=OFF")
@@ -31,7 +31,7 @@ android {
                 // builds every target in the CMake project, dragging libnetease's
                 // CLI and test executables into the APK build (13 extra sources
                 // per ABI). `netease` comes along as a link dependency.
-                targets += "nume_jni"
+                targets += "cirro_jni"
             }
         }
     }
@@ -50,7 +50,8 @@ android {
         }
 
         // release 复用同一把 keystore（**故意为之**，自用项目）：
-        // 1. 手机上现在的 nume 就是这把签的，release 版换新 key 会
+        // 1. 2026-10-07 nume → Cirro 改名时换了 applicationId，手机上按「新 App」首装，
+        //    旧 nume 卸不卸都行（不卸则共存）。此后 Cirro 自身升级仍须同 key，否则
         //    INSTALL_FAILED_UPDATE_INCOMPATIBLE —— 必须卸载才装得上，歌单缓存、
         //    登录态全丢。同 key 才能就地覆盖升级。
         // 2. APK 不进 Play，没有「debug key 不被市场接受」的问题。
@@ -168,7 +169,7 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
 
     // HTTP logging (activated only in debug via BuildConfig.DEBUG; must be on all
-    // variants because NumeTransport in :main references it)
+    // variants because CirroTransport in :main references it)
     implementation(libs.okhttp.logging.interceptor)
 
     // debug-only diagnostics (auto-installed via its own ContentProvider)

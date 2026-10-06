@@ -27,7 +27,7 @@
    的容器色条、圆角交给纸。
 3. 编译 + 装机 + 真机截图确认：全屏只剩「播放全部」一处圆角顶，观感与搜索页一致。
 
-**改动文件**：`app/src/main/java/com/thripleq/nume/ui/screens/TrackListScreen.kt`（+18 / −22，纯 UI 层，无逻辑变更）
+**改动文件**：`app/src/main/java/com/thripleq/cirro/ui/screens/TrackListScreen.kt`（+18 / −22，纯 UI 层，无逻辑变更）
 
 ---
 
@@ -93,7 +93,7 @@ Box(fillMaxSize)                                        // 274
         │         itemsIndexed(tracks) { TrackListRow }                               // 456
         │         item(key="sheetTail") { Box(height=bottomPadding) }                 // 470
         │     }
-        │     Empty -> NumeEmptyState / Error -> NumeErrorState
+        │     Empty -> CirroEmptyState / Error -> CirroErrorState
         │   }
         ├── 骨架 TrackListSkeleton（叠在最上，alpha 淡出）  // 490
         └── TrackListBackButton(align TopStart)           // 503
@@ -149,9 +149,9 @@ Box(fillMaxSize)                                        // 274
 
 ## 五、环境与命令
 
-- **仓库**：`C:\Users\liuca\AppData\Roaming\TRAE SOLO CN\ModularData\ai-agent\work-mode-projects\6a8e36a0fb66796b8b24ca44\nume`
-- **关键文件**：`app/src/main/java/com/thripleq/nume/ui/screens/TrackListScreen.kt`（63KB）
-- **搜索页参考**：`app/src/main/java/com/thripleq/nume/ui/screens/SearchScreen.kt`
+- **仓库**：`C:\Users\liuca\AppData\Roaming\TRAE SOLO CN\ModularData\ai-agent\work-mode-projects\6a8e36a0fb66796b8b24ca44\cirro`
+- **关键文件**：`app/src/main/java/com/thripleq/cirro/ui/screens/TrackListScreen.kt`（63KB）
+- **搜索页参考**：`app/src/main/java/com/thripleq/cirro/ui/screens/SearchScreen.kt`
   （外壳结构 `:89-148`，`SearchTitleBar` `:153-174`，`SearchField` `:178-268`）
 - **adb**：`C:/Users/liuca/AppData/Local/Android/Sdk/platform-tools/adb.exe`
 - **构建**：`.\gradlew.bat :app:assembleDebug --console=plain`

@@ -14,6 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "nume"
+rootProject.name = "cirro"
 include(":app")
 include(":baselineprofile")
