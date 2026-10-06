@@ -185,6 +185,16 @@ dependencies {
 
     // Baseline Profile generation (macrobenchmark driven; see :baselineprofile).
     baselineProfile(project(":baselineprofile"))
+
+    // ---- 单元测试（JVM，不需要设备）----
+    // 只测**纯解析**：JSON → 领域对象。这批判据过去全靠探针实测 + 真机看，一条都没被
+    // 固化；改一个键名或漏读一个字段，表现是「徽标时有时无」这类静默错误，不崩、难查。
+    // 见 app/src/test/.../core/repo/ 下的 Test。
+    testImplementation(libs.junit)
+    // 必须**显式**挂真实现：android.jar 里的 org.json 是空壳（方法体 throw），
+    // 不挂这份任何 JSONObject 调用都会抛 "not mocked"。
+    testImplementation(libs.json)
+    testImplementation(libs.truth)
 }
 
 // Emit Compose compiler stability/skippability reports + metrics into build/ for
