@@ -2,7 +2,6 @@ package com.thripleq.nume.core.repo
 
 import android.util.Log
 import com.thripleq.nume.BuildConfig
-import com.thripleq.nume.core.db.CollectionCache
 import com.thripleq.nume.core.net.NetEaseGateway
 import com.thripleq.nume.core.net.NeteaseOp
 import kotlinx.coroutines.Dispatchers
@@ -65,7 +64,7 @@ data class ProfileData(
 @Singleton
 class ProfileRepository @Inject constructor(
     private val gateway: NetEaseGateway,
-    private val collectionCache: CollectionCache,
+    private val refresher: CollectionRefresher,
 ) {
 
     /**
@@ -85,11 +84,12 @@ class ProfileRepository @Inject constructor(
     private var purchasedSongsCache: List<Track>? = null
     private var purchasedAlbumsCache: List<Album>? = null
 
-    /** 登录/登出后调用，让 [account] 立刻反映最新登录态，不读短缓存。 */
-    fun invalidateAccount() {
+    /** 登录/登出后调用：丢弃账号短缓存，并清掉集合副本（收藏态与收藏数都是随账号变的）。 */
+    suspend fun invalidateAccount() {
         cachedAccount = null
         purchasedSongsCache = null
         purchasedAlbumsCache = null
+        refresher.clear()
     }
 
     /**
@@ -106,20 +106,13 @@ class ProfileRepository @Inject constructor(
 
     /**
      * 歌单收藏态在别处被改过（[InteractionRepository.setPlaylistSubscribed]）后调用，
-     * 把内存里那份壳同步掉 —— 否则退出列表页再进来，收藏按钮会退回旧状态。
+     * 把本地那份壳同步掉 —— 否则退出列表页再进来，收藏按钮会退回旧状态。
      *
-     * **只动内存，不写 Room**：`CollectionEntity` 没有 subscribed 列，离线副本
-     * 本来就把这个字段当 false 处理。为它加一次 schema 迁移不值当 —— 联网时
-     * 下一次 [playlistCollection] 就会把真值覆盖回来。
+     * **现在会落进 Room**：`collection` 表已有 `subscribed` 列，而 Room 是列表页的
+     * 常态读路径 —— 只改内存的话，冷却期内再进页面就会把旧值读回来。
      */
-    fun cacheSubscribed(playlistId: String, subscribed: Boolean, subscribedCount: Long) {
-        val key = "pl:$playlistId"
-        collectionMemory[key]?.let {
-            collectionMemory[key] = it.copy(
-                subscribed = subscribed,
-                subscribedCount = subscribedCount,
-            )
-        }
+    suspend fun cacheSubscribed(playlistId: String, subscribed: Boolean, subscribedCount: Long) {
+        refresher.noteSubscribed("pl:$playlistId", subscribed, subscribedCount)
     }
 
     private companion object {
@@ -132,9 +125,6 @@ class ProfileRepository @Inject constructor(
 
     /** 已解析"喜欢"曲目缓存（uid → tracks）：Profile 页计数与列表页共用，避免重复全量拉取。 */
     private val likedCache = LruCache<String, List<Track>>(2)
-
-    /** 歌单/专辑壳内存缓存：重进列表页不重拉 JSON。Room 为二级（离线）缓存。 */
-    private val collectionMemory = LruCache<String, TrackCollection>(32)
 
     /** Current account, or null when not logged in (code 301) / on error. */
     suspend fun account(): Account? = withContext(Dispatchers.IO) {
@@ -355,60 +345,30 @@ class ProfileRepository @Inject constructor(
             }
         }
 
-    /** 歌单完整壳（元数据 + 曲目），榜单 id 即歌单 id。网络成功写内存 + Room，失败回退离线副本。 */
-    suspend fun playlistCollection(playlistId: String): TrackCollection? = withContext(Dispatchers.IO) {
-        val key = "pl:$playlistId"
-        collectionMemory[key]?.let { return@withContext it }
-        val fresh = fetchPlaylistCollection(playlistId)
-        if (fresh != null) {
-            collectionMemory[key] = fresh
-            collectionCache.put(key, fresh)
-            return@withContext fresh
-        }
-        collectionCache.get(key)?.also { collectionMemory[key] = it }
-    }
+    /**
+     * 歌单完整壳（元数据 + 曲目）；榜单 id 即歌单 id。
+     *
+     * 流程是「**Room 先出 → 检查 → 指纹变了才拉全量**」，全在 [CollectionRefresher] 里；
+     * 这里只负责 cacheKey 的拼法（`pl:<id>`，与榜单共用）。
+     * [force] 用于错误态重试：跳过冷却、无条件真拉一次。
+     */
+    suspend fun playlistCollection(playlistId: String, force: Boolean = false): TrackCollection? =
+        refresher.playlist("pl:$playlistId", playlistId, force)
 
-    /** 拉一个歌单的完整壳；请求/解析失败返回 null。 */
-    private suspend fun fetchPlaylistCollection(playlistId: String): TrackCollection? {
-        val r = gateway.call(NeteaseOp.PLAYLIST_DETAIL, playlistId, "0")
-        if (r.err != 0 || r.code != 200) return null
-        return try {
-            val root = JSONObject(String(r.body, Charsets.UTF_8))
-            val playlist = root.optJSONObject("playlist") ?: return null
-            val base = parsePlaylistObject(playlist)
-            base.copy(tracks = completePlaylistTracks(gateway, playlist, base.tracks))
-        } catch (_: Exception) {
-            null
-        }
-    }
+    /** 已购专辑完整壳（/weapi/v1/album/{id}，无播放量等）。同 [playlistCollection]，但不做变更检查。 */
+    suspend fun albumCollection(albumId: String, force: Boolean = false): TrackCollection? =
+        refresher.album("al:$albumId", albumId, force)
 
-    /** 已购专辑完整壳（/weapi/v1/album/{id}，无播放量等）。网络成功写内存 + Room，失败回退离线副本。 */
-    suspend fun albumCollection(albumId: String): TrackCollection? = withContext(Dispatchers.IO) {
-        val key = "al:$albumId"
-        collectionMemory[key]?.let { return@withContext it }
-        val fresh = fetchAlbumCollection(albumId)
-        if (fresh != null) {
-            collectionMemory[key] = fresh
-            collectionCache.put(key, fresh)
-            return@withContext fresh
-        }
-        collectionCache.get(key)?.also { collectionMemory[key] = it }
-    }
+    /**
+     * 只读 Room 副本（不发网络）—— 进列表页时**第一段**先用它渲染，避免骨架屏，
+     * 也让 Room 成为常态读路径而不是「只有离线才用得上」的兜底。
+     */
+    suspend fun cachedPlaylistCollection(playlistId: String): TrackCollection? =
+        refresher.cached("pl:$playlistId")
 
-    /** 拉一个已购专辑的完整壳；请求/解析失败返回 null。 */
-    private suspend fun fetchAlbumCollection(albumId: String): TrackCollection? {
-        val r = gateway.call(NeteaseOp.ALBUM_DETAIL, albumId)
-        diag("albumCollection op=${NeteaseOp.ALBUM_DETAIL} id=$albumId code=${r.code} err=${r.err} body=${String(r.body, Charsets.UTF_8).take(300)}")
-        // 同 songDetails：以 err+body 判定，code 仅作诊断
-        if (r.err != 0 || r.body.isEmpty()) return null
-        return try {
-            val root = JSONObject(String(r.body, Charsets.UTF_8))
-            // 顶层无 album 对象, songs 直接在根; 元数据从首曲推断
-            parseAlbumObject(root)
-        } catch (_: Exception) {
-            null
-        }
-    }
+    /** 同上，专辑版。 */
+    suspend fun cachedAlbumCollection(albumId: String): TrackCollection? =
+        refresher.cached("al:$albumId")
 
     // ── helpers ────────────────────────────────────────────
 

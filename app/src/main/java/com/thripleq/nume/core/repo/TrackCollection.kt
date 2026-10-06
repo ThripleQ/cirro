@@ -1,5 +1,6 @@
 package com.thripleq.nume.core.repo
 
+import java.security.MessageDigest
 import org.json.JSONObject
 
 /** 线程安全 LRU 缓存：按最近使用排序，容量溢出淘汰最久未用。 */
@@ -38,6 +39,14 @@ data class TrackCollection(
     val creator: String,
     val tracks: List<Track>,
     val subscribed: Boolean = false,
+    /**
+     * [playlistFingerprint] 算出的曲目指纹，空串 = 不知道（专辑、本地组装的壳、v1 迁移来的旧行）。
+     *
+     * 存在的理由是「判断要不要重新拉」：进页面时发一次轻量检查（`n=0`）拿新指纹，
+     * 与这份比 —— 相同就说明曲目表还能用，不必拉全量。见
+     * [com.thripleq.nume.core.repo.CollectionRefresher]。
+     */
+    val fingerprint: String = "",
 )
 
 /** 接口常把缺失字段返回为 JSON null，org.json 的 optString 会得到字面量 "null"；
@@ -66,8 +75,48 @@ fun parsePlaylistObject(obj: JSONObject): TrackCollection {
         // 收藏按钮的初始态。未登录时该字段为 false —— 与"没收藏"同形，
         // 点了会拿到服务端的 301 文案，可接受（比停在加载态强）。
         subscribed = obj.optBoolean("subscribed", false),
+        fingerprint = playlistFingerprint(obj),
     )
 }
+
+/**
+ * 曲目 id 序列的指纹 —— 判「这个歌单的曲目有没有变」用。
+ *
+ * 用它的前提是探针实测过（2026-10-06）：**`trackIds` 不受 `n` 影响**。`n=0`（只要元数据）
+ * 与 `n=100000`（全量）两次调用返回的 trackIds 完全一致，2213 首的歌单也全给 2213 个
+ * —— `n` 只截断 `tracks[]` 的歌曲详情。于是「先发一个只要 id 的便宜请求、比对指纹，
+ * 变了才拉全量」成立。
+ *
+ * ⚠️ **别改用 `playlist.trackUpdateTime`**：服务端按请求现算，同一个歌单连打 4 次
+ * 每次都 +≈200ms（实测），拿它当判据会「每次都判定有更新」。`updateTime`（歌单元数据）
+ * 倒是稳定的，但它不反映曲目增删。
+ *
+ * 逐 id 拼串再散列：2213 首也就 24KB 上下的中间串，一次 MD5 是微秒级；id 序列本身
+ * 按顺序参与，所以「同数量换歌」和「重排」都能抓到。
+ */
+fun playlistFingerprint(obj: JSONObject): String {
+    val arr = obj.optJSONArray("trackIds") ?: return ""
+    val sb = StringBuilder(arr.length() * 12)
+    for (i in 0 until arr.length()) {
+        // 线上形态是对象 {id,v,at,alg,uid}；宽容一点，裸数字也认。
+        val id = arr.optJSONObject(i)?.optLong("id", 0L) ?: (arr.opt(i) as? Number)?.toLong() ?: 0L
+        if (i > 0) sb.append(',')
+        sb.append(id)
+    }
+    return md5Hex(sb.toString())
+}
+
+private fun md5Hex(s: String): String {
+    val bytes = MessageDigest.getInstance("MD5").digest(s.toByteArray(Charsets.UTF_8))
+    val out = StringBuilder(bytes.size * 2)
+    for (b in bytes) {
+        val v = b.toInt() and 0xFF
+        out.append(HEX[v ushr 4]).append(HEX[v and 0x0F])
+    }
+    return out.toString()
+}
+
+private const val HEX = "0123456789abcdef"
 
 /** 从 /weapi/v1/album/{id} 的响应解析专辑壳。该接口顶层只有 songs，没有
  *  album 对象；专辑元数据（名称/封面/歌手/曲目数）从首曲的 al/ar 推断。 */

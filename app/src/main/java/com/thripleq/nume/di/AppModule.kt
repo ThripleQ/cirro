@@ -35,7 +35,10 @@ object AppModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): NumeDatabase =
-        Room.databaseBuilder(context, NumeDatabase::class.java, NumeDatabase.NAME).build()
+        Room.databaseBuilder(context, NumeDatabase::class.java, NumeDatabase.NAME)
+            // 没有 destructive fallback：漏一个迁移就是启动崩，所以每个版本都要在这里挂上。
+            .addMigrations(NumeDatabase.MIGRATION_1_2)
+            .build()
 
     @Provides
     fun provideCollectionDao(database: NumeDatabase): CollectionDao = database.collectionDao()

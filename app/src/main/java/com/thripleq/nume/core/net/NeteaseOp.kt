@@ -14,6 +14,12 @@ object NeteaseOp {
     const val ALBUM_PURCHASED = 10
     const val ALBUM_DETAIL = 11
     const val SONG_DETAIL = 12
+    /**
+     * `/weapi/v6/playlist/detail`，参数 `(id, s, n)`。
+     * - `n` 空串 = 库内回落到上游默认的全量（曲目详情最多 1000 首，trackIds 不受限）；
+     * - `n = "0"` = **轻量检查**：只回元数据 + 完整 trackIds（约全量的 7~15%），
+     *   用来判曲目有没有变（见 [com.thripleq.nume.core.repo.CollectionRefresher]）。
+     */
     const val PLAYLIST_DETAIL = 13
     const val USER_PLAYLIST = 14
     const val LYRIC = 15

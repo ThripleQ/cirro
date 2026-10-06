@@ -9,8 +9,12 @@ import androidx.room.PrimaryKey
 import androidx.room.Relation
 
 /**
- * 集合（榜单 / 歌单 / 专辑）壳元数据的离线缓存。`cacheKey` 形如 `pl:<id>`（榜单与歌单
+ * 集合（榜单 / 歌单 / 专辑）壳元数据的缓存。`cacheKey` 形如 `pl:<id>`（榜单与歌单
  * 共用，因为榜单 id 就是歌单 id、走同一端点）或 `al:<id>`。
+ *
+ * 这张表（连同 [CollectionTrackEntity]）是**常态读路径**，不再只是离线兜底：进页面先用
+ * 它渲染，再拿 [trackFingerprint] 判要不要重新拉。所以界面会读的字段都必须在这里有位置
+ * —— `subscribed` 就是为此加的（没有它，首屏与离线都会读回 false，收藏按钮退回空心）。
  */
 @Entity(tableName = "collection")
 data class CollectionEntity(
@@ -26,6 +30,15 @@ data class CollectionEntity(
     val updateFrequency: String,
     val description: String,
     val creator: String,
+    /** 歌单/榜单的收藏态（服务端 `playlist.subscribed`）。专辑恒 false —— 那个接口没有此字段。 */
+    val subscribed: Boolean,
+    /**
+     * 曲目 id 序列的指纹（[com.thripleq.nume.core.repo.playlistFingerprint] 的产物）。
+     * 与下一次「检查」请求算出的指纹比对：相同 → 曲目表仍然有效，不必拉全量。
+     * 空串 = 还不知道（v1 迁移过来的旧行、或专辑）→ 下次进页面走一次全量把指纹补上。
+     */
+    @ColumnInfo(name = "track_fingerprint")
+    val trackFingerprint: String,
     val updatedAt: Long,
 )
 

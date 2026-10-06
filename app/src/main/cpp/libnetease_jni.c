@@ -193,7 +193,7 @@ static ne_resp *dispatch(int op, int narg, const char *const a[]) {
         case 10: return ne_album_purchased(A(0), A(1));
         case 11: return ne_album_detail(A(0));
         case 12: return ne_song_detail(A(0));
-        case 13: return ne_playlist_detail(A(0), A(1));
+        case 13: return ne_playlist_detail(A(0), A(1), A(2));
         case 14: return ne_user_playlist(A(0), A(1), A(2));
         case 15: return ne_lyric(A(0));
         case 16: return ne_toplist_detail();
