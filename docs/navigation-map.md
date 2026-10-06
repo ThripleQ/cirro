@@ -37,8 +37,12 @@ ui/
     ├── LibraryScreen.kt
     ├── SearchScreen.kt      # 搜索 tab（落地页 + 结果列表）
     ├── ProfileScreen.kt     # 我的：登录入口 + 喜欢/已购/歌单区块 + 登录对话框
-    ├── TrackListScreen.kt   # 统一详情页：榜单/歌单/专辑/喜欢/已购 = 紧凑头部（封面+标题+作者+简介）+
-                             #   三胶囊 + 圆角面板（播放全部行 + 曲目行）；几何令牌在 TrackListMetrics
+    ├── TrackListScreen.kt   # 统一详情页主入口（编排 / 三态门 / 排序面板 / 分享）
+    ├── TrackListMetrics.kt  # 版式令牌 + 本屏私有常量（糊底、退场编舞、色晕）
+    ├── TrackListChrome.kt   # 外壳：状态栏让位、页底糊底、顶部标题条
+    ├── TrackListPanel.kt    # 头部（封面+标题+作者+简介）+ 三胶囊 + 播放全部行
+    └── TrackListRows.kt     # 曲目行 + 骨架
+                             # 五件套同属「榜单/歌单/专辑/喜欢/已购」这一个详情页（2026-10-06 拆）
     └── WebLoginScreen.kt    # Web 登录（登录的单一入口）
 
 core/

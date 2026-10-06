@@ -131,8 +131,22 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 
 ### 详情页版式（抄自官方歌单页）
 
-榜单 / 歌单 / 专辑 / 喜欢 / 已购共用 `ui/screens/TrackListScreen.kt`，版式与几何令牌集中在该
-文件的 `TrackListMetrics`（2026-10-03 按官方 1080×2400@480dpi 实拍量得，px÷3 换成 dp）：
+榜单 / 歌单 / 专辑 / 喜欢 / 已购共用 `ui/screens/` 下的 **TrackList 五件套**（2026-10-06 从
+1828 行的单个 `TrackListScreen.kt` 拆出，按「令牌 / 外壳 / 面板 / 行 / 编排」分层）：
+
+| 文件 | 装什么 |
+| --- | --- |
+| `TrackListScreen.kt` | 主入口：状态编排（`washExit` / 三态门 / 回调）+ 排序面板 + 分享链接 |
+| `TrackListMetrics.kt` | 版式令牌 `TrackListMetrics` + **本屏全部私有常量**（糊底 / 退场编舞 / 色晕） |
+| `TrackListChrome.kt` | 外壳：状态栏让位、页底 `TrackListBackdrop`、顶部 `TrackListTitleBar` |
+| `TrackListPanel.kt` | 头部 `TrackListHeader` + 三胶囊 + 面板首行 `PlayAllRow` |
+| `TrackListRows.kt` | 曲目行 `TrackListRow` + 骨架 `TrackListSkeleton` |
+
+拆分的边界是「谁和谁一起改」：改版式只动 Metrics，改糊底只动 Chrome，改行只动 Rows。
+跨文件引用靠 `internal`（**别顺手全放宽** —— 顶层声明同包内不许同名，例如 `PodcastScreen`
+自己就有个 `private formatCount`；只放宽真正被别的文件用到的那几个）。
+
+版式令牌本身：2026-10-03 按官方 1080×2400@480dpi 实拍量得，px÷3 换成 dp：
 
 - **页底**：封面柔焦放大 + `surface` 渐变蒙版，**跟着头部一起退场**——头部滚出去多少，它就
   上移并淡出多少（`washExit`：头部 item 的实时偏移 ÷ 自身高度，读在 layout/draw 阶段），

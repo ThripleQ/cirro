@@ -46,8 +46,8 @@
 | “我的”页状态：登录态 + 各区块数据加载 | `ui/profile/ProfileViewModel.kt` |
 | 登录对话框（Cookie 粘贴 / 短信验证码） | `ui/screens/ProfileScreen.kt` 内 `LoginDialog` |
 | 账号 / 喜欢 / 已购 / 歌单的数据获取与解析 | `core/repo/ProfileRepository.kt` |
-| 曲目列表页（喜欢 / 已购 / 歌单 / 专辑） | `ui/screens/TrackListScreen.kt` + `ui/profile/TrackListViewModel.kt` |
-| 曲目列表页的版式与间距（头部 / 胶囊 / 面板 / 糊底 / 行） | `ui/screens/TrackListScreen.kt`：令牌在 `TrackListMetrics`，各区块是紧随其后的 private 组件 |
+| 曲目列表页（喜欢 / 已购 / 歌单 / 专辑） | `ui/screens/TrackListScreen.kt`（主入口 / 编排）+ 同目录 `TrackListMetrics` / `TrackListChrome` / `TrackListPanel` / `TrackListRows`（2026-10-06 从单文件 1828 行拆出）+ `ui/profile/TrackListViewModel.kt` |
+| 曲目列表页的版式与间距（头部 / 胶囊 / 面板 / 糊底 / 行） | 令牌在 `TrackListMetrics.kt`（版式 + 本屏全部私有常量）；区块分别在 `TrackListChrome`（糊底 / 标题条）、`TrackListPanel`（头部 / 播放全部行）、`TrackListRows`（曲目行 / 骨架）—— 对照表见 `architecture.md` 的「详情页版式」 |
 | 曲目行 = cirro 条目卡（8dp 外缩 + `surfaceContainer`） | `TrackListRow` 里用 `ui/components/Containers.kt` 的 `cirroEntrySurface()`；面板底铺在整条 item 上，卡缝才不漏糊底 |
 | 「播放全部」行吸顶 + 糊底随头部退场 | `TrackListScreen` 的 `stickyHeader(key = "playall")` + `washExit`（头部 item 的偏移）；停靠线由 `LazyColumn` 的固定 `padding(top = TrackListMetrics.PanelStickyTop)` 撑出（8dp，只在状态栏下一点），糊底见 `TrackListBackdrop` |
 | 顶部标题条（类型标签 ↔ 实际标题随滚动交叉淡变、单行截断） | `TrackListScreen` 的 `TrackListTitleBar`（高度 = `TrackListMetrics.PanelStickyTop`，底色随 `washExit` 淡入）；类型标签取 `TrackListSource.label` |
