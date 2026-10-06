@@ -1,10 +1,8 @@
 package com.thripleq.nume.core.repo
 
-import android.util.Log
-import com.thripleq.nume.BuildConfig
-import com.thripleq.nume.core.db.CollectionCache
-import com.thripleq.nume.core.net.NetEaseGateway
-import com.thripleq.nume.core.net.NeteaseOp
+import com.thripleq.nume.core.net.ApiResult
+import com.thripleq.nume.core.util.Clock
+import com.thripleq.nume.core.util.Diagnostics
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -34,18 +32,27 @@ import org.json.JSONObject
  * 专辑走另一条（[album]）：`/weapi/v1/album/{id}` 的 album 对象里没有 updateTime，也
  * 没有 trackIds 形态的轻量返回，本来就没法检查；但它只有几十首、20KB 上下，直接拉全量
  * 即可，同样受冷却保护。榜单 id 就是歌单 id（[playlist]），自动受益。
+ *
+ * ## 依赖与可测性
+ *
+ * 三个外部能力都走接口（[CollectionRemote] / [CollectionStore] / [Clock]），诊断走
+ * [Diagnostics]：它们分别是 JNI 网关、Room、墙上时钟、`android.util.Log`，后三样在 JVM
+ * 单测里碰一下就抛（Log 还是空壳）。抽开之后这段编排第一次能脱离真机被断言 ——
+ * 见 `app/src/test/.../CollectionRefresherTest.kt`。
  */
 @Singleton
 class CollectionRefresher @Inject constructor(
-    private val gateway: NetEaseGateway,
-    private val collectionCache: CollectionCache,
+    private val remote: CollectionRemote,
+    private val store: CollectionStore,
+    private val clock: Clock,
+    private val diagnostics: Diagnostics,
 ) {
 
     /** key → 上次**真正打过网络**的时刻（检查与全量都算一次）。见 [COOLDOWN_MS]。 */
     private val lastNetworkAt = ConcurrentHashMap<String, Long>()
 
     /** 只读 Room，不发网络。进页面第一段渲染用。 */
-    suspend fun cached(key: String): TrackCollection? = collectionCache.get(key)
+    suspend fun cached(key: String): TrackCollection? = store.get(key)
 
     /**
      * 歌单/榜单：先出缓存 → 冷却内直接返回 → 检查 → 变了才拉全量。
@@ -53,7 +60,7 @@ class CollectionRefresher @Inject constructor(
      */
     suspend fun playlist(key: String, id: String, force: Boolean = false): TrackCollection? =
         withContext(Dispatchers.IO) {
-            val cached = collectionCache.get(key)
+            val cached = store.get(key)
             // 没有副本可比 → 检查无从谈起，直接拉。
             if (cached == null) return@withContext fetchPlaylist(key, id)
 
@@ -73,7 +80,7 @@ class CollectionRefresher @Inject constructor(
             if (known && meta.fingerprint == cached.fingerprint) {
                 // 曲目没变：曲目表原样复用，只更新元数据（名称/封面/收藏数/播放数会自己变新）。
                 val merged = meta.copy(tracks = cached.tracks)
-                collectionCache.putMeta(key, merged)
+                store.putMeta(key, merged)
                 note(key)
                 diag("playlist $id unchanged -> meta only, tracks=${merged.tracks.size}")
                 return@withContext merged
@@ -89,32 +96,32 @@ class CollectionRefresher @Inject constructor(
      */
     suspend fun album(key: String, id: String, force: Boolean = false): TrackCollection? =
         withContext(Dispatchers.IO) {
-            val cached = collectionCache.get(key)
+            val cached = store.get(key)
             if (cached != null && !force && cooling(key)) {
                 diag("album $id cache-only (cooldown)")
                 return@withContext cached
             }
-            val r = gateway.call(NeteaseOp.ALBUM_DETAIL, id)
-            diag("album op=${NeteaseOp.ALBUM_DETAIL} id=$id code=${r.code} err=${r.err}")
+            val r = remote.albumDetail(id)
+            diag("album id=$id code=${r.code} err=${r.err}")
             if (r.err != 0 || r.body.isEmpty()) return@withContext cached
             val parsed = try {
                 parseAlbumObject(JSONObject(String(r.body, Charsets.UTF_8)))
             } catch (_: Exception) {
                 null
             } ?: return@withContext cached
-            collectionCache.put(key, parsed)
+            store.put(key, parsed)
             note(key)
             parsed
         }
 
     /** 收藏态变了（乐观更新）后落库：下次进页面 Room 才不会再交回旧值。 */
     suspend fun noteSubscribed(key: String, subscribed: Boolean, subscribedCount: Long) {
-        collectionCache.putSubscribed(key, subscribed, subscribedCount)
+        store.putSubscribed(key, subscribed, subscribedCount)
     }
 
     /** 账号切换：清掉所有副本，并让冷启动式的「第一次进入必检查」重新生效。 */
     suspend fun clear() {
-        collectionCache.clearAll()
+        store.clearAll()
         lastNetworkAt.clear()
     }
 
@@ -123,56 +130,53 @@ class CollectionRefresher @Inject constructor(
      * 返回 null = 这次检查没成功（网络/解析），调用方应保持 Room 内容。
      */
     private suspend fun fetchPlaylistMeta(id: String): TrackCollection? {
-        val r = gateway.call(NeteaseOp.PLAYLIST_DETAIL, id, "0", CHECK_N)
+        val r = remote.playlistDetail(id, CHECK_N)
         if (r.err != 0 || r.code != 200) {
             diag("playlist check id=$id code=${r.code} err=${r.err}")
             return null
         }
-        return try {
-            val playlist = JSONObject(String(r.body, Charsets.UTF_8))
-                .optJSONObject("playlist") ?: return null
-            // n=0 ⇒ tracks 为空，这里取到的是纯元数据 + 指纹（parsePlaylistObject 一并算好）。
-            parsePlaylistObject(playlist)
-        } catch (_: Exception) {
-            null
-        }
+        return parsePlaylist(r)?.let { it.optJSONObject("playlist")?.let(::parsePlaylistObject) }
     }
 
     /** 拉全量（`n` 空 = 库内回落到上游默认 100000）。成功写 Room；失败回退 Room 旧内容。 */
     private suspend fun fetchPlaylist(key: String, id: String): TrackCollection? {
-        val r = gateway.call(NeteaseOp.PLAYLIST_DETAIL, id, "0", FULL_N)
+        val r = remote.playlistDetail(id, FULL_N)
         if (r.err != 0 || r.code != 200) {
             diag("playlist full id=$id code=${r.code} err=${r.err}")
-            return collectionCache.get(key)
+            return store.get(key)
         }
-        val playlist = try {
-            JSONObject(String(r.body, Charsets.UTF_8)).optJSONObject("playlist")
-        } catch (_: Exception) {
-            null
-        } ?: return collectionCache.get(key)
+        val playlist = parsePlaylist(r)?.optJSONObject("playlist")
+            ?: return store.get(key)
 
         val base = parsePlaylistObject(playlist)
         // 超过 1000 首时 tracks[] 被服务端截断，按 trackIds 分批补（小歌单零额外请求）。
-        val full = base.copy(tracks = completePlaylistTracks(gateway, playlist, base.tracks))
-        collectionCache.put(key, full)
+        val full = base.copy(tracks = completePlaylistTracks(remote, playlist, base.tracks))
+        store.put(key, full)
         note(key)
         diag("playlist $id full ok tracks=${full.tracks.size} count=${full.trackCount}")
         return full
     }
 
+    /** 解析失败（坏 JSON）一律按「没拿到」处理，不要让它 SQLException 式地冒泡。 */
+    private fun parsePlaylist(r: ApiResult): JSONObject? =
+        try {
+            JSONObject(String(r.body, Charsets.UTF_8))
+        } catch (_: Exception) {
+            null
+        }
+
     /** 冷却期内直接复用 Room；表是 ConcurrentHashMap —— 各仓库都从 IO 线程调它。 */
     private fun cooling(key: String): Boolean {
         val at = lastNetworkAt[key] ?: return false
-        return System.currentTimeMillis() - at < COOLDOWN_MS
+        return clock.nowMs() - at < COOLDOWN_MS
     }
 
     private fun note(key: String) {
-        lastNetworkAt[key] = System.currentTimeMillis()
+        lastNetworkAt[key] = clock.nowMs()
     }
 
-    /** 诊断日志只在 debug 打（vivo 上 Log.d 被屏蔽，故用 Log.e）。 */
     private fun diag(msg: String) {
-        if (BuildConfig.DEBUG) Log.e(TAG, msg)
+        diagnostics.log(TAG, msg)
     }
 
     companion object {

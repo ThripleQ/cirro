@@ -1,5 +1,6 @@
 package com.thripleq.nume.core.db
 
+import com.thripleq.nume.core.repo.CollectionStore
 import com.thripleq.nume.core.repo.Track
 import com.thripleq.nume.core.repo.TrackCollection
 import javax.inject.Inject
@@ -8,14 +9,16 @@ import javax.inject.Singleton
 /**
  * 集合缓存的读写门面：Repository 用它做「先用缓存渲染、再判要不要重拉」的读穿缓存，
  * 领域模型与 Room 实体在此互转，Repository 不必接触 DAO。
+ *
+ * 实现 [CollectionStore] 而非被它包一层：[CollectionStore] 就是照着这里的五个动作
+ * 描出来的（见该接口的 KDoc），多一层转发没有收益。
  */
 @Singleton
 class CollectionCache @Inject constructor(
     private val dao: CollectionDao,
-) {
+) : CollectionStore {
 
-    /** 读缓存；无则返回 null。 */
-    suspend fun get(key: String): TrackCollection? {
+    override suspend fun get(key: String): TrackCollection? {
         val row = dao.get(key) ?: return null
         val c = row.collection
         return TrackCollection(
@@ -46,7 +49,7 @@ class CollectionCache @Inject constructor(
     }
 
     /** 写缓存（整壳 + 曲目一起替换）。 */
-    suspend fun put(key: String, collection: TrackCollection) {
+    override suspend fun put(key: String, collection: TrackCollection) {
         dao.upsert(
             entity(key, collection),
             collection.tracks.mapIndexed { i, t ->
@@ -72,17 +75,17 @@ class CollectionCache @Inject constructor(
      * 「检查发现曲目没变」时走这条：元数据（名称/封面/收藏数/播放数）已经是服务端最新值，
      * 但曲目表不必重写 —— 对 2000 首的歌单，重写一次就是 2000 行的删+插。
      */
-    suspend fun putMeta(key: String, collection: TrackCollection) {
+    override suspend fun putMeta(key: String, collection: TrackCollection) {
         dao.updateMeta(entity(key, collection))
     }
 
     /** 只改收藏态（乐观更新落库）。 */
-    suspend fun putSubscribed(key: String, subscribed: Boolean, subscribedCount: Long) {
+    override suspend fun putSubscribed(key: String, subscribed: Boolean, subscribedCount: Long) {
         dao.updateSubscribed(key, subscribed, subscribedCount)
     }
 
     /** 账号切换：整表清掉（收藏态与收藏数都是随账号变的）。 */
-    suspend fun clearAll() {
+    override suspend fun clearAll() {
         dao.clearAll()
     }
 
