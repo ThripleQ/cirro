@@ -212,6 +212,21 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 - **构建提速**：`gradle.properties` 开 configuration cache + build cache。
 - CI：GitHub Actions 在 push 到 `main`/`beta` 时构建并上传 debug APK。
 
+### 八·补 单元测试（2026-10-06 起，此前一个测试都没有）
+
+**只测一层：JSON → 领域对象（纯解析）。** 这些端点没有公开文档，键名是探针实测猜出来的，
+壳子会变；漏读一个字段**不崩**，只会变成「封面全灰 / 徽标不画 / 已购的歌标成红色」这类
+静默错误 —— 没有断言就只有真机截图能发现。
+
+- 位置：`app/src/test/java/com/thripleq/nume/…`，`./gradlew :app:testDebugUnitTest`（纯 JVM）。
+- 前提：`build.gradle.kts` 挂了 `testImplementation(libs.json)` —— **android.jar 里的
+  `org.json` 是空壳**（方法体一律 throw），不挂真实现任何 `JSONObject` 调用都会抛 not mocked。
+- **配套的结构约束**：解析函数必须放在**零 Android 依赖**的文件里（`TrackParser.kt` /
+  `HomeParsers.kt` / `OwnedParsers.kt` / `ui/components/PayTagRules.kt`）。它们原先是
+  Repository 的 `private` 成员，和 `Log` / `BuildConfig` / Compose 同处一个文件，
+  **一个都测不了** —— 抽出来才有的测。新写的解析别再放回 Repository。
+- CI（build.yml / release.yml）在**出包前**跑一遍：判据挂了就不必再花几分钟打两个包。
+
 ## 九、色彩体系（生成式调色板）
 
 **单一 seed 推导全套 M3 角色**：`tools/gen_palette.py` 改一行 `SEED` 重跑，即产出

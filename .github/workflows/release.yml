@@ -105,6 +105,11 @@ jobs:
       - name: Make wrapper executable
         run: chmod +x gradlew
 
+      - name: Unit tests
+        # 发版前跑一遍（与 build.yml 同一段）：tag 可能打在一个没走过 push 门禁的
+        # commit 上，解析判据挂了不该进发布页。纯 JVM，几十秒。
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
       - name: Build release APK
         # 只出 release：发布页上放 debug 包会让人装错（Compose 没优化、R8 没跑，
         # 滚动和转场明显更卡）。要 debug 包去 build.yml 的 artifact 取。

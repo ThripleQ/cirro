@@ -102,6 +102,28 @@
 
 ---
 
+## 6. 解析与单元测试（2026-10-06 起）
+
+> 这些端点**没有公开文档**，键名是探针实测猜出来的。所以「JSON → 领域对象」这一层
+> 单独成文件、**零 Android 依赖**，可以脱离设备断言。判据错了不崩，只会变成「封面
+> 全灰 / 徽标不画 / 红心不亮」这类**静默**错误 —— 单测是唯一的护栏。
+
+| 我想… | 去改（实现） | 去改（测试） |
+|---|---|---|
+| 改歌曲解析（两套字段、`fee`、`albumId`、封面升 https） | `core/repo/TrackParser.kt` | `app/src/test/.../core/repo/TrackParserTest.kt` |
+| 改首页解析（推荐歌单 / 雷达卡 / 猜你喜欢 block） | `core/repo/HomeParsers.kt` | `HomeParsersTest.kt` |
+| 改「已购 / 收藏 / 红心」的 id 镜像解析 | `core/repo/OwnedParsers.kt` | `OwnedParsersTest.kt` |
+| 改付费 / VIP 徽标的**判据**（哪个 fee 标什么） | `ui/components/PayTagRules.kt`（纯 Kotlin，别搬回 `PayBadge.kt`） | `app/src/test/.../ui/components/PayTagRulesTest.kt` |
+| 改徽标的**画法**（框、字号、颜色、间距） | `ui/components/PayBadge.kt` | 尺寸是照 kanade 截图逐像素量的，改前先读那里的注释 |
+| 跑全部单测 | `./gradlew :app:testDebugUnitTest` | 纯 JVM，不需模拟器；CI（build.yml / release.yml）在出包前必跑 |
+
+**加新解析时的两条纪律**：① 解析函数放进上面那几个 `*Parsers.kt`，**不要**塞进带
+`Log` / `BuildConfig` / Compose 的 Repository 文件里（那样就测不了）；
+② 断言里写清「这条判据是哪次实测来的」。**别为了让测试变绿而改断言** —— 那等于把实测
+过的口径换成猜测。
+
+---
+
 ## 兜底：不确定该动哪时
 
 1. 先全局搜（`Ctrl+Shift+F`）你要改的功能名，例如"排行"、"缓存"、"进度"。
