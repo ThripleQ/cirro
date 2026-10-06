@@ -51,6 +51,7 @@ import androidx.core.view.WindowInsetsCompat
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.thripleq.cirro.ui.components.CirroTitleBarHeight
+import com.thripleq.cirro.ui.components.coverSizedUrl
 import kotlin.math.roundToInt
 
 /**
@@ -216,7 +217,8 @@ internal fun TrackListBackdrop(
         if (coverUrl != null) {
             val context = LocalContext.current
             val model = remember(coverUrl) {
-                ImageRequest.Builder(context).data(coverUrl).size(BackdropRequestSize).build()
+                val sized = coverSizedUrl(coverUrl, BackdropRequestSize) ?: coverUrl
+                ImageRequest.Builder(context).data(sized).size(BackdropRequestSize).build()
             }
             Image(
                 painter = rememberAsyncImagePainter(model),

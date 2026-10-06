@@ -32,7 +32,10 @@ import com.thripleq.cirro.ui.theme.CirroShape
  * **列表行封面统一 [Row]（52dp + [CirroShape.Chip]）**，其余按角色取。
  *
  * 解码尺寸 = dp × 约 2.3（@2~3x 下够清晰又不浪费内存）；两端做共享元素时须请求同一值
- * （见 [ArtistAvatarRequest]、[CardCoverSize]）。
+ * （见 [CardCoverSize]）。
+ *
+ * ⚠️ 这里定的是**解码**尺寸，**不决定下载量** —— Coil 会先拉整张原图再缩到这个尺寸。
+ * 真正决定下多少字节的是地址侧的 [coverSizedUrl]（`?param=`），两者必须一起看。
  */
 object CirroArt {
     /** 列表行封面：所有「歌曲行 / 媒体行 / 榜单行 / 小卡」统一 52dp。 */
@@ -73,7 +76,9 @@ fun CirroArtwork(
 ) {
     val context = LocalContext.current
     val model = remember(url, requestSize) {
-        url?.let { ImageRequest.Builder(context).data(it).size(requestSize).build() }
+        coverSizedUrl(url, requestSize)?.let {
+            ImageRequest.Builder(context).data(it).size(requestSize).build()
+        }
     }
     // size = null：由调用方用 modifier 自行定尺寸（如 fillMaxWidth × 固定高）。
     val sizedModifier = if (size != null) modifier.size(size) else modifier

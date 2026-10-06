@@ -83,6 +83,7 @@ import coil.request.ImageRequest
 import com.thripleq.cirro.Profile
 import com.thripleq.cirro.core.playback.PlayerHolder
 import com.thripleq.cirro.ui.components.ShimmerImagePlaceholder
+import com.thripleq.cirro.ui.components.coverSizedUrl
 import com.thripleq.cirro.ui.components.swallowPointerInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -475,7 +476,10 @@ internal fun PlayerBarContent(
     LaunchedEffect(playerState.coverUrl) {
         playerState.coverUrl?.let {
             context.imageLoader.enqueue(
-                ImageRequest.Builder(context).data(it).size(prefetchPx).build(),
+                ImageRequest.Builder(context)
+                    .data(coverSizedUrl(it, prefetchPx))
+                    .size(prefetchPx)
+                    .build(),
             )
         }
     }
@@ -501,7 +505,7 @@ internal fun PlayerBarContent(
             } else {
                 val model = remember(uri) {
                     ImageRequest.Builder(context)
-                        .data(Uri.parse(uri))
+                        .data(Uri.parse(coverSizedUrl(uri, 120) ?: uri))
                         .size(120)
                         .build()
                 }

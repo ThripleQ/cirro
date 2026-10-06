@@ -97,7 +97,9 @@ fun BigCoverVisual(
     Box(modifier) {
         val context = LocalContext.current
         val model = remember(coverUrl, requestSize) {
-            coverUrl?.let { ImageRequest.Builder(context).data(it).size(requestSize).build() }
+            coverSizedUrl(coverUrl, requestSize)?.let {
+                ImageRequest.Builder(context).data(it).size(requestSize).build()
+            }
         }
         if (model != null) {
             // 占位微光仅在加载中组合，加载完成即移除（不再常驻无限扫光）。

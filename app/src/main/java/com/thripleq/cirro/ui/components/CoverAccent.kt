@@ -66,8 +66,10 @@ fun rememberCoverAccent(coverUrl: String?): Color {
  */
 private suspend fun readCoverSeed(context: Context, url: String): Int? {
     val request = ImageRequest.Builder(context)
-        .data(url)
-        // 只要够算色：Coil 直接按这个尺寸解码，不会把整张原图拉进内存。
+        .data(coverSizedUrl(url, SampleGrid))
+        // 只要够算色：Coil 按这个尺寸解码，不会把整张原图拉进内存。
+        // ⚠️ 但 size() 只管解码、不管下载 —— 这一处原先为了 24×24 的色块要拉整张
+        // 原图（实测 4.5MB）。真正省下带宽的是上面那个地址参数，不是这里的 size()。
         .size(SampleGrid)
         // 硬件位图读不了像素（getPixels 抛 IllegalStateException）。
         .allowHardware(false)

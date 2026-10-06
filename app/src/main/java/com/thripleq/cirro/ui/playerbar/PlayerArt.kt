@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.thripleq.cirro.ui.components.ShimmerImagePlaceholder
+import com.thripleq.cirro.ui.components.coverSizedUrl
 import com.thripleq.cirro.ui.theme.CirroFade
 import kotlin.math.roundToInt
 
@@ -72,7 +73,10 @@ internal fun CoverArt(
             )
         } else {
             val model = remember(coverUrl, px) {
-                ImageRequest.Builder(context).data(coverUrl).size(px).build()
+                ImageRequest.Builder(context)
+                    .data(coverSizedUrl(coverUrl, px) ?: coverUrl)
+                    .size(px)
+                    .build()
             }
             val painter = rememberAsyncImagePainter(model)
             ShimmerImagePlaceholder(painter, Modifier.matchParentSize())
