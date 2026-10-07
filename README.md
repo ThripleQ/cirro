@@ -1,6 +1,6 @@
 # Cirro
 
-**new music** — an Android music player. The mobile counterpart to the desktop player
+An Android music player. The mobile counterpart to the desktop player
 [Netune](https://github.com/ThripleQ/Netune), sharing the same NetEase Cloud data gateway,
 [libnetease](https://github.com/ThripleQ/libnetease).
 
