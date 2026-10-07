@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 机器生成，请勿手改 —— 由 tools/gen_launcher_icon.py 从一组几何参数推导。
      换图形：改脚本里的几何常量并重跑，本文件与 mipmap-anydpi-v26/ 一并重写。
-     椭圆符头 + taper 旗 -->
+     椭圆符头 + taper 旗（单色层：形状同上，颜色由系统主题重绘） -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"

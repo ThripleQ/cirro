@@ -15,6 +15,7 @@
 | 改「胶囊→全屏」通用伸展壳的动画 / 尾帧 | `ui/components/ExpandableShell.kt` | 我的页喜欢的音乐等复用；单一时间基，宽高/圆角/hero 全由同一个 t 派生 |
 | 改动画**时长 / 曲线 / 圆角节奏**（壳与 dock 共用） | `ui/theme/Motion.kt` | 动效令牌唯一来源；两处手感不一致或想整体调快调慢，只改这里 |
 | 改品牌色 / 整套配色（明暗一起变） | `tools/gen_palette.py` 顶部配置块 → 重跑生成 | `SEED` 换品牌色；`SECONDARY_HUE` / `TERTIARY_HUE` / `NEUTRAL_HUE` / `CHROMA` 换色相分工；`DARK_SURFACE_TONE` 换暗色黑度。**别手改 `Palette.kt`**（机器生成）；`--write` 会先验 WCAG 与层级再落盘，不通过拒绝写入 |
+| 改**应用图标**（符头 / 符干 / 旗形的几何） | `tools/gen_launcher_icon.py` 顶部的几何常量 → 重跑 | 一次吐出 `ic_launcher_foreground` / `ic_launcher_monochrome` / 两个 `mipmap-anydpi-v26/*.xml`，**别手改这四个资源**（机器生成）。脚本会自动居中并按需缩放，再把「最远墨迹 vs 安全半径 33」打出来；超了直接 assert 失败、不落盘 —— 这是圆形启动器切边的唯一护栏。跑 `... note|cloud|wisp` 可切换三个候选形状 |
 | 改启动图 / 窗口底色（与主题同步的两处平台色） | `res/values/colors.xml` + `res/values-night/colors.xml` + `res/values/themes.xml` | 都锚 Compose 的 `surface`；不同步会在启动/旋转时闪一帧反差色 |
 | 改 M3 角色 → `ColorScheme` 的映射 | `ui/theme/Theme.kt` | 角色必须逐个显式传，漏传会回落 M3 内置紫灰 |
 | 改图上文字/水印/遮罩等浮层墨色 | `ui/theme/Color.kt`（`CirroInk` / `CirroFade`） | 与 colorScheme 解耦，明暗共用 |

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 机器生成，请勿手改 —— 由 tools/gen_launcher_icon.py 写出。
+     三层齐备：background 纯品牌红；foreground 白符；monochrome 供 Android 13+
+     主题化图标取形（系统会用主题色重绘这一层，故它只要形状、不要颜色）。 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

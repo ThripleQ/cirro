@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 机器生成，请勿手改 —— 由 tools/gen_launcher_icon.py 写出（改 BACKGROUND 一行即可）。 -->
+<resources>
+    <color name="ic_launcher_background">#C92027</color>
+</resources>
