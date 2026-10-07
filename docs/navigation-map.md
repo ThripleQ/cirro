@@ -28,10 +28,10 @@ ui/
 ├── profile/       # 我的（ProfileViewModel：登录态+区块数据；TrackListViewModel：统一"壳+列表"页状态）
 ├── playerbar/     # 播放（PlayerDock.kt：常驻 dock + 全屏播放页**合体**，一份 PlayerDockState；
 │                  #   rememberPlayerState/rememberPlayerPosition 是播放状态的唯一真相源；
-│                  #   rememberPlayerState/rememberPlayerPosition 是播放状态的唯一真相源；
 │                  #   ActionNavRow 为滚动操作行（滑出头部按钮后出现），列表只负责上报）
 ├── components/    # 跨功能通用组件（ExpandableShell：胶囊→全屏通用伸展壳；
-│                  #   CommentsOpener：评论浮层的打开入口，由 CirroApp 在根上提供）
+│                  #   CommentsOpener：评论浮层的打开入口，由 CirroApp 在根上提供；
+│                  #   CoverUrls：封面地址的唯一出口；PayTagRules / PayBadge：徽标判据与画法）
 └── screens/       # 布局主体（哑组件，跨功能）
     ├── HomeScreen.kt        # 探索 tab 首页（横滑卡片行 + 展开壳内嵌 TrackListScreen）
     ├── LibraryScreen.kt
@@ -46,11 +46,17 @@ ui/
     └── WebLoginScreen.kt    # Web 登录（登录的单一入口）
 
 core/
+├── model/         # 领域模型的唯一去处（= **接口返回的形状**）：Track / TrackCollection /
+│                  #   Profile / Artist / Chart / Comment / Lyric / Podcast / Search / Home
+│                  #   零 Android / Compose / Dagger 依赖；**控制流类型不进这里**
+│                  #   （ActionResult 在 InteractionRepository、RequestFailedException 在 RepoErrors）
 ├── net/           # libnetease JNI 网关（数据出口）
 ├── repo/          # Repository：取/转换数据（ChartRepository / ProfileRepository /
-│                  #   TrackCollection 壳元数据模型 / TrackParser 曲目解析 /
+│                  #   TrackCollection 壳解析 / TrackParser 曲目解析 /
 │                  #   InteractionRepository 写操作（红心·收藏·评论点赞）/
 │                  #   LibraryStateStore「当前账号收藏了什么」的进程级镜像）
+├── db/            # Room：歌单壳 + 曲目表的离线缓存（CollectionCache / CollectionDao / CollectionEntity）
+├── util/          # 与 Android 解耦的小件（RefreshGate 刷新冷却 / Clock / Diagnostics）
 └── playback/      # 播放四件套：PlayerHolder（进程级播放器+状态+错误恢复+随机/循环）/
                    #   PlaybackLauncher（播放入口+补队列）/ PlaybackService（后台+通知）/
                    #   PlaybackCache（边播边缓存）

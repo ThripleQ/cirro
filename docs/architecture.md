@@ -236,9 +236,40 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
   JankStats（`MainActivity`，按生命周期启停）、LeakCanary / OkHttp 日志 / StrictMode（仅 debug）、
   `Theme.Cirro.Starting` 冷启动 splash。
 - **构建提速**：`gradle.properties` 开 configuration cache + build cache。
-- CI：GitHub Actions 在 push 到 `main`/`beta` 时构建并上传 debug APK。
+- CI：两个工作流 —— **`build.yml`**（push `main`/`beta` 或手动）先跑单测，再上传 `cirro-debug` /
+  `cirro-release` artifact（7 天过期、下载要登录）+ 测试报告；**`release.yml`**（push `v*` tag 或手动）
+  只出 release 包，挂成 `cirro-<tag>.apk` 到 **GitHub Release**（免登录、永久）。
+  release 包**已带签名**（复用仓库里的 `app/debug.keystore`，故意同证书 ⇒ 与本机自建的包可互相覆盖安装）。
 
-### 八·补 单元测试（2026-10-06 起，此前一个测试都没有）
+### 八·补1 封面按需缩放（CDN `?param=WxH`）—— 2026-10-07
+
+**Coil 的 `size(px)` 只约束解码，不约束下载** —— 它先把整张原图拉下来、再缩到 px。于是列表行
+那张 52dp（解码 120px）的小封面，实际下的是 2048² 的原图。所以**只写 `.size()` 是不够的**：
+地址侧必须过 `ui/components/CoverUrls.kt` 的 **`coverSizedUrl(url, px)`**（全 app 封面地址的
+唯一出口），让网易图床自己缩。同一张封面实测（K40，同一 CDN、同一 hash）：
+
+| 请求 | 实际下载 | 用途 |
+|---|---|---|
+| 原图（无参数） | **4.5 MB** | 改前全用它 |
+| `param=360y360` | 216 KB | 大卡 |
+| `param=120y120` | 32 KB | **列表行** |
+| `param=24y24` | 2.4 KB | 取主色的采样 |
+
+磁盘缓存印证：改前 97 张封面占 **78MB**（最大单张 9.2MB），改后同场景 41 张共 **3.7MB**
+（列表行全落 20~50KB）。**零视觉变化**：`.size()` 一律没动，服务端返回的正是它要解码的那个尺寸；
+逐像素对比平均偏差仅 2.0/255（120²）与 4.3/255（24²），差异来自 JPEG 重编码而不是内容。
+
+边界（全部实测，不是推测）：只对 **`*.music.126.net`** 生效（按 host 后缀判定，已挡住
+`evilmusic.126.net` / `p1.music.126.net.evil.com` 这类绕过面）；**`px <= 0` 绝不能加**
+（`param=0y0` 直接 400，不是回退原图）；地址已带 `param=` 就不动；服务端不认识的值会**忽略并返回
+原图**（最坏只退回现状）；尺寸超过原图自动封顶。
+
+⚠️ **别再写出裸 `.data(url)`** —— 7 个请求点（列表行 / 大卡 / 取色 / 播放页 / 迷你条 / 预取 /
+列表头糊底）现在都走 `coverSizedUrl`，新增任何图片请求照做。另外 `PlayerDock` 的**播放预取
+刻意按屏宽（K40 = 1080px）取**，约 1.5MB/首，为的是展开播放页不闪 shimmer —— 那是评估后
+有意保留的大头，别顺手「优化」掉。
+
+### 八·补2 单元测试（2026-10-06 起，此前一个测试都没有）
 
 **只测一层：JSON → 领域对象（纯解析）。** 这些端点没有公开文档，键名是探针实测猜出来的，
 壳子会变；漏读一个字段**不崩**，只会变成「封面全灰 / 徽标不画 / 已购的歌标成红色」这类
@@ -247,10 +278,13 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 - 位置：`app/src/test/java/com/thripleq/cirro/…`，`./gradlew :app:testDebugUnitTest`（纯 JVM）。
 - 前提：`build.gradle.kts` 挂了 `testImplementation(libs.json)` —— **android.jar 里的
   `org.json` 是空壳**（方法体一律 throw），不挂真实现任何 `JSONObject` 调用都会抛 not mocked。
-- **配套的结构约束**：解析函数必须放在**零 Android 依赖**的文件里（`TrackParser.kt` /
-  `HomeParsers.kt` / `OwnedParsers.kt` / `ui/components/PayTagRules.kt`）。它们原先是
-  Repository 的 `private` 成员，和 `Log` / `BuildConfig` / Compose 同处一个文件，
+- **配套的结构约束**：解析函数必须放在**零 Android 依赖**的文件里（`core/repo/TrackParser.kt` /
+  `HomeParsers.kt` / `OwnedParsers.kt` / `ui/components/PayTagRules.kt` / `ui/components/CoverUrls.kt`）。
+  它们原先多是 Repository 的 `private` 成员，和 `Log` / `BuildConfig` / Compose 同处一个文件，
   **一个都测不了** —— 抽出来才有的测。新写的解析别再放回 Repository。
+- **纯函数同样在护栏内**：徽标判据（`PayTagRules`）与封面地址拼装（`CoverUrls`）都是零依赖的
+  枚举 / 字符串判断，「错法」不崩，只表现为图不显示、徽标不画或流量暴涨；而给它们写断言的成本
+  几乎为零 —— 这类改动没有理由不配断言。
 - CI（build.yml / release.yml）在**出包前**跑一遍：判据挂了就不必再花几分钟打两个包。
 
 **第二层（同日）：取数编排。** 「JSON 怎么读」只是静默错误的一半；另一半是「要不要发请求、
@@ -343,4 +377,6 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 - [x] 探索(Home) / 搜索页（2026-10 起已实现：探索页横滑卡片行 + 展开壳，搜索页落地页 + 结果列表）
 - [x] 交互按钮接线（2026-10-06）：歌单页 分享 / 评论 / 收藏 / 排序、播放页 红心、评论页 点赞
       —— 写操作统一走 `core/repo/InteractionRepository.kt`，收藏态走 `core/repo/LibraryStateStore.kt`
+- [x] 封面按需缩放（2026-10-07）：封面地址统一过 `coverSizedUrl`，由 CDN 按 `?param=WxH` 缩放 ——
+      进一个 117 首的列表，封面流量从约 90MB 降到约 3.5MB，视觉零变化（见 §八·补1）
 - [ ] 离线下载（DownloadManager）—— 歌单页那枚「下载」图标仍是占位

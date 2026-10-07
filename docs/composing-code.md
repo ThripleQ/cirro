@@ -37,5 +37,12 @@
 
 ## 4. 其他硬约定
 
+- **模型放 `core/model/`**：`data class` 不许再写回 `core/repo` 或 `ui/` 文件里（那是收敛前
+  「一团乱」的来源）。判据 = **接口返回的东西的形状**；描述「这次调用怎么样」的控制流类型
+  （`ActionResult` / `RequestFailedException`）**不进** `core/model`，留在产生它们的 repo。
+- **纯逻辑放零 Android 依赖的文件**：解析（`core/repo/TrackParser.kt` / `HomeParsers.kt` /
+  `OwnedParsers.kt`）、判据与地址拼装（`ui/components/PayTagRules.kt` / `CoverUrls.kt`）——
+  这样 JVM 单测直接能跑。塞进带 `Log` / `BuildConfig` / Compose 的文件就等于放弃断言，
+  而这类代码「错法」不崩、只表现为图不显示或流量暴涨，**没有断言就只能靠真机截图发现**。
 - 别急着抽象：出现第三份重复代码（Rule of Three）才抽。
 - `docs/architecture.md` 是唯一事实源，与本文件不一致时改文档。

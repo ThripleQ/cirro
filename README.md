@@ -22,8 +22,8 @@ app/
     di/                    # Hilt wiring (AppModule provides the gateway)
     ui/                    # Compose 屏 + 各功能 ViewModel/UiState
       playerbar/           # 常驻 dock + 全屏播放页合体（PlayerDock）、列表操作按钮
-      components/          # 跨功能通用组件（ExpandableShell 伸展壳）
-    core/                  # net (libnetease gateway), repo, playback (Media3)
+      components/          # 跨功能通用组件（ExpandableShell 伸展壳；CoverUrls 封面地址的唯一出口）
+    core/                  # model (domain models), net (libnetease gateway), repo, playback (Media3)
   src/main/cpp/            # JNI bridge to libnetease (CMake + NDK)
 ```
 
@@ -60,10 +60,28 @@ rather than hand-roll Netune's segment cache — see the architecture doc for th
 > thread ~1.5–1.6× slower — enough to drop frames on a trivial list at 90 Hz. Measured on device:
 > release ≈ 12–14 ms 90th / ~1% janky vs debug ≈ 18–22 ms / 3–9%.
 >
-> Release APKs are unsigned; to install locally, sign the output with the debug keystore
-> (`apksigner sign --ks ~/.android/debug.keystore …`).
+> **Both variants are installable as-is.** Release is signed with the keystore committed at
+> `app/debug.keystore` — the *same cert* as debug, deliberately: a locally built APK can overwrite a
+> CI-built one (and vice versa) without uninstalling, and CI needs no signing secret. Rationale is in
+> the `signingConfigs` comment inside `app/build.gradle.kts`.
 
-CI (GitHub Actions) builds `assembleDebug` on every push to `main`/`beta` and uploads the APK.
+CI (GitHub Actions) — two workflows:
+
+- **[build.yml](.github/workflows/build.yml)** — every push to `main`/`beta` (plus manual runs):
+  runs the unit tests, then uploads `cirro-debug`, `cirro-release` and the test report as artifacts.
+  Artifacts expire after 7 days and need a GitHub login to download.
+- **[release.yml](.github/workflows/release.yml)** — a `v*` tag (or manual run): builds only the
+  release APK and attaches it as `cirro-<tag>.apk` to a **GitHub Release**, which is login-free and
+  permanent.
+
+### Tests
+
+```bash
+./gradlew :app:testDebugUnitTest     # pure JVM — no device, no emulator
+```
+
+Covers the JSON→model parsers, the pure rules (pay/VIP badge, cover URL sizing) and the refresh
+orchestration. Both workflows run them *before* packaging.
 
 ### Performance & diagnostics
 

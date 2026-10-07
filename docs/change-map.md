@@ -97,9 +97,12 @@
 | 看 Compose 类稳定性 / composable 可跳过性 | 构建后 `app/build/compose-reports/`、`compose-metrics/`（开关在 `app/build.gradle.kts` 的 `composeCompiler{}`） |
 | 线上掉帧统计 / 冷启动 splash / 启动初始化 | `MainActivity.kt`（JankStats、installSplashScreen） |
 | StrictMode / 全局初始化 / 图片加载 | `CirroApplication.kt` |
-| HTTP 请求日志（仅 debug） | `core/net/CirroTransport.kt`（`BuildConfig.DEBUG` 下 BASIC 级） |
+| HTTP 请求日志（仅 debug，tag = **`CirroHttp`**） | `core/net/CirroTransport.kt`（`BuildConfig.DEBUG` 下 BASIC 级） |
 | 生成/调整 Baseline Profile | `baselineprofile/`（`BaselineProfileGenerator.kt`）、`./gradlew :app:generateReleaseBaselineProfile` |
 | 构建提速（配置/构建缓存） | `gradle.properties` |
+| 改**封面地址**（下多大尺寸、加不加 `param`） | `ui/components/CoverUrls.kt` 的 `coverSizedUrl`（全 app 唯一出口）；调用点 `Artwork` / `BigCoverVisual` / `CoverAccent` / `PlayerDock` / `TrackListChrome` —— **别写裸 `.data(url)`**（Coil 的 `size()` 只管解码，不管下载） |
+| 看真机**实际发出的 URL**（核对 weapi / eapi 前缀） | `adb logcat -s CirroHttp` 的 `--> POST`（tag 定义在 `core/net/CirroTransport.kt`） |
+| 改 CI 出包 / 产物名 / 发版 | `.github/workflows/build.yml`（push `main`/`beta` → artifact）/ `release.yml`（push `v*` tag → GitHub Release） |
 
 ---
 
@@ -118,11 +121,13 @@
 | 改徽标的**画法**（框、字号、颜色、间距） | `ui/components/PayBadge.kt` | 尺寸是照 kanade 截图逐像素量的，改前先读那里的注释 |
 | 改取数编排（冷却 / `n=0` 指纹检查 / 失败兜底 / 大歌单分批补） | `core/repo/CollectionRefresher.kt`（依赖走 `CollectionRemote` / `CollectionStore` / `Clock`） | `CollectionRefresherTest.kt` |
 | 改「页面重新可见时刷不刷新」 | `core/util/RefreshGate.kt` | `app/src/test/.../core/util/RefreshGateTest.kt` |
+| 改**封面地址拼装**（域名后缀判定 / 追加 `param` / 非法尺寸） | `ui/components/CoverUrls.kt` | `app/src/test/.../ui/components/CoverUrlsTest.kt` |
 | 加 / 改接口与实现的绑定 | `di/RepoModule.kt`（`@Binds`） | 缺一个就是 `Dagger/MissingBinding`，编译期报 |
 | 跑全部单测 | `./gradlew :app:testDebugUnitTest` | 纯 JVM，不需模拟器；CI（build.yml / release.yml）在出包前必跑 |
 
-**加新解析时的两条纪律**：① 解析函数放进上面那几个 `*Parsers.kt`，**不要**塞进带
-`Log` / `BuildConfig` / Compose 的 Repository 文件里（那样就测不了）；
+**加新解析时的两条纪律**：① 解析函数放进上面那几个 `*Parsers.kt`，**纯判据 / 地址拼装**放进
+`ui/components/PayTagRules.kt` / `CoverUrls.kt` —— 共同点是**零 Android 依赖**、JVM 直接可测；
+**不要**塞进带 `Log` / `BuildConfig` / Compose 的 Repository 或 Screen 文件里（那样就测不了）；
 ② 断言里写清「这条判据是哪次实测来的」。**别为了让测试变绿而改断言** —— 那等于把实测
 过的口径换成猜测。
 
