@@ -27,8 +27,17 @@ import kotlinx.coroutines.launch
  * 字节流时用它解析签名 URL，并在签名过期（CDN 403）时把它失效以触发重解析。
  */
 interface PlaybackUrlSource {
-    /** 解析 song id 的签名音频 URL；不可播返回 null。运行在加载线程，需阻塞。 */
-    fun resolve(songId: String): String?
+    /**
+     * 解析 song id 的签名音频 URL（附带**试听片段**信息，见 [PlayableUrl]）；
+     * 不可播返回 null。运行在加载线程，需阻塞。
+     */
+    fun resolve(songId: String): PlayableUrl?
+
+    /**
+     * 该曲**已知**的试听信息；只查缓存，不发请求。主线程调用（切歌那一刻要立刻决定收尾方式）。
+     * 未知、已过期、或本来就不是试听 → null。
+     */
+    fun trialOf(songId: String): TrialClip?
 
     /** 丢弃缓存的 URL，下次 [resolve] 重新请求（用于签名过期）。 */
     fun invalidate(songId: String)
@@ -51,6 +60,14 @@ object PlayerHolder {
     // 已为某首歌重试过一次的标记（签名过期原地重试，最多一次，避免死循环）。
     @Volatile
     private var retriedItemId: String? = null
+
+    // 当前曲目是不是**试听片段**（非会员播 VIP 歌时官方只给 30 秒，见 [TrialClip]）。
+    //
+    // 写成 [Volatile] 而不是 Compose 状态：写入发生在加载线程（解析回调投回主线程前的读）
+    // 与主线程（切歌）两处，读取方是 PlayerState 的 250ms 轮询与 togglePlay。
+    // 值的**权威来源只有 URL 响应**：不从 Track.fee / payed 推（已购单曲 fee=1 但是整曲）。
+    @Volatile
+    private var currentTrial: TrialClip? = null
 
     // 当前队列（Track 原始对象）：MediaItem 只带 id+元数据，落盘/恢复需要完整 Track
     // （时长、专辑名等），故由 PlaybackLauncher 在入队时登记。
@@ -129,6 +146,7 @@ object PlayerHolder {
     fun get(context: Context): ExoPlayer = player ?: synchronized(this) {
         player ?: build(context).also {
             it.addErrorRecovery()
+            it.attachTrialTracking()
             it.attachStatePersistence(context.applicationContext)
             player = it
             restore(it, context.applicationContext)
@@ -207,6 +225,94 @@ object PlayerHolder {
         // 不会自动开始缓冲；必须显式 prepare() 才会重新加载下一首的音频。
         prepare()
         play()
+    }
+
+    // ── 试听片段（VIP 歌非会员只给 30 秒，见 TrialClip）──────────────────────────
+
+    /** 当前曲目是否为试听片段；不是（或尚未解析出来）返回 null。UI 与收尾逻辑都读它。 */
+    fun currentTrial(): TrialClip? = currentTrial
+
+    /**
+     * 登记当前曲目的试听身份并据此决定收尾方式。
+     *
+     * ## 两条登记来源，缺一不可
+     *
+     * 1. **切歌那一刻查缓存**（本函数，主线程）。查到的往往是**预加载**过的那首 ——
+     *    ExoPlayer 会在当前曲还没播完时就去解析下一首的 URL，那次解析的回调会因为
+     *    「已经不是当前曲」被丢弃（见 [onResolved]），所以缓存是此刻唯一的线索。
+     * 2. **解析回调补登记**。首次播放时缓存里还没有，切歌那刻查不到。
+     *
+     * 反过来说：只有第 2 条也不行 —— 字节缓冲命中（[PlaybackCache]）时根本不会发起解析，
+     * 于是重播一首缓存过的试听曲将**永远不会**被登记。两条一起才闭合。
+     *
+     * ## 为什么必须显式复位
+     *
+     * [Player.pauseAtEndOfMediaItems] 作用于**每一首**（不是「设置过的某一首」）：上一首
+     * 试听留下的 true 若不复位，下一首正常歌也会在末尾停住、不再连播。所以这里对每一首
+     * 都重算一次：是试听 → true，否则 → false。
+     *
+     * 参数取 [ExoPlayer] 而不是 [Player]：`pauseAtEndOfMediaItems` 是 `ExoPlayer` 自己的
+     * 属性（不在 `Player` 接口上），而全 app 的这个实例本来就是 ExoPlayer。
+     */
+    fun refreshTrial(player: ExoPlayer) {
+        val id = player.currentMediaItem?.mediaId
+        player.applyTrial(id?.let { urlSource?.trialOf(it) })
+    }
+
+    /**
+     * 登记（或清除）当前曲目的试听身份。[trial] 为 null 表示「按整曲播」。
+     *
+     * 状态只落在两个地方，都是播放器自己的：本对象的 [currentTrial]（给 UI 与
+     * [togglePlay] 读）与 [ExoPlayer.pauseAtEndOfMediaItems]（给播放器读）。
+     */
+    private fun ExoPlayer.applyTrial(trial: TrialClip?) {
+        currentTrial = trial
+        // 片段末尾停住，而不是自动跳下一首 —— 官方客户端就是这个语义（用户 2026-10-11 选定）。
+        // 队列整单入队本来是「连播交给 ExoPlayer」的，这里是**唯一**刻意打断连播的地方，
+        // 所以条件必须窄到「确实是官方给的试听片段」。
+        pauseAtEndOfMediaItems = trial != null
+    }
+
+    /**
+     * 解析回来的登记时机：**只在它仍是当前曲目时**才登记。
+     *
+     * 解析是预加载式的 —— 一首歌还在播时，下一首的 URL 可能已经解析完。那条结果若直接
+     * 写进共享状态，就会把「下一首是试听」标到当前曲头上（歌曲 A 播到一半被叫停）。
+     * 判等放在主线程做：`currentMediaItem` 只能在主线程读。
+     */
+    private fun onResolved(id: String, playable: PlayableUrl) {
+        persistScope.launch {
+            val p = player ?: return@launch
+            if (p.currentMediaItem?.mediaId != id) return@launch
+            p.applyTrial(playable.trial)
+        }
+    }
+
+    /**
+     * 播放头是否停在试听片段的末尾。
+     *
+     * 一个判据两处用：**UI 的「试听已结束」提示**与 [togglePlay] 的「重播片段」。两者必须是
+     * 同一条 —— 分开写迟早会出现「界面说结束了、但点播放毫无反应」这种组合。
+     *
+     * 容差取 400ms：比 UI 的 250ms 轮询粗一档，避免把「刚起播」误判成「已到末尾」。
+     * 只认 `pauseAtEndOfMediaItems` 停下后的 `STATE_READY`：缓冲中的 `isPlaying == false`
+     * 不是「结束」，靠 state 把它们分开。
+     */
+    fun isTrialEnded(player: Player): Boolean {
+        if (currentTrial == null) return false
+        if (player.playbackState != Player.STATE_READY) return false
+        val duration = player.duration
+        return duration > 0L && player.currentPosition >= duration - TRIAL_END_EPS_MS
+    }
+
+    /** 切歌/入队时重算试听身份（见 [refreshTrial]）。 */
+    private fun ExoPlayer.attachTrialTracking() {
+        val p = this
+        addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                p.applyTrial(mediaItem?.mediaId?.let { urlSource?.trialOf(it) })
+            }
+        })
     }
 
     /**
@@ -306,10 +412,14 @@ object PlayerHolder {
     fun togglePlay(player: Player) {
         if (player.isPlaying) {
             player.pause()
-        } else {
-            player.ensurePrepared()
-            player.play()
+            return
         }
+        player.ensurePrepared()
+        // 试听片段播完时播放器停在片段末尾（见 [applyTrial]）。此刻若直接 play()，播放头已经在
+        // 末尾、会立刻再次停下 —— 用户读到的是「播放键坏了」。显式回到片段开头重播：
+        // 试听语境下这是最不容易误会的处理（想跳到下一首，用户有 ⏭ 那颗按钮）。
+        if (isTrialEnded(player)) player.seekTo(player.currentMediaItemIndex, 0L)
+        player.play()
     }
 
     /** 统一下一首：error/idle 状态下 seekToNext 后必须 prepare+play 才会加载新曲目。 */
@@ -371,8 +481,10 @@ object PlayerHolder {
             if (id == null) {
                 dataSpec
             } else {
-                val url = urlSource?.resolve(id) ?: throw NoPlayableUrlException(id)
-                dataSpec.withUri(Uri.parse(url))
+                val playable = urlSource?.resolve(id) ?: throw NoPlayableUrlException(id)
+                // 试听身份只能在解析这一刻拿到（body 只在这一层出现过），转交给主线程登记。
+                onResolved(id, playable)
+                dataSpec.withUri(Uri.parse(playable.url))
             }
         }
 
@@ -411,4 +523,7 @@ object PlayerHolder {
 
     // 播放中进度落盘间隔：只靠事件落盘的话，进程被杀时进度最多回退到上次事件那一刻。
     private const val POSITION_SAVE_INTERVAL_MS = 5_000L
+
+    // 「播放头已在试听片段末尾」的容差：比 UI 的 250ms 轮询粗一档。
+    private const val TRIAL_END_EPS_MS = 400L
 }

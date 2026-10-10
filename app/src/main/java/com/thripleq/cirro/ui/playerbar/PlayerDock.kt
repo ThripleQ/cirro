@@ -82,6 +82,7 @@ import coil.imageLoader
 import coil.request.ImageRequest
 import com.thripleq.cirro.Profile
 import com.thripleq.cirro.core.playback.PlayerHolder
+import com.thripleq.cirro.ui.components.CirroTrialBadge
 import com.thripleq.cirro.ui.components.ShimmerImagePlaceholder
 import com.thripleq.cirro.ui.components.coverSizedUrl
 import com.thripleq.cirro.ui.components.swallowPointerInput
@@ -530,13 +531,22 @@ internal fun PlayerBarContent(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(2.dp))
-            Text(
-                text = playerState.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // 「试听」标紧贴歌手名前，位置与列表行「徽标贴在副标题前」同一处语言
+                // （TrackListRows 的 VIP/PAY 也是这么贴的）。间距 2dp 沿用 [CirroPayBadge]
+                // 的实测口径（框右边框到 CJK 首墨 3dp，扣掉字形自带约 1dp 侧边距）。
+                if (playerState.trial != null) {
+                    CirroTrialBadge()
+                    Spacer(Modifier.width(2.dp))
+                }
+                Text(
+                    text = playerState.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         Spacer(Modifier.width(12.dp))
         if (playerState.hasTrack) {

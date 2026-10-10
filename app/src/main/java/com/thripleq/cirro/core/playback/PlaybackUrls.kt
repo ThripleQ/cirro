@@ -6,7 +6,6 @@ import com.thripleq.cirro.core.net.ApiResult
 import com.thripleq.cirro.core.net.NetEaseGateway
 import com.thripleq.cirro.core.net.NeteaseOp
 import dagger.hilt.android.qualifiers.ApplicationContext
-import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -24,6 +23,10 @@ class NoPlayableUrlException(songId: String) : IOException("no playable url for 
  * - SimpleCache 的缓存键是合成 URI，与带时效的签名 URL 解耦 —— URL 轮换不会让已下载的音频失效；
  * - 不再有"点 VIP 歌要线性扫描整单找可播曲"的无上限请求。
  *
+ * 解析的产物是 [PlayableUrl] 而不只是 URL —— 它同时带出响应里的 `freeTrialInfo`
+ * （非会员只能听到的**试听片段**，见 [TrialClip]）。这一项必须在这里取：响应的 body
+ * 只在这一层出现过，播放器与 UI 都拿不到它。判断口径与实测依据全在 [PlayableUrl] 的注释里。
+ *
  * [resolve] 运行在 ExoPlayer 的加载线程（非主线程），因此走 [NetEaseGateway.callBlocking]。
  */
 @Singleton
@@ -31,59 +34,66 @@ class PlaybackUrls @Inject constructor(
     private val gateway: NetEaseGateway,
     @ApplicationContext private val context: Context,
 ) : PlaybackUrlSource {
-    private data class CachedUrl(val url: String?, val at: Long)
+    private data class Cached(val result: PlayableUrl?, val at: Long)
 
-    private val urlCache = ConcurrentHashMap<String, CachedUrl>()
+    private val urlCache = ConcurrentHashMap<String, Cached>()
 
     /**
      * 解析歌曲的音频 URL；解析失败（无版权 / 未登录无权益 / 风控 / 网络）返回 null，
      * 由 ExoPlayer 的加载错误触发 [PlayerHolder] 的"自动跳下一首"。
      */
-    override fun resolve(id: String): String? {
+    override fun resolve(songId: String): PlayableUrl? {
         val now = System.currentTimeMillis()
-        urlCache[id]?.let { hit ->
+        urlCache[songId]?.let { hit ->
             // 成功结果按 CACHE_TTL_MS 复用；失败（null）只短缓存：网络抖动 / VIP 判定
             // 这类失败不该让该曲在 6 小时内被永久跳过。
-            val ttl = if (hit.url != null) CACHE_TTL_MS else FAILURE_TTL_MS
-            if (now - hit.at < ttl) return hit.url
+            val ttl = if (hit.result != null) CACHE_TTL_MS else FAILURE_TTL_MS
+            if (now - hit.at < ttl) return hit.result
         }
-        val url = query(id)
-        urlCache[id] = CachedUrl(url, now)
-        return url
+        val result = query(songId)
+        urlCache[songId] = Cached(result, now)
+        return result
     }
 
     /** 签名 URL 过期（播放中遇 CDN 403）时由 [PlayerHolder] 调用，下次解析重新请求。 */
-    override fun invalidate(id: String) {
-        urlCache.remove(id)
+    override fun invalidate(songId: String) {
+        urlCache.remove(songId)
     }
 
-    private fun query(id: String): String? {
+    /**
+     * 该曲**已知**的试听信息；缓存里没有就返回 null，**绝不发请求**。
+     *
+     * 调用方是 [PlayerHolder] 的 `onMediaItemTransition`（主线程）——切歌那一刻要立刻决定
+     * 「这首要不要在片段末尾停住」。所以这里只能在缓存里查：真正解析发生在加载线程，
+     * 切歌时未必已经回来；解析回来那一路会自己补登记（见 PlayerHolder 的解析回调）。
+     *
+     * TTL 与 [resolve] 同源：过期的条目不再代表当下的权益（用户可能刚买了这首歌，
+     * 也可能刚掉会员），宁可返回 null 让它退化成「按整曲播」，也不要拿旧判据去叫停。
+     */
+    override fun trialOf(songId: String): TrialClip? {
+        val hit = urlCache[songId] ?: return null
+        if (System.currentTimeMillis() - hit.at >= CACHE_TTL_MS) return null
+        return hit.result?.trial
+    }
+
+    private fun query(songId: String): PlayableUrl? {
         // 用户选定的音质档取不到时逐级向下回退（最终兜底 standard），与上游一致。
+        //
+        // 对 VIP 歌这条回退**实际上不会走满**：实测非会员请求 lossless/exhigh，服务端都直接
+        // 返回 standard 档的试听片段（`level` 被钳到 standard、br=128012），第一档就有 url。
         val order = PlaybackPreferences.qualityFallbackOrder(
             PlaybackPreferences.quality(context),
         )
         for (quality in order) {
-            val url = parseUrl(gateway.callBlocking(NeteaseOp.SONG_URL_V1, id, quality))
-            if (url != null) return url
+            val result = parseResult(gateway.callBlocking(NeteaseOp.SONG_URL_V1, songId, quality))
+            if (result != null) return result
         }
         return null
     }
 
-    private fun parseUrl(result: ApiResult): String? {
+    private fun parseResult(result: ApiResult): PlayableUrl? {
         if (result.err != 0) return null
-        return try {
-            val root = JSONObject(String(result.body, Charsets.UTF_8))
-            root.getJSONArray("data")
-                .getJSONObject(0)
-                .optString("url")
-                // 陷阱：不可播时接口返回 `"url": null`，org.json 的 optString 会得到
-                // **字面量 "null"**（不是空串），必须显式过滤，否则会被当成有效 URL，
-                // 既不回退 standard 档、也把 "null" 交给 ExoPlayer 当地址去请求。
-                .takeIf { it.isNotBlank() && it != "null" && it != "undefined" }
-                ?.toHttps()
-        } catch (_: Exception) {
-            null
-        }
+        return parseSongUrlResponse(String(result.body, Charsets.UTF_8))
     }
 
     companion object {
@@ -97,10 +107,6 @@ class PlaybackUrls @Inject constructor(
         /** 从合成 URI 取回歌曲 id；不是本 scheme 则返回 null。 */
         fun songId(uri: Uri): String? =
             if (uri.scheme == SCHEME && uri.host == HOST) uri.lastPathSegment else null
-
-        /** 网易云 CDN 音频 URL 常回 `http://`，Android 禁明文；CDN 同样支持 https。 */
-        internal fun String.toHttps(): String =
-            if (startsWith("http://", ignoreCase = true)) "https://" + substring(7) else this
 
         // 音频 URL 有效期数小时，缓存 6h 后重新解析。
         private const val CACHE_TTL_MS = 6 * 60 * 60 * 1000L

@@ -87,6 +87,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import com.thripleq.cirro.core.playback.PlayerHolder
+import com.thripleq.cirro.ui.components.CirroTrialBadge
 import com.thripleq.cirro.ui.components.FadingMarqueeText
 import com.thripleq.cirro.ui.components.quantizedFontSize
 import kotlinx.coroutines.flow.collect
@@ -732,14 +733,31 @@ internal fun PlayerPageContent(
                     }
                 }
             }
-            // 歌手为空时整行折叠，不留空洞。
-            if (state.artist.isNotEmpty()) {
+            // 歌手为空时整行折叠，不留空洞 —— 但**试听标不跟着折**：它是这一行的主要信息
+            // （歌手名缺失时，用户更需要知道「为什么这首只有 30 秒」）。
+            if (state.artist.isNotEmpty() || state.trial != null) {
                 Spacer(Modifier.height(4.dp))
-                FadingMarqueeText(
-                    text = state.artist,
-                    style = artistStyle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // 「试听」标贴在歌手名前，与曲目列表行「徽标贴在副标题前」同一处语言。
+                    if (state.trial != null) {
+                        CirroTrialBadge()
+                        Spacer(Modifier.width(2.dp))
+                    }
+                    if (state.artist.isNotEmpty()) {
+                        // weight(1f) 是必须的：FadingMarqueeText 内部是
+                        // `BoxWithConstraints(modifier.fillMaxWidth())`，不给权重它会把整行
+                        // 宽度吃光、把左边那枚徽标挤出去（无徽标时它仍占满整行，与改前一致）。
+                        FadingMarqueeText(
+                            text = state.artist,
+                            style = artistStyle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
             }
         }
 
@@ -755,6 +773,34 @@ internal fun PlayerPageContent(
             seekFrozen = seekFrozen,
             durationMs = state.durationMs,
         )
+
+        // 试听片段播完的提示（承接上面「片段末尾停住」的收尾）。
+        //
+        // 三件事都刻意的：
+        // ① **只在全屏档长出来**（高与透明随 sc）—— 卡片档那套版式是逐像素调过的，多一行
+        //    就整体错位；高度 lerp 到 0 则完全不参与布局。
+        // ② 插在进度行**下方**：进度行上方有一条 `Spacer(weight(1f))`，弹性空白会吸收这点
+        //    新高度，所以底部三键与功能胶囊**不会**被顶下去（这也是为什么不插在标题那块：
+        //    那里动一寸，下面全跟着走）。
+        // ③ 文案用 tertiary（与「试听」标同色）而不是报错色：它不是错误，是权益边界。
+        if (state.trialEnded) {
+            Spacer(Modifier.height(androidx.compose.ui.unit.lerp(0.dp, 8.dp, sc)))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(androidx.compose.ui.unit.lerp(0.dp, 18.dp, sc))
+                    .clipToBounds()
+                    .graphicsLayer { alpha = sc },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "试听已结束 · 开通 VIP 可听完整版",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    maxLines = 1,
+                )
+            }
+        }
 
         Spacer(Modifier.height(ctrlGap))
 

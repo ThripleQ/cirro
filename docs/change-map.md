@@ -81,6 +81,9 @@
 | 后台播放通知 / 服务生命周期 | `core/playback/PlaybackService.kt` |
 | 边播边缓存的策略 | `core/playback/PlaybackCache.kt` |
 | 播放页 / 迷你条界面与手势 | `ui/playerbar/PlayerDock.kt` |
+| **歌曲音频 URL 从哪取**（音质档回退 / URL 缓存 / 合成 URI） | `core/playback/PlaybackUrls.kt`；判据与实测依据在 `core/playback/PlayableUrl.kt` |
+| **试听片段**（VIP 歌 + 非会员 → 官方只给 30 秒）：怎么**认出来**、播完怎么**收尾** | 认：`core/playback/PlayableUrl.kt` 的 `freeTrialInfo` → `TrialClip`（**判据只能取自响应，不能拿 `fee`/`payed` 推** —— 已购单曲同样 `fee=1` 但实测是整曲）；收：`PlayerHolder.kt` 的 `refreshTrial` / `applyTrial` / `isTrialEnded` —— 片段末尾用 `ExoPlayer.pauseAtEndOfMediaItems` 停住而**不跳下一首**（用户 2026-10-11 选定，对齐官方） |
+| **「试听」标**与「试听已结束 · 开通 VIP 可听完整版」提示 | 标：`ui/components/TrialBadge.kt`（形制抄 `CirroPayBadge`，颜色用 `tertiary` —— 主色红已被红心占用）。挂载点：`PlayerDock.kt` 迷你条、`PlayerPage.kt` 歌手行 + 进度行下方；状态字段是 `PlayerUiState.trial` / `.trialEnded`（`ui/playerbar/PlayerState.kt`） |
 
 ## 4. 装配与其他
 
@@ -119,6 +122,7 @@
 | 改首页解析（推荐歌单 / 雷达卡 / 猜你喜欢 block） | `core/repo/HomeParsers.kt` | `HomeParsersTest.kt` |
 | 改「已购 / 收藏 / 红心」的 id 镜像解析 | `core/repo/OwnedParsers.kt` | `OwnedParsersTest.kt` |
 | 改付费 / VIP 徽标的**判据**（哪个 fee 标什么） | `ui/components/PayTagRules.kt`（纯 Kotlin，别搬回 `PayBadge.kt`） | `app/src/test/.../ui/components/PayTagRulesTest.kt` |
+| 改**试听片段**的判据（`freeTrialInfo` → 区间）与 URL 解析 | `core/playback/PlayableUrl.kt`（纯 Kotlin，零 Android 依赖） | `app/src/test/.../core/playback/PlayableUrlTest.kt` |
 | 改徽标的**画法**（框、字号、颜色、间距） | `ui/components/PayBadge.kt` | 尺寸是照 kanade 截图逐像素量的，改前先读那里的注释 |
 | 改取数编排（冷却 / `n=0` 指纹检查 / 失败兜底 / 大歌单分批补） | `core/repo/CollectionRefresher.kt`（依赖走 `CollectionRemote` / `CollectionStore` / `Clock`） | `CollectionRefresherTest.kt` |
 | 改「页面重新可见时刷不刷新」 | `core/util/RefreshGate.kt` | `app/src/test/.../core/util/RefreshGateTest.kt` |
@@ -131,6 +135,12 @@
 **不要**塞进带 `Log` / `BuildConfig` / Compose 的 Repository 或 Screen 文件里（那样就测不了）；
 ② 断言里写清「这条判据是哪次实测来的」。**别为了让测试变绿而改断言** —— 那等于把实测
 过的口径换成猜测。
+
+**解析产物的 `data class` 放哪**：`TrialClip` / `PlayableUrl` 这类「**这次解析怎么样**」的类型
+**不进 `core/model`** —— 那里只放接口返回的领域形状（`architecture.md` §一）。它们住在使用方
+旁边（`core/playback/PlayableUrl.kt`），与 `ActionResult` 住在 `InteractionRepository.kt`
+是同一条规矩。判据就一句：**会被列表 / 详情页当数据渲染的形状 → `core/model`；
+只在某条链路内部流转的中间产物 → 跟着那条链路走。**
 
 **要测编排就得先换依赖**：JNI 网关 / Room / `System.currentTimeMillis` /
 `android.util.Log`（空壳，调就抛）这四样在 JVM 上都碰不得。做法是照

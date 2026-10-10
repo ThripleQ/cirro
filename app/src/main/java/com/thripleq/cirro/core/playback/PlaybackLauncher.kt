@@ -56,6 +56,10 @@ class PlaybackLauncher @Inject constructor() {
 
         val idx = index.coerceIn(0, tracks.lastIndex)
         player.setMediaItems(tracks.map(::trackMediaItem), idx, 0L)
+        // 换队列后按新的当前曲重算试听身份。onMediaItemTransition 在 setMediaItems 时的触发
+        // 走的是 Media3 的 PLAYLIST_CHANGED 分支，这里不赌那条语义 —— 它是**上一首试听留下的
+        // `pauseAtEndOfMediaItems` 是否会误作用到这一首**的唯一闸门（见 PlayerHolder.refreshTrial）。
+        PlayerHolder.refreshTrial(player)
         player.prepare()
         player.play()
 

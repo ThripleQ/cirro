@@ -24,6 +24,8 @@ import androidx.media3.common.Player
 import com.thripleq.cirro.Home
 import com.thripleq.cirro.Profile
 import com.thripleq.cirro.Search
+import com.thripleq.cirro.core.playback.PlayerHolder
+import com.thripleq.cirro.core.playback.TrialClip
 import kotlinx.coroutines.delay
 
 /**
@@ -57,6 +59,10 @@ data class PlayerUiState(
     val shuffleEnabled: Boolean = false,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val errorText: String? = null,
+    /** 当前曲是试听片段（非会员播 VIP 歌）时的区间；不是试听则 null。 */
+    val trial: TrialClip? = null,
+    /** 试听片段已播完并停在末尾（不是「正在播」也不是「缓冲中」）。 */
+    val trialEnded: Boolean = false,
 )
 
 /**
@@ -96,7 +102,19 @@ fun rememberPlayerState(
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                if (meta.trackId != mediaItem?.mediaId) meta = meta.copy(trackId = mediaItem?.mediaId)
+                if (meta.trackId == mediaItem?.mediaId) return
+                // 切歌时**同时**换掉试听身份，不能只改 trackId：`onMediaMetadataChanged` 与这里的
+                // `meta.copy` 都不碰 trial，上一首的「试听」标会挂到新歌头上、直到下一次 250ms
+                // 轮询才被纠正 —— 那是一次肉眼可见的闪动，正好发生在新歌刚开始播的时候。
+                // 此刻读到的是 PlayerHolder 刚在 transition 里登记好的值（它的 listener 先注册、
+                // 先执行），所以这里是权威的、不是抢跑。
+                val trial = PlayerHolder.currentTrial()
+                meta = meta.copy(
+                    trackId = mediaItem?.mediaId,
+                    trial = trial,
+                    // 新曲刚起播，必然不在片段末尾；trialEnded 交给轮询与 isTrialEnded 判。
+                    trialEnded = false,
+                )
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
@@ -141,14 +159,30 @@ fun rememberPlayerState(
             hasTrack = player.currentMediaItem != null,
             shuffleEnabled = player.shuffleModeEnabled,
             repeatMode = player.repeatMode,
+            trial = PlayerHolder.currentTrial(),
+            trialEnded = PlayerHolder.isTrialEnded(player),
         )
         try {
             while (true) {
-                // hasTrack / duration 由 listener 与这里共同维护；只在真实变化时写 meta。
+                // hasTrack / duration / 试听状态由 listener 与这里共同维护；只在真实变化时写 meta。
+                //
+                // 试听这两项**必须在这里轮询**：它们的变化（解析回来、片段播完停下）都不伴随
+                // 上面那些事件 —— 片段末尾停住时没有 onMediaItemTransition（正是我们想要的
+                // 不切歌），isPlaying 变 false 也只是普通暂停事件，单看它分不出「暂停」与
+                // 「试听播完」。所以判据统一走 PlayerHolder.isTrialEnded。
                 val hasTrack = player.currentMediaItem != null
                 val duration = effectiveDurationMs()
-                if (meta.hasTrack != hasTrack || meta.durationMs != duration) {
-                    meta = meta.copy(hasTrack = hasTrack, durationMs = duration)
+                val trial = PlayerHolder.currentTrial()
+                val trialEnded = PlayerHolder.isTrialEnded(player)
+                if (meta.hasTrack != hasTrack || meta.durationMs != duration ||
+                    meta.trial != trial || meta.trialEnded != trialEnded
+                ) {
+                    meta = meta.copy(
+                        hasTrack = hasTrack,
+                        durationMs = duration,
+                        trial = trial,
+                        trialEnded = trialEnded,
+                    )
                 }
                 delay(250)
             }
