@@ -441,4 +441,34 @@ object Motion {
         fun smooth(x: Float) = x * x * (3f - 2f * x)
         return RevealBlurMaxPx * (1f - smooth(t.coerceIn(0f, 1f)))
     }
+
+    // ── 浮层进出（[RevealEnabled] 关闭时唯一还活着的转场）─────────────
+    //
+    // 为什么需要单独一组：站内「打开一层盖在页面之上的东西」有三条路 ——
+    //   · 导航目的地（详情页）：转场由 NavHost 的 fade + slide 兜底；
+    //   · 展开壳（歌单 / 已购面板）：由 ExpandableShell / sharedBounds 自己演；
+    //   · **评论浮层**：它不是导航目的地、也没有壳，唯一的转场原本是 origin-reveal。
+    // 而 reveal 一旦全局关闭，`RevealLayer` 就直接透传内容 ⇒ 评论浮层**瞬现瞬没**
+    // （2026-10-10 用户：「打开评论区没做动画」）。这组数就是它的兜底：像一块面那样
+    // 浮上来 —— 与 [ShellPanelInMs] 同族，但更短，因为它是浮层、不是页面。
+
+    /** 浮层进入时长。 */
+    const val OverlayEnterMs = 240
+
+    /** 浮层退出时长：比进入短，让位要利索（与 [NavExitMs] 同一取向）。 */
+    const val OverlayExitMs = 180
+
+    /** 起点的缩放（<1）：从略微小一点长到全屏，读作「浮上来」。 */
+    const val OverlayEnterScale = 0.96f
+
+    /** 起点的下沉量（dp）：t=0 时整体偏下，随进度归位。 */
+    const val OverlayRiseDp = 16f
+
+    /** 浮层进入 spec。 */
+    fun overlayEnter(): FiniteAnimationSpec<Float> =
+        tween(OverlayEnterMs, easing = EmphasizedDecelerate)
+
+    /** 浮层退出 spec。 */
+    fun overlayExit(): FiniteAnimationSpec<Float> =
+        tween(OverlayExitMs, easing = Emphasized)
 }

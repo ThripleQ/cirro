@@ -19,7 +19,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.lerp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.core.animateFloat
@@ -215,7 +220,15 @@ fun CirroApp() {
     LaunchedEffect(commentsThreadId) { if (commentsThreadId == null) commentsArmed = false }
     val commentsProgress = animateFloatAsState(
         targetValue = if (commentsThreadId != null && commentsArmed) 1f else 0f,
-        animationSpec = if (commentsThreadId != null && commentsArmed) Motion.revealEnter() else Motion.revealExit(),
+        // reveal 开着时几何由 RevealLayer 解释（窗口从评论按钮矩形长到全屏），时长走 reveal 那套；
+        // 关着时它只透传内容，转场由下面那层 graphicsLayer 承担 —— 两套 spec 必须成对换
+        // （revealEnter 带 48ms 起手延迟，是给"起点贴住被点对象"用的；淡入不需要等）。
+        animationSpec = when {
+            Motion.RevealEnabled ->
+                if (commentsThreadId != null && commentsArmed) Motion.revealEnter() else Motion.revealExit()
+            else ->
+                if (commentsThreadId != null && commentsArmed) Motion.overlayEnter() else Motion.overlayExit()
+        },
         label = "commentsReveal",
     )
     // 只在「可见或退场未结束」时组合浮层；derivedStateOf 保证逐帧进度变化不触发重组。
@@ -488,16 +501,49 @@ fun CirroApp() {
         // 置于 PlayerDock 之后：绘制顺序在播放页之上；播放页仍在组合中、保持打开。
         // BackHandler 在 CommentsScreen 内，晚于 PlayerPage 注册，返回键优先关评论。
         if (commentsLayerVisible && commentsShownThread.isNotEmpty()) {
-            RevealLayer(
-                fromRect = commentsOrigin,
-                progress = commentsProgress,
-                onFirstLayout = { commentsArmed = true },
+            // reveal 关着时 [RevealLayer] 只会**透传内容**（`RevealEnabled == false` 时它早退）：
+            // 既不叠浮现层，也**不回调 onFirstLayout**。于是两件事都没人管 ——
+            //   ① 没人 arm ⇒ `commentsProgress` 恒为 0；
+            //   ② 浮层没有任何转场。
+            // 详情页那类有 NavHost 的 fade + slide 兜底，**评论浮层不是导航目的地**（不经 NavHost），
+            // 所以这两件事只能在这里自己补（2026-10-10 用户：「打开评论区没做动画」）。
+            val overlayRisePx = with(LocalDensity.current) { Motion.OverlayRiseDp.dp.toPx() }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    // 兜底 arm：内容首次布局后起手 —— 与 reveal 路径同一个语义（第一帧必须
+                    // 停在起点、不能已经长大）。reveal 开着时交给 RevealLayer 自己回调，
+                    // 这里就不再插一手（多 arm 一次会让浮现提前一帧起跑）。
+                    .then(
+                        if (Motion.RevealEnabled) Modifier
+                        else Modifier.onGloballyPositioned { commentsArmed = true },
+                    )
+                    // 兜底转场：淡入 + 从"略微缩小 + 偏下"长到全屏，读作一块面浮上来。
+                    // 只在 reveal 关着时生效；开着时进度被 RevealLayer 解释成浮现几何，
+                    // 这里保持恒等变换（同一帧内两个 alpha 叠乘会double-dip）。
+                    // 读 progress 在 draw 阶段，逐帧动画不触发重组。
+                    .graphicsLayer {
+                        if (!Motion.RevealEnabled) {
+                            val t = commentsProgress.value
+                            alpha = t
+                            val s = lerp(Motion.OverlayEnterScale, 1f, t)
+                            scaleX = s
+                            scaleY = s
+                            translationY = (1f - t) * overlayRisePx
+                        }
+                    },
             ) {
-                CommentsScreen(
-                    threadId = commentsShownThread,
-                    onBack = { commentsThreadId = null },
-                    islandHeight = 0f,
-                )
+                RevealLayer(
+                    fromRect = commentsOrigin,
+                    progress = commentsProgress,
+                    onFirstLayout = { commentsArmed = true },
+                ) {
+                    CommentsScreen(
+                        threadId = commentsShownThread,
+                        onBack = { commentsThreadId = null },
+                        islandHeight = 0f,
+                    )
+                }
             }
         }
         }
