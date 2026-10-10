@@ -57,11 +57,16 @@ import com.valentinilk.shimmer.shimmer
  *
  * [payTags] 非空时在「歌手 - 专辑」前面贴付费/VIP 徽标（kanade 的歌曲信息设计，
  * 位置与尺寸见 [CirroPayBadge]；取值见 [rememberPayTags]，别在调用点手工拼）。
+ *
+ * [onMore] 是 ⋮ 的动作（单曲级菜单：下一首播放 / 喜欢 / 评论 / 分享，见 [TrackMenuSheet]）。
+ * ⋮ **不是**可选装饰：它是「喜欢 / 已购 / 每日推荐」这三类本地列表里唯一的评论入口
+ * （这三类没有列表级评论线），所以永远要接上。
  */
 @Composable
 internal fun TrackListRow(
     track: Track,
     onClick: () -> Unit,
+    onMore: () -> Unit,
     modifier: Modifier = Modifier,
     payTags: List<PayTag> = emptyList(),
 ) {
@@ -119,11 +124,14 @@ internal fun TrackListRow(
         }
         // ⋮ 用 44dp 触控盒而不是 [IconButton]：M3 的 IconButton 有 48dp 最小高度，
         // 大于 44dp 封面，会把整行撑到 66dp —— 行距就和官方（62dp）对不上了。
+        //
+        // 内层 clickable 会吃掉事件，不会连带触发整行的 onClick（点一下播这首）——
+        // 正是要的：⋮ 是「我要对这首歌做别的」，不是「播它」。
         Box(
             Modifier
                 .size(TrackListMetrics.RowCover)
                 .clip(CircleShape)
-                .clickable { /* 三点菜单：暂无功能 */ },
+                .clickable(onClick = onMore),
             contentAlignment = Alignment.Center,
         ) {
             Icon(

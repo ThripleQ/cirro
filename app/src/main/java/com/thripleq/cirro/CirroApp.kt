@@ -1,5 +1,6 @@
 package com.thripleq.cirro
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SharedTransitionLayout
@@ -25,7 +26,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
-import androidx.hilt.navigation.compose.hiltViewModel
+// 非 deprecated 的那一处（`androidx.hilt.navigation.compose` 只是转发的旧位置，站内其余文件
+// 已统一到下面这个包）；改这一行两处 `hiltViewModel()` 的弃用告警一起消掉，行为不变。
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -47,6 +50,10 @@ import com.thripleq.cirro.ui.components.CommentsOpener
 import com.thripleq.cirro.ui.components.LocalCommentsOpener
 import com.thripleq.cirro.ui.components.LocalOwnedTracks
 import com.thripleq.cirro.ui.components.RevealLayer
+import com.thripleq.cirro.ui.menu.LocalTrackMenu
+import com.thripleq.cirro.ui.menu.TrackMenuController
+import com.thripleq.cirro.ui.menu.TrackMenuHost
+import com.thripleq.cirro.ui.menu.TrackMenuViewModel
 import com.thripleq.cirro.ui.playerbar.BottomTab
 import com.thripleq.cirro.ui.playerbar.PlayerDock
 import com.thripleq.cirro.ui.playerbar.rememberPlayerDockState
@@ -161,6 +168,20 @@ fun CirroApp() {
     // （原先 WebLogin 里 getBackStackEntry<Profile>() 在当前不在 Profile 栈时会崩）。
     val profileVm: ProfileViewModel = hiltViewModel()
 
+    // 曲目 ⋮ 菜单：控制器与状态 VM 都挂在根上，和评论浮层同一层 —— 它要被**任意列表
+    // 深处**的曲目行触发（歌单 / 榜单 / 专辑 / 喜欢 / 已购 / 每日推荐 / 搜索结果…），
+    // 而菜单要做的事（下一首播放 / 喜欢 / 评论 / 分享）与是哪个列表毫无关系。
+    // 见 [TrackMenuController] 的说明。
+    //
+    // 注意这里**不读** `trackMenu.target`：状态读在 [TrackMenuHost] 内部（它自带重组
+    // 作用域），否则菜单一开一关会把整棵导航树一起重组。
+    val trackMenu = remember { TrackMenuController() }
+    val trackMenuVm: TrackMenuViewModel = hiltViewModel()
+    // 喜欢失败 / 未登录 / 喜欢成功的提示。菜单是根上这一份，Toast 也在这里弹。
+    LaunchedEffect(trackMenuVm) {
+        trackMenuVm.message.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+    }
+
     val backStackEntry by navController.currentBackStackEntryAsState()
     val destination = backStackEntry?.destination
 
@@ -269,6 +290,7 @@ fun CirroApp() {
         CompositionLocalProvider(
             LocalCommentsOpener provides commentsOpener,
             LocalOwnedTracks provides ownedTracks,
+            LocalTrackMenu provides trackMenu,
         ) {
         // 浮现目标的中性转场时长：**必须 ≥ RevealLayer 自己的动画**，否则 AnimatedContent
         // 会先结束、把下层来源页撤掉，而浮现窗口还没铺满 → 露背景。多给一点余量。
@@ -546,6 +568,12 @@ fun CirroApp() {
                 }
             }
         }
+
+        // ---- 曲目 ⋮ 菜单（全站共用一份）----
+        // 与评论浮层、已购镜像同一套办法：深处要用、来源在根上。放在 provider 之内
+        // 是为了让它拿得到 [LocalCommentsOpener]（「评论」那一项要用）。
+        // 面板本身是 ModalBottomSheet（独立窗口），画在哪一层都不影响层级。
+        TrackMenuHost(controller = trackMenu, vm = trackMenuVm)
         }
     }
 }

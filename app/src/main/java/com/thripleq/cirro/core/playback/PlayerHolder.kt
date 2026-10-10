@@ -77,6 +77,34 @@ object PlayerHolder {
     }
 
     /**
+     * 把 [track] 插到当前曲目的下一首位置（「下一首播放」）。
+     *
+     * ## 为什么必须同时改两份队列
+     *
+     * 播放器的队列（[MediaItem]）与 [currentQueue]（[Track]）是**按下标一一对应**的两份：
+     * 落盘时用 `currentQueue[p.currentMediaItemIndex]` 取当前曲目（见 [persist]）。
+     * 只往播放器里插、不动 [currentQueue]，两边下标就错开一格 —— 此后每次落盘都写错歌，
+     * 下次冷启动恢复出来的是**另一首**。所以插入是「两份一起插同一个位置」的原子动作。
+     *
+     * 两份长度本来就对不上（例如恢复失败、或外部改过播放器队列）时**只插播放器**：
+     * 这种情况下 [currentQueue] 已经不是权威映射，硬插只会把错位固定下来。等下一次
+     * `setMediaItems`（PlaybackLauncher.play）重建两边的一致性。
+     *
+     * 必须在主线程调用（ExoPlayer 非线程安全）。
+     */
+    fun insertNext(context: Context, track: Track) {
+        val p = get(context)
+        if (p.mediaItemCount == 0) return
+        // 入队**前**的长度，用来判断两份是否一致（add 之后就都是加过的了）。
+        val inSync = currentQueue.size == p.mediaItemCount
+        val at = (p.currentMediaItemIndex + 1).coerceIn(0, p.mediaItemCount)
+        p.addMediaItem(at, trackMediaItem(track))
+        if (inSync) {
+            currentQueue = currentQueue.toMutableList().apply { add(at.coerceIn(0, size), track) }
+        }
+    }
+
+    /**
      * 前台服务销毁时回调（用户划掉通知 / 系统回收服务）：复位标记。
      * 否则标记仍为 true，之后的播放路径会跳过 [ensureForegroundService]，
      * 导致没有媒体通知、进程在后台也更易被系统回收。

@@ -26,6 +26,26 @@ class PlaybackLauncher @Inject constructor() {
     /** Plays a single track. */
     fun play(context: Context, track: Track) = play(context, listOf(track), 0)
 
+    /**
+     * 「下一首播放」：把 [track] 插到当前曲目**之后**，不打断正在播的这首。
+     *
+     * 队列还是空的（进程刚起、从没播过东西）就直接播它 —— 插到一个不存在的队列里
+     * 等于什么都没发生，用户读到的是「点了没反应」。
+     *
+     * ⚠️ 已知限制：开着随机播放时 ExoPlayer 会重算随机序，插入的这首**不保证**真的
+     * 接着播（`addMediaItem(index)` 的 index 是未随机序里的下标）。要彻底解决得先关掉
+     * 随机再插，那是在替用户改设置；这里选择保留用户设置、接受这个不精确。
+     * 该限制同样适用于曲序（插入位置以后仍按未随机序保存）。
+     */
+    fun playNext(context: Context, track: Track) {
+        val player = PlayerHolder.get(context)
+        if (player.mediaItemCount == 0) {
+            play(context, track)
+            return
+        }
+        PlayerHolder.insertNext(context, track)
+    }
+
     /** Plays [tracks] as the queue, starting at [index]. */
     fun play(context: Context, tracks: List<Track>, index: Int) {
         if (tracks.isEmpty()) return

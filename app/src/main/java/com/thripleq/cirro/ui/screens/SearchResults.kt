@@ -52,6 +52,7 @@ import com.thripleq.cirro.ui.components.CirroLoadMoreIndicator
 import com.thripleq.cirro.ui.components.CirroMediaRow
 import com.thripleq.cirro.ui.components.rememberPayTags
 import com.thripleq.cirro.ui.components.SharedKeys
+import com.thripleq.cirro.ui.menu.rememberTrackMenuOpener
 import com.thripleq.cirro.ui.search.SearchTab
 import com.thripleq.cirro.ui.search.SearchUiState
 import com.thripleq.cirro.ui.theme.Motion
@@ -182,6 +183,8 @@ private fun ResultList(
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
 ) {
+    // 曲目行的 ⋮ 走全站共用的那一份菜单（见 [rememberTrackMenuOpener]）。
+    val openTrackMenu = rememberTrackMenuOpener()
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
@@ -203,7 +206,9 @@ private fun ResultList(
                     payTags = rememberPayTags(track),
                     onClick = { onPlayTrack(index) },
                     trailing = {
-                        IconButton(onClick = { /* 三点菜单：暂无功能 */ }) {
+                        // 与列表页的曲目行同一个 ⋮：单曲级动作全站共用一份实现
+                        // （下一首播放 / 喜欢 / 评论 / 分享），见 [openTrackMenu]。
+                        IconButton(onClick = { openTrackMenu(track) }) {
                             Icon(
                                 Icons.Filled.MoreVert,
                                 contentDescription = "更多",

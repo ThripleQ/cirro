@@ -24,6 +24,30 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * 一类列表**支持哪些列表级动作**。
+ *
+ * 存在的理由：六类列表长得一样，但它们的**来源不同**，能做的事也就不同 ——
+ * `chart / playlist / album` 在服务端是真实对象（有歌单/专辑对象、有评论线），
+ * 而 `liked / purchased / daily` 是本地拿 uid + 已有曲目**拼出来的壳**，服务端没有
+ * 对应的对象。
+ *
+ * 于是问题不是「怎么让按钮生效」，而是**按钮该不该出现**：给本地列表画一颗「收藏」
+ * 或「评论」，它唯一能做的反应是弹一句「不支持」—— 那不是功能，是把实现细节泄露给用户。
+ * 所以 UI 一律按本表组装：**支持才画，画了就一定能做**。
+ */
+data class TrackListCapabilities(
+    /**
+     * 服务端有没有**这个列表自己的**评论线。
+     *
+     * 注意范围是「列表级」：单曲评论与列表来源无关（每首歌都有 `R_SO_4_`），
+     * 它在曲目行的 ⋮ 菜单里，不受本项影响。
+     */
+    val comments: Boolean,
+    /** 能收藏这个列表本身（歌单/榜单一条接口，专辑另一条）。 */
+    val subscribe: Boolean,
+)
+
 /** Which data source a [TrackListScreen] shows. */
 enum class TrackListSource(val wire: String, val label: String) {
     CHART("chart", "榜单"),
@@ -35,7 +59,19 @@ enum class TrackListSource(val wire: String, val label: String) {
     /** 每日推荐歌曲（探索页「精选推荐」卡入口；无后端壳，ViewModel 组装简化壳）。 */
     DAILY("daily", "每日推荐");
 
+    val capabilities: TrackListCapabilities
+        get() = when (this) {
+            PLAYLIST, CHART, ALBUM -> ServerBacked
+            LIKED, PURCHASED, DAILY -> LocalShell
+        }
+
     companion object {
+        /** 服务端有真实对象：能评论、能收藏。 */
+        private val ServerBacked = TrackListCapabilities(comments = true, subscribe = true)
+
+        /** 本地拼的壳：列表级评论与收藏都不成立。 */
+        private val LocalShell = TrackListCapabilities(comments = false, subscribe = false)
+
         fun from(wire: String): TrackListSource =
             entries.firstOrNull { it.wire == wire } ?: PLAYLIST
     }
@@ -92,7 +128,7 @@ class TrackListViewModel @Inject constructor(
     private val _sort = MutableStateFlow(TrackSort.DEFAULT)
     val sort: StateFlow<TrackSort> = _sort.asStateFlow()
 
-    /** 一次性提示（收藏失败、不支持收藏…）：由界面弹 Toast。 */
+    /** 一次性提示（收藏失败、刷新结果…）：由界面弹 Toast。 */
     private val _message = MutableSharedFlow<String>(replay = 0, extraBufferCapacity = 1)
     val message: SharedFlow<String> = _message.asSharedFlow()
 
@@ -211,8 +247,12 @@ class TrackListViewModel @Inject constructor(
      * 走**乐观更新**：先把按钮翻过去、收藏数 ±1，请求失败再翻回来并提示。
      * 写接口是「设成目标态」而不是「切换」（重复调幂等），所以这样安全。
      *
-     * 歌单与榜单是一条接口（榜单 id 就是歌单 id），专辑是另一条；喜欢 / 已购 /
-     * 每日推荐这三类没有后端壳、本来就不支持收藏，给一句明确的话而不是静默失败。
+     * 歌单与榜单是一条接口（榜单 id 就是歌单 id），专辑是另一条。
+     *
+     * 喜欢 / 已购 / 每日推荐这三类**根本不会送到这里** —— 界面上那枚收藏按钮对它们
+     * 不出现（判据见 [TrackListCapabilities]，头部与面板行都读它）。这里的分支是一道
+     * 兜底：哪天多出个入口忘了判能力，也只会得到一句人话，而不是真去拿一个「不存在的
+     * 歌单 id」调接口。
      */
     fun toggleSubscribe() {
         val (source, _, _) = lastArgs ?: return
@@ -258,6 +298,51 @@ class TrackListViewModel @Inject constructor(
             profileRepo.cacheSubscribed(next.id, subscribed, next.subscribedCount)
         }
         _uiState.value = readyOr(next)
+    }
+
+    /* ── 列表级动作 ───────────────────────────────────────────────── */
+
+    /**
+     * 「随机播放」这一张列表：把**当前视图顺序**（含用户选的排序）打乱后整单播。
+     *
+     * 走「预先打乱的队列」而不是打开 ExoPlayer 的 shuffle 开关：
+     *   · 播放页看到的就是**真实播放顺序**（队列 UI 与听到的一致）；
+     *   · 不改动用户那个 shuffle 开关的状态 —— 官方那也是「随机播一次」，不是替他改设置。
+     *
+     * 会弹出播放页，与 [onPlayAll] 同一条路（列表里点某一首才不弹，见 [onTrackClick]）。
+     */
+    fun shuffleAll() {
+        val base = loaded ?: return
+        val tracks = base.applySort(_sort.value).tracks.shuffled()
+        if (tracks.isEmpty()) return
+        viewModelScope.launch {
+            playback.play(context, tracks, 0)
+            _openPlayer.tryEmit(Unit)
+        }
+    }
+
+    /**
+     * 手动刷新这一张列表（跳过冷却，无条件真拉一次）。
+     *
+     * 本地拼的三张列表（喜欢 / 已购 / 每日推荐）尤其需要它：它们的内容**会在别处变**
+     * —— 官方 App 里加了喜欢、买了歌，或每日推荐跨天换了一批 —— 而本屏只在进入时拉一次。
+     * 加载失败时**保留现有列表**并提示，不把用户已看到的内容推进错误态。
+     *
+     * 成功也给一句「已刷新」：这个动作大多在几百毫秒内完成、画面几乎没有变化，
+     * 没有反馈就分不清「刷过了」和「点漏了」。
+     */
+    fun refresh() {
+        val (source, id, title) = lastArgs ?: return
+        viewModelScope.launch {
+            val refreshed = fetchOf(source, id, title, force = true)
+            if (refreshed == null) {
+                _message.tryEmit("刷新失败，稍后再试")
+                return@launch
+            }
+            loaded = refreshed
+            _uiState.value = readyOr(refreshed)
+            _message.tryEmit("已刷新")
+        }
     }
 
     /** 按当前排序把 [base] 变成视图状态。 */

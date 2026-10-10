@@ -18,10 +18,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.Sort
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +56,7 @@ import com.thripleq.cirro.core.model.TrackCollection
 import com.thripleq.cirro.ui.components.BannerCoverSize
 import com.thripleq.cirro.ui.components.BigCoverVisual
 import com.thripleq.cirro.ui.components.LocalShellHeroAlpha
+import com.thripleq.cirro.ui.profile.TrackListCapabilities
 import com.thripleq.cirro.ui.theme.CirroShape
 import java.util.Locale
 
@@ -65,10 +67,25 @@ import java.util.Locale
  *
  * 全部墨色走主题色（onSurface / onSurfaceVariant），因为背后是 `surface` 蒙过的糊底，
  * 明暗两套都压得住——不需要 on-image 那套白字。
+ *
+ * ## 三枚胶囊按 [capabilities] 组装，不是写死的三颗
+ *
+ * 六类列表共用这一个头部，但能做的**列表级**动作不同（见 `TrackListCapabilities`）：
+ *
+ * | 列表来源 | 三枚 |
+ * |---|---|
+ * | 歌单 / 榜单 / 专辑（服务端有真实对象） | 分享 · 评论 · 收藏 |
+ * | 喜欢 / 已购 / 每日推荐（本地拼的壳） | 分享 · 随机播放 · 刷新 |
+ *
+ * 右列那两枚是**替换**关系而不是「灰掉」关系：本地列表画一颗点不动的「收藏」、
+ * 点了只弹一句「不支持收藏」，那不是功能、是把实现细节泄露给用户。而随机播放与刷新
+ * 恰恰是这三类列表**真正需要**的两个动作（喜欢/已购的内容会在别处变、每日推荐每天换）。
+ * 于是三枚永远齐整、也永远都有用。
  */
 @Composable
 internal fun TrackListHeader(
     collection: TrackCollection,
+    capabilities: TrackListCapabilities,
     onCoverRect: ((Rect) -> Unit)?,
     onCoverReady: (() -> Unit)?,
     watermarkIcon: ImageVector?,
@@ -79,6 +96,10 @@ internal fun TrackListHeader(
     /** 评论键：参数是按钮自己的窗口矩形，作为评论浮层的浮现起点。 */
     onComments: (Rect) -> Unit,
     onSubscribe: () -> Unit,
+    /** 整单随机播放（本地列表的第三枚，见上面的表）。 */
+    onShuffle: () -> Unit,
+    /** 手动刷新这张列表（本地列表的第二枚，见上面的表）。 */
+    onRefresh: () -> Unit,
     coverSharedModifier: Modifier = Modifier,
 ) {
     // 展开动画期间 hero 正顶着封面：本封面与 hero 互补，避免两层重影（见 LocalShellHeroAlpha）。
@@ -185,8 +206,8 @@ internal fun TrackListHeader(
             }
         }
         Spacer(Modifier.height(16.dp))
-        // 三枚等宽操作胶囊（分享 / 评论 / 收藏）。三枚都是真动作：
-        // 分享走系统分享面板（带官方链接）、评论打开歌单评论线、收藏切换订阅。
+        // 三枚等宽操作胶囊，按 [capabilities] 组装（服务端：分享/评论/收藏；
+        // 本地壳：分享/随机播放/刷新 —— 见本函数的表）。三枚都是真动作。
         //
         // 评论键要把自己的窗口矩形交出去（评论浮层从这颗按钮处浮现），所以这一枚
         // 单独挂 `onGloballyPositioned` —— 另外两枚不需要，别顺手全挂上（每次布局
@@ -201,23 +222,42 @@ internal fun TrackListHeader(
                 modifier = Modifier.weight(1f),
                 onClick = onShare,
             )
-            var commentRect by remember { mutableStateOf(Rect.Zero) }
-            TrackListAction(
-                icon = Icons.Outlined.ChatBubbleOutline,
-                label = "评论",
-                modifier = Modifier
-                    .weight(1f)
-                    .onGloballyPositioned { commentRect = it.boundsInWindow() },
-                onClick = { onComments(commentRect) },
-            )
-            TrackListAction(
-                // 已收藏给实心 + 主色：与播放页那颗红心同一套「点亮」语言。
-                icon = if (collection.subscribed) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                label = collection.subscribedCount.takeIf { it > 0 }?.let(::formatCount) ?: "收藏",
-                modifier = Modifier.weight(1f),
-                onClick = onSubscribe,
-                active = collection.subscribed,
-            )
+            if (capabilities.comments) {
+                var commentRect by remember { mutableStateOf(Rect.Zero) }
+                TrackListAction(
+                    icon = Icons.Outlined.ChatBubbleOutline,
+                    label = "评论",
+                    modifier = Modifier
+                        .weight(1f)
+                        .onGloballyPositioned { commentRect = it.boundsInWindow() },
+                    onClick = { onComments(commentRect) },
+                )
+            } else {
+                TrackListAction(
+                    icon = Icons.Outlined.Shuffle,
+                    label = "随机播放",
+                    modifier = Modifier.weight(1f),
+                    onClick = onShuffle,
+                )
+            }
+            if (capabilities.subscribe) {
+                TrackListAction(
+                    // 已收藏给实心 + 主色：与播放页那颗红心同一套「点亮」语言。
+                    icon = if (collection.subscribed) Icons.Filled.Favorite
+                    else Icons.Outlined.FavoriteBorder,
+                    label = collection.subscribedCount.takeIf { it > 0 }?.let(::formatCount) ?: "收藏",
+                    modifier = Modifier.weight(1f),
+                    onClick = onSubscribe,
+                    active = collection.subscribed,
+                )
+            } else {
+                TrackListAction(
+                    icon = Icons.Outlined.Refresh,
+                    label = "刷新",
+                    modifier = Modifier.weight(1f),
+                    onClick = onRefresh,
+                )
+            }
         }
         //
         // 2026-10-03 撤掉「面板上沿的投影」：这里原先压了一条 8dp 的 `Transparent → Scrim`
@@ -279,7 +319,7 @@ private fun TrackListAction(
 /* ── 面板首行：播放全部 ────────────────────────────────────────── */
 
 /**
- * 「播放全部」行：红圆钮 + 标题 + 曲目数/播放量 + 右侧三枚图标。
+ * 「播放全部」行：红圆钮 + 标题 + 曲目数/播放量 + 右侧图标。
  *
  * ## 颜色只从圆钮身后出来
  *
@@ -290,16 +330,30 @@ private fun TrackListAction(
  * 副标题里「N首」用常规墨色、播放量用 tertiary（暖金）——官方那句「含20首VIP歌曲」是金色，
  * 本地没有 VIP 信息，就把金色留给「数据」这一档，位置与视觉权重与官方一致。
  *
+ * ## 行尾图标：三枚全都是真动作
+ *
+ * 官方这一行是「收藏 / 下载 / 排序」。这里换掉了其中的**下载**：
+ *
+ * - 下载在 cirro 里从来没有落地过，一直是个点了弹「开发中」的占位。离线下载要连
+ *   `PlaybackCache`（512MB LRU，**可被淘汰**）一起设计「已下载」状态与容量策略，
+ *   仓促做出来会变成一个会撒谎的按钮 —— 那是单独一轮的事（见 2026-10-10 记录）。
+ * - 空出来的位置给**随机播放**：六类列表都需要它（官方喜欢页自己也有这一颗），
+ *   而它在这里是实打实能做的 —— 与头部的收藏胶囊同一个「同一动作的第二个入口」思路。
+ *
+ * 收藏那一枚受 [subscribeEnabled] 控制：喜欢 / 已购 / 每日推荐是本地拼的壳，
+ * 没有可收藏的对象，画一颗点不动的收藏不如不画（判据见 `TrackListCapabilities`）。
+ *
  * @param accent 封面派生的强调色；取色失败时它等于 `surface`，晕自然不可见（不是 bug）
  */
 @Composable
 internal fun PlayAllRow(
     collection: TrackCollection,
     accent: Color,
+    /** 这个列表能不能收藏（本地拼的壳不能）—— false 时那一枚不出现。 */
+    subscribeEnabled: Boolean,
     onPlayAll: () -> Unit,
     onSubscribe: () -> Unit,
-    /** 下载：仍是占位（离线下载要连播放器一起改，单独一轮）。 */
-    onDownload: () -> Unit,
+    onShuffle: () -> Unit,
     onSort: () -> Unit,
 ) {
     Row(
@@ -376,13 +430,16 @@ internal fun PlayAllRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        PanelIcon(
-            icon = if (collection.subscribed) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-            label = "收藏",
-            onClick = onSubscribe,
-            active = collection.subscribed,
-        )
-        PanelIcon(Icons.Outlined.Download, "下载", onDownload)
+        if (subscribeEnabled) {
+            PanelIcon(
+                icon = if (collection.subscribed) Icons.Filled.Favorite
+                else Icons.Outlined.FavoriteBorder,
+                label = "收藏",
+                onClick = onSubscribe,
+                active = collection.subscribed,
+            )
+        }
+        PanelIcon(Icons.Outlined.Shuffle, "随机播放", onShuffle)
         PanelIcon(Icons.Outlined.Sort, "排序", onSort)
     }
 }

@@ -66,6 +66,8 @@ import com.thripleq.cirro.ui.components.CirroEmptyState
 import com.thripleq.cirro.ui.components.CirroErrorState
 import com.thripleq.cirro.ui.components.rememberPayTags
 import com.thripleq.cirro.ui.components.rememberCoverAccent
+import com.thripleq.cirro.ui.menu.rememberTrackMenuOpener
+import com.thripleq.cirro.ui.menu.shareTo
 import com.thripleq.cirro.ui.profile.TrackListSource
 import com.thripleq.cirro.ui.profile.TrackListUiState
 import com.thripleq.cirro.ui.profile.TrackListViewModel
@@ -79,11 +81,24 @@ import kotlinx.coroutines.launch
  *
  * ## 版式（抄自官方歌单页）
  * 1. 页底 = 封面糊底 + 主题色蒙版（固定不滚）：头部那块透出封面色，面板往下是不透明面。
- * 2. 头部 = 左方封面 + 右侧标题 / 作者 / 简介，下面三枚等宽操作胶囊（分享 / 评论 / 收藏）。
+ * 2. 头部 = 左方封面 + 右侧标题 / 作者 / 简介，下面三枚等宽操作胶囊。
  * 3. 圆角面板从「播放全部」行开始，向下是曲目行（条目卡：封面 + 标题 + 歌手 - 专辑 + ⋮）。
  *
  * 旧的「满宽方封面 + 名字压在封面上」那套（banner 头）已撤：封面不再承担标题，
  * 标题由封面右侧的文本承担，于是封面可以缩到 98dp —— 与官方一致的信息密度。
+ *
+ * ## 动作分两层，各按能力出现（2026-10-10 起）
+ *
+ * 六类列表**外观**共用，能做的**动作**不共用。判据只有一条：这个列表在服务端有没有
+ * 真实对象（见 [TrackListCapabilities]）。
+ *
+ * - **列表级**（头部三胶囊 / 面板行尾图标）：歌单、榜单、专辑能评论与收藏；
+ *   喜欢、已购、每日推荐是本地拼的壳，这两样不成立 —— 头部换成随机播放与刷新，
+ *   行尾不画收藏。**不支持的动作不出现，而不是出现后弹一句「不支持」**。
+ * - **单曲级**（每行的 ⋮，见 [TrackMenuSheet]）：下一首播放 / 喜欢 / 评论 / 分享，
+ *   **每首歌都有**（红心、`R_SO_4_` 评论线、官方单曲页都与列表来源无关）。本地那三类
+ *   列表缺的评论能力正好在这里补上 —— 与官方同构：歌单页的评论线在头部，
+ *   任何一首歌长按也都有自己的评论。
  */
 @Composable
 fun TrackListScreen(
@@ -172,46 +187,41 @@ fun TrackListScreen(
     // 封面没到（previewCoverUrl 为空）就先用正片的 URL，两者同源，取出来的色一致。
     val coverAccent = rememberCoverAccent(previewCoverUrl ?: collection?.coverUrl)
 
-    // 分享 / 评论 / 收藏 / 排序四件事都接上了真功能；本屏只剩「下载」还是占位
-    // （离线下载要连播放器一起改，是单独一轮的事），它给一句「开发中」，
-    // 与底部浮岛的占位反馈同一套语言——空点没反应会被当成坏了。
+    // ── 列表能力：决定头部三枚胶囊与行尾图标各是哪几枚 ────────────────
+    //
+    // 六类列表共用本屏，但能做的**列表级**动作不同：歌单/榜单/专辑在服务端有真实对象
+    // （能评论、能收藏），喜欢/已购/每日推荐是本地拿 uid + 已有曲目拼的壳（两样都不成立）。
+    // 判据只在 [TrackListSource.capabilities] 一处（见 [TrackListCapabilities]），
+    // 本屏与头部、面板行都读它 —— 别在调用点手写 `if (source == ...)`。
+    val capabilities = remember(src) { src.capabilities }
+
     val appContext = LocalContext.current.applicationContext
     // 分享要拿 **Activity context** 起选择器：applicationContext 起 chooser 得加
     // FLAG_ACTIVITY_NEW_TASK，且部分 ROM 上会丢掉调用方身份、选择器样式异常。
     val shareContext = LocalContext.current
-    val onDownloadNotYet = remember(appContext) {
-        { Toast.makeText(appContext, "开发中", Toast.LENGTH_SHORT).show() }
-    }
     val onShare: () -> Unit = {
         val c = collection
-        if (c != null) {
-            val url = shareUrlOf(src, c.id)
-            val send = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                if (url != null) putExtra(Intent.EXTRA_TEXT, "${c.name}\n$url") else putExtra(Intent.EXTRA_TEXT, c.name)
-                putExtra(Intent.EXTRA_SUBJECT, c.name)
-            }
-            shareContext.startActivity(Intent.createChooser(send, "分享到"))
-        }
+        if (c != null) shareTo(shareContext, c.name, shareUrlOf(src, c.id))
     }
     // 评论浮层挂在根上（见 [LocalCommentsOpener]）：本屏可能正被展开壳裁着，
     // 就地画会被壳的圆角连内容一起切掉。拿不到宿主时安静地不动。
     val commentsOpener = LocalCommentsOpener.current
     val onComments: (Rect) -> Unit = { rect ->
         val c = collection
-        if (c != null) {
-            val thread = commentThreadOf(src, c.id)
-            if (thread == null) {
-                // 喜欢 / 已购 / 每日推荐是本地组装的列表，服务端没有它们的评论线。
-                Toast.makeText(appContext, "这个列表没有评论", Toast.LENGTH_SHORT).show()
-            } else {
-                commentsOpener?.open(thread, rect)
-            }
-        }
+        // 本地列表那三类根本不会画这颗胶囊（见 capabilities.comments），所以这里
+        // 不再有「这个列表没有评论」的兜底 Toast：到不了的口分支就是死代码。
+        // 它们的评论入口在**每一行**的 ⋮ 菜单里（单曲评论线与列表来源无关）。
+        val thread = c?.let { commentThreadOf(src, it.id) }
+        if (thread != null) commentsOpener?.open(thread, rect)
     }
+    // ⋮ 菜单挂在**根**上（见 [rememberTrackMenuOpener] → `TrackMenuHost`）：它要做的事
+    // （下一首播放 / 喜欢 / 评论 / 分享）与列表无关，全站共用一份，所以本屏不持有它的
+    // 状态，只负责在 ⋮ 被点时把曲目交出去。
+    val openTrackMenu = rememberTrackMenuOpener()
     var sortSheetOpen by remember { mutableStateOf(false) }
     val sort by vm.sort.collectAsStateWithLifecycle()
-    // 收藏 / 排序失败的提示（成功不打扰）。
+    // 收藏 / 刷新的一次性反馈，由界面弹 Toast（成功也给一句：这两个动作几百毫秒内
+    // 就结束、画面几乎没变化，没有反馈就分不清「做了」和「点漏了」）。
     LaunchedEffect(vm) {
         vm.message.collect { Toast.makeText(appContext, it, Toast.LENGTH_SHORT).show() }
     }
@@ -399,6 +409,7 @@ fun TrackListScreen(
                                     Box(Modifier.padding(top = TrackListMetrics.HeroCoverTop - stickyTopDp)) {
                                         TrackListHeader(
                                             target,
+                                            capabilities,
                                             onCoverRect,
                                             onCoverDrawn,
                                             watermarkIcon,
@@ -407,6 +418,8 @@ fun TrackListScreen(
                                             onShare = onShare,
                                             onComments = onComments,
                                             onSubscribe = vm::toggleSubscribe,
+                                            onShuffle = vm::shuffleAll,
+                                            onRefresh = vm::refresh,
                                             // 骨架还在时共享元素挂骨架（见 skeletonGone），避免同 key 双宿主。
                                             coverSharedModifier =
                                                 if (skeletonGone) coverSharedModifier else Modifier,
@@ -459,9 +472,10 @@ fun TrackListScreen(
                                         PlayAllRow(
                                             target,
                                             accent = coverAccent,
+                                            subscribeEnabled = capabilities.subscribe,
                                             onPlayAll = { vm.onPlayAll(target) },
                                             onSubscribe = vm::toggleSubscribe,
-                                            onDownload = onDownloadNotYet,
+                                            onShuffle = vm::shuffleAll,
                                             onSort = { sortSheetOpen = true },
                                         )
                                     }
@@ -490,6 +504,7 @@ fun TrackListScreen(
                                             // 已购的 9 首单曲全是 fee=1）。判定与颜色见 PayBadge.kt。
                                             payTags = rememberPayTags(track),
                                             onClick = { vm.onTrackClick(target, index) },
+                                            onMore = { openTrackMenu(track) },
                                         )
                                     }
                                 }
