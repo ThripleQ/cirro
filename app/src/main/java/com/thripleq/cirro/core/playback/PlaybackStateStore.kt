@@ -34,7 +34,17 @@ internal object PlaybackStateStore {
     private var cachedQueue: List<Track>? = null
     private var cachedQueueJson: String? = null
 
+    // 预热结果（见 [prewarm]）。写盘即失效：预热缓存的是「启动那一刻」的磁盘内容，
+    // 一旦 save 过就必须回落到真读。
+    private val warmLock = Any()
+    private var warmDone = false
+    private var warmSnapshot: Snapshot? = null
+
     fun save(context: Context, snapshot: Snapshot) {
+        synchronized(warmLock) {
+            warmDone = false
+            warmSnapshot = null
+        }
         val queueJson = synchronized(cacheLock) {
             if (cachedQueueJson == null || cachedQueue != snapshot.queue) {
                 cachedQueue = snapshot.queue
@@ -68,7 +78,31 @@ internal object PlaybackStateStore {
             }
         }.toString()
 
+    /**
+     * 启动预热：在**后台线程**把「读盘 + XML 解析 + JSON 解析」这一整套做掉，主线程首帧
+     * 只取缓存。
+     *
+     * 为什么要它：[load] 的唯一调用方是 `PlayerHolder.restore()`，而 `restore()` 跑在
+     * `PlayerHolder.get()` 里 —— 那是在**首帧组合期的主线程**上。队列几百首时，
+     * 首次 `getSharedPreferences` 是同步读盘 + XML 解析（10~50ms），紧接着几百次
+     * `optString/optLong` 又是十几毫秒，全压在首帧上。
+     *
+     * 由 [com.thripleq.cirro.CirroApplication.onCreate] 在 IO 线程调一次即可。
+     */
+    fun prewarm(context: Context) {
+        val snap = loadUncached(context)
+        synchronized(warmLock) {
+            warmDone = true
+            warmSnapshot = snap
+        }
+    }
+
     fun load(context: Context): Snapshot? {
+        synchronized(warmLock) { if (warmDone) return warmSnapshot }
+        return loadUncached(context)
+    }
+
+    private fun loadUncached(context: Context): Snapshot? {
         val raw = prefs(context).getString(KEY_SNAPSHOT, null) ?: return null
         return try {
             val root = JSONObject(raw)

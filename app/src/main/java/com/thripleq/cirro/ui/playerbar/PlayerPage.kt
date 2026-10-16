@@ -346,7 +346,14 @@ internal fun PlayerPage(
     val view = LocalView.current
     val activity = LocalActivity.current
     val threeButtonNav = rememberIsThreeButtonNav()
-    val controller = activity?.let { WindowCompat.getInsetsController(it.window, view) }
+    // ⚠️ 必须 remember：`getInsetsController()` 每次调用都 new 一个对象（未覆写 equals，
+    // 按身份比对），而**本组合每帧重组**（下面 272 行在组合期读 `state.progress`）。
+    // 不 remember ⇒ 下面两个 effect 的 key 每帧都变 ⇒ ① snapshotFlow 协程每帧被取消重建；
+    // ② DisposableEffect 每帧 dispose，`onDispose` 里的 `show()` 变成**每帧一次系统栏 IPC**
+    // ——展开/收起那一趟（约 30 帧）就是 30 次跨进程调用，是这一屏最主要的掉帧源。
+    val controller = remember(activity, view) {
+        activity?.let { WindowCompat.getInsetsController(it.window, view) }
+    }
     LaunchedEffect(controller, threeButtonNav) {
         if (controller == null) return@LaunchedEffect
         if (threeButtonNav) {

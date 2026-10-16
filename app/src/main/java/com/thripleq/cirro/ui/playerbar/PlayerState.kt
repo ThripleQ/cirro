@@ -223,7 +223,10 @@ fun rememberPlayerPosition(
         try {
             while (true) {
                 if (!positionFrozen()) positionMs.longValue = player.currentPosition
-                delay(250)
+                // 暂停时进度根本不变：4Hz 唤醒只是白烧电（写入同一个值不会触发重组，
+                // 但协程照醒、Binder 照调）。降到 1Hz 够了 —— 暂停期间的 seek 由上面的
+                // onPositionDiscontinuity 即时补上，不依赖轮询。
+                delay(if (player.isPlaying) 250 else 1_000)
             }
         } finally {
             player.removeListener(listener)

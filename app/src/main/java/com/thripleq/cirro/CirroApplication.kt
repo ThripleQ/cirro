@@ -6,10 +6,14 @@ import android.os.StrictMode
 import coil.Coil
 import coil.ImageLoader
 import coil.disk.DiskCache
+import com.thripleq.cirro.core.playback.PlaybackStateStore
 import com.thripleq.cirro.core.playback.PlaybackUrls
 import com.thripleq.cirro.core.playback.PlayerHolder
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /** App entry point; Hilt generates the dependency graph rooted here. */
 @HiltAndroidApp
@@ -46,6 +50,12 @@ class CirroApplication : Application() {
             }
             .build()
         Coil.setImageLoader(imageLoader)
+        // 播放状态（队列/进度）的读盘 + 解析搬到 IO 线程先做掉：它本来会在
+        // `PlayerHolder.get()` 里同步执行，而那是在**首帧组合期的主线程**上
+        // （restore → PlaybackStateStore.load）。这里提前预热，首帧只剩「取缓存」。
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching { PlaybackStateStore.prewarm(applicationContext) }
+        }
     }
 
     /** Debug-only: surface main-thread disk/network and leaks in logcat. */

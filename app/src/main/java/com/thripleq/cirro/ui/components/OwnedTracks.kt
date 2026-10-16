@@ -1,6 +1,7 @@
 package com.thripleq.cirro.ui.components
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.thripleq.cirro.core.repo.LibraryStateStore
 import com.thripleq.cirro.core.model.Track
@@ -50,5 +51,13 @@ val LocalOwnedTracks = staticCompositionLocalOf { OwnedTracks.None }
  * 徽标颜色错了，用户没有别的线索能看出来（它不像红心点一下就知道对不对）。
  */
 @Composable
-fun rememberPayTags(track: Track): List<PayTag> =
-    payTagsOf(track.fee, LocalOwnedTracks.current.owns(track))
+fun rememberPayTags(track: Track): List<PayTag> {
+    val owned = LocalOwnedTracks.current
+    // ⚠️ 名里带 remember 就得真 remember：本函数在**每个曲目行**里调用，不包 remember
+    // 就是每次重组都再算一遍 owns() + 再建一个 listOf()。（开了 Strong Skipping，新 List
+    // 靠 equals 仍能跳过下层，所以它不是掉帧主因 —— 但名字承诺了就得兑现，且省掉这堆分配。）
+    // key 用 `owned` 而不是它的字段：OwnedTracks 是 data class，equals 即结构相等。
+    return remember(owned, track.id, track.fee, track.albumId) {
+        payTagsOf(track.fee, owned.owns(track))
+    }
+}
