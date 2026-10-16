@@ -100,6 +100,23 @@ internal fun TrackListHeader(
     onShuffle: () -> Unit,
     /** 手动刷新这张列表（本地列表的第二枚，见上面的表）。 */
     onRefresh: () -> Unit,
+    /**
+     * 进入本页时入口卡片给的那张封面 URL（= `TrackListScreen.previewCoverUrl`）。
+     *
+     * ⚠️ **这块封面的 URL 必须与骨架 / 糊底 / 强调色用的是同一个串**，所以优先取它，
+     * 只有从导航进来（没经过卡片）才回落到 `collection.coverUrl`。
+     *
+     * 为什么不是「反正都是同一张图」：服务端对**同一个对象**会按 CDN 镜像给不同 host
+     * （入口卡片的 `uiElement.image.imageUrl` 在 `p2.music.126.net`，详情的
+     * `playlist.coverImgUrl` 在 `p1.music.126.net`，**路径一字不差**）。而 Coil 的缓存键
+     * 就是整串 URL ⇒ 两个 host = **两把缓存键**。骨架那一份下的是 p2 那串，若 banner 改用
+     * p1 那串，交接那一帧就要**重新下载**，而骨架只剩 260ms 淡出窗口 —— 下得完就没事、
+     * 下不完就是用户报的「详情栏封面乱跳」（2026-10-16 雷达/推荐歌单 6/6 实测）。
+     *
+     * ⚠️ **不要去归一化 host**（想着「p1 换成 p2 就同一把键了」）：p3/p4 实测在缩放尺寸下
+     * 走的是**另一套缩放管线**、字节与 p1/p2 不同，而且慢到 12~14 秒。统一数据源，别改 URL。
+     */
+    previewCoverUrl: String? = null,
     coverSharedModifier: Modifier = Modifier,
 ) {
     // 展开动画期间 hero 正顶着封面：本封面与 hero 互补，避免两层重影（见 LocalShellHeroAlpha）。
@@ -143,7 +160,8 @@ internal fun TrackListHeader(
                     },
             ) {
                 BigCoverVisual(
-                    coverUrl = collection.coverUrl,
+                    // 与骨架/糊底/强调色同源（见 previewCoverUrl 的说明），不是 collection.coverUrl。
+                    coverUrl = previewCoverUrl ?: collection.coverUrl,
                     name = collection.name,
                     modifier = Modifier.fillMaxSize(),
                     // 名字/元信息已由右侧文本承担，封面只当图看：关掉图上文字与压暗渐变

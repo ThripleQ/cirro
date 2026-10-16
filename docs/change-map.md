@@ -110,6 +110,7 @@
 | 生成/调整 Baseline Profile | `baselineprofile/`（`BaselineProfileGenerator.kt`）、`./gradlew :app:generateReleaseBaselineProfile` |
 | 构建提速（配置/构建缓存） | `gradle.properties` |
 | 改**封面地址**（下多大尺寸、加不加 `param`） | `ui/components/CoverUrls.kt` 的 `coverSizedUrl`（全 app 唯一出口）；调用点 `Artwork` / `BigCoverVisual` / `CoverAccent` / `PlayerDock` / `TrackListChrome` —— **别写裸 `.data(url)`**（Coil 的 `size()` 只管解码，不管下载） |
+| **列表头部封面**（banner）用哪个 URL | 见 `TrackListPanel.kt` 的 `TrackListHeader(previewCoverUrl = …)` —— banner / 骨架 / 糊底 / 强调色必须都走 `previewCoverUrl ?: collection.coverUrl`。**别只在 banner 上写 `collection.coverUrl`**：服务端对同一张图按 CDN 镜像给不同 host（入口卡片 `p2.music.126.net`、详情 `p1.music.126.net`，**路径一字不差**），而 Coil 的缓存键是**整串 URL** ⇒ 不统一就是两把键，交接那一帧要重新下载，正好落在骨架 260ms 的淡出窗口里 =「详情栏封面乱跳」（2026-10-16 雷达/推荐歌单 6/6 实测）。**也别想着归一化 host**：`p3/p4` 在缩放尺寸下是另一套管线、慢到 12~14 秒 |
 | 看真机**实际发出的 URL**（核对 weapi / eapi 前缀） | `adb logcat -s CirroHttp` 的 `--> POST`（tag 定义在 `core/net/CirroTransport.kt`） |
 | 改 CI 出包 / 产物名 / 发版 | `.github/workflows/build.yml`（push `main`/`beta` → artifact）/ `release.yml`（push `v*` tag → GitHub Release） |
 

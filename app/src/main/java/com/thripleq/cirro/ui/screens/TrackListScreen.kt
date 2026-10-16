@@ -127,9 +127,22 @@ fun TrackListScreen(
     /** 封面加载成功时回调（供 hero 交接：hero 渐变淡出）。 */
     onCoverReady: (() -> Unit)? = null,
     /**
-     * 加载阶段用于「先画封面」的封面 URL（通常由入口卡片传入，与终态头部同源）。
+     * 加载阶段用于「先画封面」的封面 URL（通常由入口卡片传入）。
      * 非空时骨架屏不显示灰封面，而是立刻请求高清封面 + 显示 shimmer 行——这样封面
      * 不必等整张列表（含分页补全）下载完才开始加载，hero 也能尽早交接。
+     *
+     * ⚠️ **硬要求：它必须与终态头部（banner）/ 强调色是同一个串，糊底也必须从它出发。** 不是
+     * 「同一张图就行」——服务端对同一张图会按 CDN 镜像给不同 host（卡片 `p2.music.126.net` /
+     * 详情 `p1.music.126.net`，**路径一字不差**），而 Coil 的缓存键是**整串 URL** ⇒ 两个 host 就是
+     * 两把缓存键：骨架下的是 p2 那串，banner 若用 p1 那串就得**重新下载**，而骨架只剩 260ms
+     * 淡出窗口 ⇒ 下得完没事、下不完就是「详情栏封面乱跳」（2026-10-16 雷达/推荐歌单 6/6 实测）。
+     * 口径由 [TrackListPanel.TrackListHeader] 的 `previewCoverUrl` 统一：都是
+     * `previewCoverUrl ?: collection.coverUrl`。
+     * （糊底会再把这串的 `param` 换成 64 —— 那是它自己的尺寸口径、**故意**的第三把键，
+     * 见 `BackdropRequestSize`：它是块糊背景，不是把 1024 再下一遍的理由。）
+     *
+     * ⚠️ 别指望「归一化 host」来省事：`p3/p4` 实测在缩放尺寸下是**另一套缩放管线**（字节与
+     * p1/p2 不同），而且慢到 12~14 秒。要统一的是**数据源**，不是 URL。
      */
     previewCoverUrl: String? = null,
     /** 缺封面时的内容属性水印图标（与入口卡片/hero 同源）。 */
@@ -184,7 +197,7 @@ fun TrackListScreen(
 
     // 「播放全部」那一行的**强调色**：从封面派生（见 [rememberCoverAccent]），只用在圆钮身后的
     // 径向晕上 —— 行的背景本身不再铺色（回到 `surface`，与曲目行连成一整片纸）。
-    // 封面没到（previewCoverUrl 为空）就先用正片的 URL，两者同源，取出来的色一致。
+    // 与头部封面 / 糊底同一个串（见 previewCoverUrl 的说明）；为空才回落到正片，取色一致。
     val coverAccent = rememberCoverAccent(previewCoverUrl ?: collection?.coverUrl)
 
     // ── 列表能力：决定头部三枚胶囊与行尾图标各是哪几枚 ────────────────
@@ -420,6 +433,11 @@ fun TrackListScreen(
                                             onSubscribe = vm::toggleSubscribe,
                                             onShuffle = vm::shuffleAll,
                                             onRefresh = vm::refresh,
+                                            // 与骨架 / 糊底 / 强调色**同一个串**（见该参数的说明）：
+                                            // 服务端对同一张图给的是不同 CDN 镜像 host（卡片 p2 / 详情
+                                            // p1），而 Coil 的缓存键是整串 URL ⇒ 不统一就是两把键、
+                                            // 交接那一帧重新下载 ⇒ 详情栏封面乱跳。
+                                            previewCoverUrl = previewCoverUrl,
                                             // 骨架还在时共享元素挂骨架（见 skeletonGone），避免同 key 双宿主。
                                             coverSharedModifier =
                                                 if (skeletonGone) coverSharedModifier else Modifier,
