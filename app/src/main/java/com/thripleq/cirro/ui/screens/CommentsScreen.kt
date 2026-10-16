@@ -58,6 +58,7 @@ import com.thripleq.cirro.ui.components.CirroSectionHeader
 import com.thripleq.cirro.ui.components.ShimmerImagePlaceholder
 import com.thripleq.cirro.ui.components.SkeletonBox
 import com.thripleq.cirro.ui.components.SkeletonLine
+import com.thripleq.cirro.ui.components.rememberCirroTitleCollapse
 import com.thripleq.cirro.ui.theme.CirroShape
 import com.valentinilk.shimmer.shimmer
 
@@ -81,6 +82,9 @@ fun CommentsScreen(
     val state by vm.uiState.collectAsStateWithLifecycle()
     val bottomPadding = (islandHeight + 16f).dp
     val listState = rememberLazyListState()
+    // 大标题「滑进半遮」的收起点 hoist 在本层（不能留在 [CirroPaperPage] 里）：浮层开合
+    // 会重建那一层，state 被清零而列表还停在中间。
+    val collapse = rememberCirroTitleCollapse()
 
     // 点赞失败的提示（成功不打扰）：与站内其他写操作同一套语言。
     val context = LocalContext.current.applicationContext
@@ -94,17 +98,27 @@ fun CommentsScreen(
     CirroPaperPage(
         title = if (state.total > 0) "评论 ${state.total}" else "评论",
         onClose = onBack,
-    ) {
+        collapse = collapse,
+    ) { sheetTop ->
         when {
-            state.loading -> CommentsSkeleton()
-            state.error -> CirroErrorState(text = "评论加载失败，点此重试", onRetry = vm::retry)
-            state.hot.isEmpty() && state.latest.isEmpty() -> CirroEmptyState("还没有评论")
+            // 骨架 / 空态 / 错误态不滚动 ⇒ 布局上直接让开纸顶；列表见下面那条注释。
+            state.loading -> CommentsSkeleton(Modifier.padding(top = sheetTop))
+            state.error -> CirroErrorState(
+                text = "评论加载失败，点此重试",
+                onRetry = vm::retry,
+                modifier = Modifier.padding(top = sheetTop),
+            )
+            state.hot.isEmpty() && state.latest.isEmpty() ->
+                CirroEmptyState("还没有评论", Modifier.padding(top = sheetTop))
             else -> {
                 LoadMoreWatcher(listState, vm::loadMore)
                 LazyColumn(
                     state = listState,
+                    // 铺满整屏（含标题条那一段）：纸顶是**绘制期**裁剪边界、不改变内容的布局
+                    // 位置，所以让位只能走 [contentPadding] —— 用 `Modifier.padding` 会把滚动
+                    // 视口切在标题条之下，纸顶抬起来的那一段就成了空白。
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = bottomPadding),
+                    contentPadding = PaddingValues(top = sheetTop, bottom = bottomPadding),
                 ) {
                     if (state.hot.isNotEmpty()) {
                         item(key = "hot_header") { CirroSectionHeader("热门评论") }
@@ -244,9 +258,9 @@ private fun LoadMoreWatcher(listState: LazyListState, onLoadMore: () -> Unit) {
 
 /** 评论加载骨架：顶栏下方重复评论行（头像 + 昵称/内容行）。 */
 @Composable
-private fun CommentsSkeleton() {
+private fun CommentsSkeleton(modifier: Modifier = Modifier) {
     Column(
-        Modifier
+        modifier
             .fillMaxSize()
             .shimmer()
             .padding(top = 8.dp),

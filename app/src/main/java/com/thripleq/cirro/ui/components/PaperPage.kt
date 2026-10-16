@@ -2,9 +2,7 @@ package com.thripleq.cirro.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -12,9 +10,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.thripleq.cirro.ui.theme.CirroShape
 
 /**
  * **详情页的骨架**：顶上一段容器色条 + 大标题，下面一张内容圆角纸，右上角一颗浮层收起键
@@ -29,7 +26,7 @@ import com.thripleq.cirro.ui.theme.CirroShape
  *
  * | 项 | 全站统一值 |
  * |---|---|
- * | 纸顶那条线 | 状态栏 + [CirroTitleBarHeight] |
+ * | 纸顶那条线（静止） | 状态栏 + [CirroTitleBarHeight]；参与收起时纸顶会从这条线**轻轻上抬一点**（见下） |
  * | 标题 | `headlineSmall` 粗体 + 行高裁剪，左起 **24dp** |
  * | 标题右内缩 | [TitleBarCloseInset]（让开那颗 36dp 键） |
  * | 纸 | [CirroShape.SheetTop]（28dp 上两角）+ `surface` |
@@ -44,6 +41,33 @@ import com.thripleq.cirro.ui.theme.CirroShape
  * 2. **容器色铺在根节点上**（不是铺在标题条上）：状态栏那一条也要是这个色，纸的顶角才
  *    把它露出来；标题条自己带 `statusBarsPadding()`，内容从状态栏下沿起。
  *
+ * ## 「滑进半遮」（2026-10-16）
+ *
+ * 传了 [collapse] 就参与：内容上滚过一点之后纸顶抬起来**压住标题的下沿**（见 [CirroTitleCollapse]，
+ * 行程、补间与纸沿三层柔化的参数都在那边）。
+ * 三个调用方（歌手 / 播客 / 评论）各自把 [rememberCirroTitleCollapse] hoist 在 Screen 层传进来
+ * ——state 不能留在这里，`AnimatedContent` 开合浮层时会重建本组件，清零了而列表还停在中间，
+ * 标题会自己弹回来（见 [CirroTitleCollapse] 的文档）。
+ *
+ * ⚠️ 这里**不**放 [CirroMiniTitleBar]：那套「滚到底再往回翻时冒出小标题」是**一级页面**的
+ * 语言（位置本来由底部导航指示，标题沉进纸里没有损失）。本组件的标题是**当前对象的名字**
+ * （歌手名 / 播客名 / 评论数），不能照抄。何况标题只是下沿被压住一点（[CirroTitleCollapse.titleAlpha]
+ * 恒 1，柔化也只雾化贴着纸沿的一小段），名字从来没有真正丢过。
+ *
+ * ## 内容的契约（改本组件时唯一要当心的地方）
+ *
+ * 纸是**绘制期**的裁剪边界，**不改变内容的布局位置**（见 [cirroCollapsingSheet]）。所以
+ * [content] 拿到的永远是**铺满整屏**的尺寸，必须自己让开顶上的 [Dp]（= 初始纸顶）：
+ *
+ * - 能滚的内容 ⇒ `contentPadding = PaddingValues(top = sheetTop, …)`。**必须用内缩、不能用
+ *   `Modifier.padding`**：后者会把滚动视口切在标题条之下，纸顶抬起来时那段就是空白，
+ *   效果整个不成立；
+ * - 不能滚的内容（骨架 / 空态 / 错误态）⇒ `Modifier.padding(top = sheetTop)` 即可，它本来
+ *   就不会往上走。
+ *
+ * 把 `sheetTop` 直接喂给 [content] 而不是让调用方各自 [rememberCirroSheetTop] 一次，
+ * 是为了让这个内缩**不可能**和纸顶写歪。
+ *
  * 调用方负责 `BackHandler`（系统返回键仍要能退出本页），本组件只管画。
  */
 @Composable
@@ -51,26 +75,29 @@ fun CirroPaperPage(
     title: String,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
+    /** 本页的收起点；`null` = 不参与「滑进半遮」（纸静止）。须 hoist 到 Screen。 */
+    collapse: CirroTitleCollapse? = null,
+    /** 参数 = 初始纸顶（本屏坐标）：内容要让开的高度。见「内容的契约」。 */
+    content: @Composable (Dp) -> Unit,
 ) {
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
+    val sheetTop = rememberCirroSheetTop()
     Box(
         modifier
             .fillMaxSize()
-            .background(containerColor),
+            .background(containerColor)
+            // 只读不消费地接住内容侧滚动容器的滚动量（见 [CirroTitleCollapse]）。
+            .cirroTitleCollapse(collapse),
     ) {
-        Column(Modifier.fillMaxSize()) {
-            CirroPageTitleBar(title, endInset = TitleBarCloseInset)
-            // 内容圆角纸：与探索 / 搜索 / 我的 / 详情页是**同一个形状 token**。
-            // weight(1f) 而不是 fillMaxSize：纸的顶边只能由标题条决定，不能反过来撑标题条。
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .clip(CirroShape.SheetTop)
-                    .background(MaterialTheme.colorScheme.surface),
-            ) { content() }
-        }
+        // 绘制顺序是效果的一部分：标题条先画、纸后画 ⇒ 纸天然盖住标题。
+        CirroPageTitleBar(title, endInset = TitleBarCloseInset, collapse = collapse)
+        // 内容圆角纸：与探索 / 搜索 / 我的 / 详情页是**同一个形状 token**。
+        // 铺满整屏（含标题条那一段）而不是 `weight(1f)`：纸顶要能向上画进标题条里去。
+        Box(
+            Modifier
+                .fillMaxSize()
+                .cirroCollapsingSheet(collapse, sheetTop),
+        ) { content(sheetTop) }
         CirroCloseButton(
             onClick = onClose,
             modifier = Modifier

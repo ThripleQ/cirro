@@ -57,6 +57,7 @@ import com.thripleq.cirro.ui.components.ShimmerImagePlaceholder
 import com.thripleq.cirro.ui.components.SkeletonBox
 import com.thripleq.cirro.ui.components.SkeletonLine
 import com.thripleq.cirro.ui.components.cirroEntrySurface
+import com.thripleq.cirro.ui.components.rememberCirroTitleCollapse
 import com.thripleq.cirro.ui.podcast.PodcastUiState
 import com.thripleq.cirro.ui.podcast.PodcastViewModel
 import com.thripleq.cirro.ui.theme.CirroShape
@@ -78,19 +79,32 @@ fun PodcastScreen(
     LaunchedEffect(id) { vm.load(id) }
     val state by vm.uiState.collectAsStateWithLifecycle()
     val bottomPadding = (islandHeight + 16f).dp
+    val collapse = rememberCirroTitleCollapse()
 
     // 顶部换成站内统一的那一份（[CirroPaperPage]）：容器色条 + 大标题 + 圆角纸，
     // 右上角一颗浮层收起键。原来这里是左上角返回箭头 + 小一号的 `titleLarge` 标题、
     // 且没有圆角纸（2026-10-05 用户：「改成一模一样的，返回按钮也是一模一样」）。
-    CirroPaperPage(title = state.detail?.name ?: "播客", onClose = onBack) {
+    //
+    // 大标题「滑进半遮」的收起点 hoist 在本层（不能留在 [CirroPaperPage] 里）：浮层开合
+    // 会重建那一层，state 被清零而列表还停在中间。
+    CirroPaperPage(
+        title = state.detail?.name ?: "播客",
+        onClose = onBack,
+        collapse = collapse,
+    ) { sheetTop ->
         when {
-            state.loading -> PodcastSkeleton()
-            state.error -> CirroErrorState(text = "播客加载失败，点此重试", onRetry = vm::retry)
+            // 骨架 / 错误态不滚动 ⇒ 布局上直接让开纸顶即可；列表见下面那条注释。
+            state.loading -> PodcastSkeleton(Modifier.padding(top = sheetTop))
+            state.error -> CirroErrorState(
+                text = "播客加载失败，点此重试",
+                onRetry = vm::retry,
+                modifier = Modifier.padding(top = sheetTop),
+            )
             else -> ProgramsContent(
                 detail = state.detail,
                 programs = state.programs,
                 loadingMore = state.loadingMore,
-                bottomPadding = bottomPadding,
+                contentPadding = PaddingValues(top = sheetTop, bottom = bottomPadding),
                 onLoadMore = vm::loadMore,
                 onPlay = vm::onPlayProgram,
             )
@@ -103,7 +117,7 @@ private fun ProgramsContent(
     detail: RadioDetail?,
     programs: List<Program>,
     loadingMore: Boolean,
-    bottomPadding: androidx.compose.ui.unit.Dp,
+    contentPadding: PaddingValues,
     onLoadMore: () -> Unit,
     onPlay: (Program) -> Unit,
 ) {
@@ -111,8 +125,11 @@ private fun ProgramsContent(
     LoadMoreWatcher(listState, onLoadMore)
     LazyColumn(
         state = listState,
+        // 铺满整屏（含标题条那一段）：纸顶是**绘制期**裁剪边界、不改变内容的布局位置，
+        // 所以让位只能走 [contentPadding] —— 用 `Modifier.padding` 会把滚动视口切在
+        // 标题条之下，纸顶抬起来的那一段就成了空白。
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomPadding),
+        contentPadding = contentPadding,
     ) {
         if (detail != null) {
             item(key = "header") { RadioHeader(detail) }
@@ -203,9 +220,9 @@ private fun LoadMoreWatcher(listState: LazyListState, onLoadMore: () -> Unit) {
 
 /** 播客详情骨架：电台头（大封面 + 标题/元信息） + 节目行。 */
 @Composable
-private fun PodcastSkeleton() {
+private fun PodcastSkeleton(modifier: Modifier = Modifier) {
     Column(
-        Modifier
+        modifier
             .fillMaxSize()
             .shimmer(),
     ) {

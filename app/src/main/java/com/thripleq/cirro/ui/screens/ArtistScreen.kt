@@ -67,6 +67,7 @@ import com.thripleq.cirro.ui.components.SharedKeys
 import com.thripleq.cirro.ui.components.SkeletonBox
 import com.thripleq.cirro.ui.components.SkeletonLine
 import com.thripleq.cirro.ui.components.cirroEntrySurface
+import com.thripleq.cirro.ui.components.rememberCirroTitleCollapse
 import com.thripleq.cirro.ui.components.rememberPayTags
 import com.thripleq.cirro.ui.theme.CirroShape
 import com.valentinilk.shimmer.shimmer
@@ -120,14 +121,24 @@ fun ArtistScreen(
 
     val ready = state as? ArtistUiState.Ready
 
+    // 大标题「滑进半遮」的收起点：必须 hoist 在本层（不能留在 [CirroPaperPage] 里），
+    // `AnimatedContent` 开合浮层时会重建那一层，state 被清零而列表还停在中间。
+    val collapse = rememberCirroTitleCollapse()
+
     // 顶部换成站内统一的那一份（[CirroPaperPage]）：容器色条 + 大标题 + 圆角纸，
     // 右上角一颗浮层收起键。原来这里是左上角返回箭头 + 小一号的 `titleLarge` 标题、
     // 且没有圆角纸 —— 与其它页并排看就是两套语言（2026-10-05 用户：
     // 「改成一模一样的，返回按钮也是一模一样」）。
-    CirroPaperPage(title = ready?.profile?.name ?: "歌手", onClose = onBack) {
+    CirroPaperPage(
+        title = ready?.profile?.name ?: "歌手",
+        onClose = onBack,
+        collapse = collapse,
+    ) { sheetTop ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = bottomPadding),
+            // 顶到纸顶：内容铺满整屏（纸是绘制期裁剪边界、不改变布局位置），靠内缩让位。
+            // 不用 `Modifier.padding` —— 那会把滚动视口切在标题条之下，纸顶抬起时那段留白。
+            contentPadding = PaddingValues(top = sheetTop, bottom = bottomPadding),
         ) {
             // 头部：头像宿主。Loading 时用来源页带来的 name/avatar 先画出来（共享元素目标立即存在）。
             item(key = "header") {
