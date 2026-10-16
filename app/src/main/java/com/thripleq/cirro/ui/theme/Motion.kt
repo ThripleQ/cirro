@@ -7,6 +7,8 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
 /**
@@ -471,4 +473,29 @@ object Motion {
     /** 浮层退出 spec。 */
     fun overlayExit(): FiniteAnimationSpec<Float> =
         tween(OverlayExitMs, easing = Emphasized)
+
+    // ── 逐帧量化（过场不掉帧的关键一刀，2026-10-17 体检）──────────────────────
+    //
+    // 过场动画里壳的圆角与投影都是**逐帧连续**插值的。而 `graphicsLayer` 的
+    // `shape` / `shadowElevation` 一变，Compose 就要重建该层的 **clip outline** 并重算
+    // **RenderNode 阴影** —— 播放页壳与 dock 两层叠着逐帧做这两件事，是这一屏最主要的
+    // 掉帧源（拖拽播放页展开/收起时尤其明显）。
+    //
+    // 好消息是 layer 的属性更新是 **diff 生效**的：新值与旧值相等就整段跳过重算。所以只要
+    // 把连续值量化成台阶，重算次数就从「每帧一次」降到「每跨一档一次」——
+    // 26↔36dp 的圆角在 0.5dp 台阶下只剩 20 档，一次展开少掉八成的 outline/阴影重算。
+    //
+    // 0.5dp 在 3x 屏上是 1.5px，且发生在高速运动中，肉眼不可见 —— 与
+    // `TextUnit.quantizedFontSize`（量化字号以免逐帧重排文本）是同一套思路，
+    // 只是那一处省的是 measure，这一处省的是 outline + 阴影。
+
+    /** 圆角/投影的量化台阶（dp），见上面的说明。 */
+    const val QuantStepDp = 0.5f
+
+    /** 把 px 量 [px] 量化到 [stepDp] 的台阶上（见 [QuantStepDp]）。 */
+    fun quantPx(density: Density, px: Float, stepDp: Float = QuantStepDp): Float {
+        val step = with(density) { stepDp.dp.toPx() }
+        if (step <= 0f) return px
+        return (px / step).roundToInt() * step
+    }
 }

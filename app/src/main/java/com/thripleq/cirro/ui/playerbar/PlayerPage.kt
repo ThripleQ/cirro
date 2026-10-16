@@ -289,8 +289,13 @@ internal fun PlayerPage(
     // 断缝量：拖动路径由分裂段给出（断开后缝打开）；点按路径改用 t1 —— 理由见 shellRect 内同名处。
     val breakT = if (tapExpand) t1 else splitBreakT(splitT)
     val topCornerPx = dockCornerPx
-    val bottomCornerPx =
-        waistCornerPx * squeezeT * (1f - breakT) + dockCornerPx * breakT
+    // 量化见 [Motion.QuantStepDp]：圆角是壳那层 `graphicsLayer` clip outline 的输入，
+    // 逐帧连续变化 = 逐帧重建 outline + 重算投影。量化后值相同的帧会被 layer 的 diff
+    // 整段跳过（26→36→26dp 在 0.5dp 台阶下只剩 20 档，而不是每帧一次）。
+    val bottomCornerPx = Motion.quantPx(
+        density,
+        waistCornerPx * squeezeT * (1f - breakT) + dockCornerPx * breakT,
+    )
     val shellShape = RoundedCornerShape(
         topStart = with(density) { topCornerPx.toDp() },
         topEnd = with(density) { topCornerPx.toDp() },
@@ -382,6 +387,8 @@ internal fun PlayerPage(
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         state.close()
     }
+    /** 壳上的空点击（吃掉落在壳上的指针）。必须 remember —— 见上面 clickable 的注释。 */
+    val swallowClick = remember { {} }
 
     Box(modifier = modifier.fillMaxSize()) {
         // 壳：显式宽高 + 平移（与 ExpandableShell 同构），随 progress 每帧布局。
@@ -398,19 +405,27 @@ internal fun PlayerPage(
                     // 慢下来自动收回去。读 [PlayerDockState.followSpeed] 在绘制阶段，不引重组。
                     // 速度项乘**会合段进度**（与底色同一挂点）—— 中途甩动不变沉，效果集中在
                     // 上下边同速收尾的那一段（「这时候再上效果」）。
-                    shadowElevation = 4.dp.toPx() * breakT +
-                        Motion.ShellShadowSpeedDp.dp.toPx() *
-                        (state.followSpeed / Motion.ShellShadowSpeedRef).coerceIn(0f, 1f) *
-                        syncTailT
+                    // 投影同样量化：它一变就要重算 RenderNode 的阴影，逐帧重算是这一屏
+                    // 最贵的一项之一（见 [Motion.QuantStepDp]）。
+                    shadowElevation = Motion.quantPx(
+                        density,
+                        4.dp.toPx() * breakT +
+                            Motion.ShellShadowSpeedDp.dp.toPx() *
+                            (state.followSpeed / Motion.ShellShadowSpeedRef).coerceIn(0f, 1f) *
+                            syncTailT,
+                    )
                     shape = shellShape
                     clip = true
                 }
                 .background(shellColor)
                 // 拦截触摸：只拦壳实际区域；半高时 dock 区域不在此矩形内 → 仍可点。
+                // onClick 必须 remember 固定：本组合逐帧重组（272 行读 progress），lambda
+                // 每次新建 ⇒ clickable 节点每帧重建（Modifier 链 + 手势节点），白扔开销。
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) { }
+                    onClick = swallowClick,
+                )
                 // 官方 anchoredDraggable：卡内上滑续开到全屏、下拉回 dock/收起。
                 // 松手吸附/甩动由 flingBehavior 处理：全屏那一段用缓入缓出 S 曲线（先加速后减速），
                 // 卡片/收起保持弹簧。reverseDirection=true：上滑（y 减小）→ offset 增大 → 展开。
@@ -539,6 +554,10 @@ internal fun PlayerPageContent(
     var lyricsOpen by remember { mutableStateOf(false) }
     var commentRect by remember { mutableStateOf(Rect.Zero) }
     val state = rememberPlayerState(player)
+    // 封面「点一下切歌词」：lambda 必须 remember 固定 —— 本组合随展开进度逐帧重组，
+    // 每次新建会让封面的 clickable 节点每帧重建（Modifier 链 + 手势节点）。
+    // 捕获的是 `lyricsOpen` 的 state 委托与 `state` 引用，两者都稳定，读到的仍是最新值。
+    val toggleLyrics = remember { { if (state.trackId != null) lyricsOpen = !lyricsOpen } }
     // 红心：真状态 + 真接口（[PlayerActionsViewModel]）。状态来自进程级的「喜欢」集合，
     // 切歌不产生网络请求；未载入完时显示空心的代价写在那个类的注释里。
     val actionsVm: PlayerActionsViewModel = hiltViewModel()
@@ -643,7 +662,7 @@ internal fun PlayerPageContent(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) { if (state.trackId != null) lyricsOpen = !lyricsOpen },
+                ) { toggleLyrics() },
         ) {
             if (lyricsOpen) {
                 LyricsView(

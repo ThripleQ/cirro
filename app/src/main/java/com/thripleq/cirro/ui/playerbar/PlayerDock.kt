@@ -250,13 +250,15 @@ fun PlayerDock(
                     // 峰值修正：splitT=0.5 时 26*0.5 + 增量*1 = 36 → 增量 = 36 - 26*0.5。
                     val basePx = with(density) { 26.dp.toPx() }
                     val bumpPx = with(density) { WAIST_CORNER_DP.dp.toPx() } - basePx * SPLIT_SQUEEZE
-                    val cornerPx = basePx * cornerFrac + bumpPx * waistT
+                    // 量化见 [Motion.QuantStepDp]：圆角/投影逐帧连续变化会让这一层每帧
+                    // 重建 clip outline + 重算阴影。量化后值相同的帧被 layer 的 diff 跳过。
+                    val cornerPx = Motion.quantPx(density, basePx * cornerFrac + bumpPx * waistT)
                     this.shape = RoundedCornerShape(
                         topStart = with(density) { cornerPx.toDp() },
                         topEnd = with(density) { cornerPx.toDp() },
                     )
                     clip = true
-                    shadowElevation = 2.dp.toPx() * (1f - t0)
+                    shadowElevation = Motion.quantPx(density, 2.dp.toPx() * (1f - t0))
                     // dock **不淡出**（2026-10-05 用户：「dock不要变透明」）。
                     // 它本来也不需要淡：p>1 之后 dock 已经翻到壳下面（见上面的 zIndex），
                     // 壳的底边一路压下来、把 dock 从顶往下逐帧盖住；末端阻尼让底边多留一截，
