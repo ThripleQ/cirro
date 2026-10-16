@@ -33,7 +33,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
@@ -49,9 +48,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.thripleq.cirro.ui.components.CirroMiniTitleBar
 import com.thripleq.cirro.ui.components.CirroPageTitleBar
+import com.thripleq.cirro.ui.components.cirroCollapsingSheet
+import com.thripleq.cirro.ui.components.cirroTitleCollapse
+import com.thripleq.cirro.ui.components.rememberCirroSheetTop
+import com.thripleq.cirro.ui.components.rememberCirroTitleCollapse
 import com.thripleq.cirro.ui.search.SearchViewModel
-import com.thripleq.cirro.ui.theme.CirroShape
 
 /**
  * 搜索 tab：落地页给「语种 / 风格 / 场景」标签，提交后按
@@ -85,18 +88,31 @@ fun SearchScreen(
     // 与探索页同一套外壳：顶层铺 `surfaceContainer` 放「搜索」大标题，内容是一张 `surface`
     // 圆角纸。搜索条就是这张纸的顶盖 —— 占满整宽、紧贴纸上沿，并直接顺承纸的 28dp 顶角，
     // 于是容器色从两角露出、搜索条与内容浑然一体。
-    Column(
+    //
+    // 2026-10-16 起外层是 `Box`：纸顶会随滚动上抬把「搜索」吞掉（滑进半遮），需要纸能
+    // 向上画进标题条那一段 —— `Column` 里第二个子项够不到那里。见 [CirroTitleCollapse]。
+    //
+    // ⚠️ **搜索条不跟着纸顶上抬**，它是纸里布局位置固定的一行。理由：纸顶是**绘制期**
+    // 的裁剪边界，纸里的一切都不动；要让搜索条跟着抬，就得把整块纸（含内容）上移再给
+    // 内容补偿一份，内容是滚动的、补偿等于再叠一条时间线。代价是纸顶抬起后、搜索条上方
+    // 会露出一小段纸色（上限 = 标题条高），换来的是搜索条位置恒定、不会滑进状态栏下。
+    val collapse = rememberCirroTitleCollapse()
+    val sheetTop = rememberCirroSheetTop()
+    Box(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .cirroTitleCollapse(collapse),
     ) {
-        CirroPageTitleBar("搜索")
+        // 吸附小标题在**更下层**：纸把它半遮着长出来（见 [CirroMiniTitleBar]）。
+        CirroMiniTitleBar("搜索", collapse)
+        CirroPageTitleBar("搜索", collapse = collapse)
         Column(
             Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .clip(CirroShape.SheetTop)
-                .background(MaterialTheme.colorScheme.surface),
+                .fillMaxSize()
+                .cirroCollapsingSheet(collapse, sheetTop)
+                // 纸内内容让开标题条：垫在纸顶上（与改动前的布局位置一致）。
+                .padding(top = sheetTop),
         ) {
             SearchField(
                 query = state.query,

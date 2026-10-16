@@ -1,5 +1,7 @@
 package com.thripleq.cirro.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,14 +12,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.thripleq.cirro.ui.theme.Motion
 
 /**
  * 顶部标题条的**内容高度**（不含状态栏）：站内所有「标题条 + 圆角纸」的页面共用一份。
@@ -96,6 +103,20 @@ val TitleBarCloseInset = 56.dp
  *   贴到状态栏（否则字上方还留着一条空隙）；
  * - 右侧 [actions] 贴右端、垂直居中。
  *
+ * ## `collapse`：内容上滑时被下方那张纸「吞掉」（2026-10-16）
+ *
+ * 传了 [collapse] 就参与「滑进半遮」：本组件**只负责淡出**，不吃位移 —— 纸顶上抬
+ * 盖住标题是内容侧的事（[cirroCollapsingSheet]），标题在绘制顺序上本来就在纸下面。
+ * 这样分工的依据是：标题一旦自己也开始动，就会出现「标题在滑、纸在追」两条时间线，
+ * 手指来回抖一下就会错位。
+ *
+ * 透明度走 `graphicsLayer` 的 lambda 在**绘制期**读 [CirroTitleCollapse.titleAlpha] ——
+ * 滚动时只重绘，不重组本组件（探索页的 actions 里有 `IconButton`，重组它并不便宜）。
+ *
+ * ⚠️ 右上那颗动作键（探索 / 我的的刷新键）**跟着一起淡**，没有单独提前退场。它是
+ * 36dp 左右的控件、位置落在右上角那 28dp 圆角缺口里，纸顶经过时会被圆角切掉一个角。
+ * 这一点**用户 2026-10-16 明确知悉并说「之后会处理」**，别擅自加特判。
+ *
  * 调用方自己铺 `surfaceContainer` 底色（它是「状态栏那条容器色带」，内容圆角纸的顶角
  * 会把这条带子露出来），本组件只画文字与动作、**不**铺底。
  */
@@ -105,6 +126,8 @@ fun CirroPageTitleBar(
     modifier: Modifier = Modifier,
     /** 标题文字右侧让位宽度：见 [TitleBarEndInset] / [TitleBarCloseInset]。 */
     endInset: Dp = TitleBarEndInset,
+    /** 非 null 则参与「滑进半遮」，滚动时按进度淡出。 */
+    collapse: CirroTitleCollapse? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
@@ -112,7 +135,14 @@ fun CirroPageTitleBar(
             .fillMaxWidth()
             .statusBarsPadding()
             .height(CirroTitleBarHeight)
-            .padding(start = TitleBarStartInset, end = endInset),
+            .padding(start = TitleBarStartInset, end = endInset)
+            .then(
+                if (collapse == null) {
+                    Modifier
+                } else {
+                    Modifier.graphicsLayer { alpha = collapse.titleAlpha }
+                },
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -131,5 +161,91 @@ fun CirroPageTitleBar(
             modifier = Modifier.weight(1f),
         )
         actions()
+    }
+}
+
+/**
+ * 小标题**开始尝试升起**的收起进度。
+ *
+ * 取 0.6 而不是等到大标题淡净（0.9）之后：升起的动画得跑得完。只给
+ * `progress ∈ (0.9, 1]`（约 5.6dp 的回滚距离）的话，手指一划就冲过去了，小标题只会闪一下。
+ * 那 0.6~0.9 这段「大标题还没淡净」怎么办 —— 靠权重交接，见 [CirroMiniTitleBar] 里那个
+ * `1f - titleAlpha` 因子。
+ */
+private const val MiniTitleFrom = 0.6f
+
+/**
+ * **吸附小标题**：大标题被纸吞掉之后，**往回滚时**从纸底下长出来的那行小字（2026-10-16）。
+ *
+ * ## 为什么只在这一个时机出现
+ *
+ * 一级页的「探索 / 搜索 / 我的」本来就由底部导航指示，滚到底时标题沉进纸里没任何损失 ——
+ * 所以**滚满不留**常驻标题，只有用户**往回翻**（[CirroTitleCollapse.scrollingBack]）时才
+ * 冒出来提示「往回滚标题会回来」。这与详情页的情形不同：那边标题是**当前对象的名字**
+ * （歌单名），丢失它用户就不知道在看什么，不能照抄这套。
+ *
+ * ## 出现方式仍然是「半遮」
+ *
+ * 初位正好**沉在纸顶**（= 标题条下沿），靠 `translationY` 往上浮到标题条位置 —— 而本组件在
+ * 页面里排在纸**之前**（更下层），于是它被纸半遮着露出来，先露一截、再露全。和标题沉进去
+ * 是同一个动作的反向。普通的 fade in 做不到这个。
+ *
+ * ## 与真标题「交接」，不是叠加
+ *
+ * 两个不同字号的字叠在同一处会读成**重影**（不是交叉淡变，是脏）。所以小标题的最终不透明度
+ * 不是那个动画值本身，而是它再乘上**「大标题已经让出多少」**（`1f - titleAlpha`）：
+ * 大标题还亮着时小标题被压到几乎不可见、也还沉在纸里；大标题淡净的那一刻它正好全亮全升。
+ * 于是中途**任何一帧都读不到两个字号的字**，只有一个连续的换位。
+ *
+ * 顺带这也让「半遮」这个动作变长、看得见 —— 升起是跟着大标题的淡出一起发生的，而不是
+ * 等大标题让完位再单独播一段。
+ *
+ * 透明度归零时本组件**仍然留在组合里**：移出去会把 `animateFloatAsState` 的状态一起丢掉，
+ * 淡出过程会变成硬切。代价只是一个不可见的 `Text`，可以忽略。
+ *
+ * ⚠️ 判定包在 `derivedStateOf` 里而不是直接读 `progress`：那个值**每帧都在变**，直接读等于
+ * 让这一行在滚动全程每帧重组。包起来之后它只在**跨越 [MiniTitleFrom] 那一帧**通知一次，
+ * 其余时候一次重组都不发生。
+ *
+ * ⚠️ 交接因子放在 `graphicsLayer` 的 lambda 里算（`reveal.value * (1f - titleAlpha)`），
+ * 两者都在**绘制期**读 ⇒ 滚动全程只重绘、不重组。若提到 lambda 外面就成了组合期读值，
+ * 每帧重组（而这行本来只是个普通 `Text`，不值这个代价）。
+ */
+@Composable
+fun CirroMiniTitleBar(
+    title: String,
+    collapse: CirroTitleCollapse,
+    modifier: Modifier = Modifier,
+) {
+    val show by remember(collapse) {
+        derivedStateOf { collapse.scrollingBack && collapse.progress > MiniTitleFrom }
+    }
+    val reveal = animateFloatAsState(
+        targetValue = if (show) 1f else 0f,
+        animationSpec = tween(Motion.MicroMs, easing = Motion.Standard),
+        label = "cirroMiniTitle",
+    )
+    val risePx = with(LocalDensity.current) { CirroTitleBarHeight.toPx() }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .height(CirroTitleBarHeight)
+            .padding(start = TitleBarStartInset)
+            .graphicsLayer {
+                val a = reveal.value * (1f - collapse.titleAlpha)
+                alpha = a
+                translationY = (1f - a) * risePx
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

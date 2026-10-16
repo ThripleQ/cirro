@@ -38,7 +38,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thripleq.cirro.core.model.Track
 import com.thripleq.cirro.ui.components.LocalShellSettled
 import com.thripleq.cirro.ui.components.CirroErrorState
+import com.thripleq.cirro.ui.components.CirroTitleCollapse
 import com.thripleq.cirro.ui.components.ShellPanel
+import com.thripleq.cirro.ui.components.rememberCirroTitleCollapse
 import com.thripleq.cirro.ui.components.shellSharedCover
 import com.thripleq.cirro.ui.home.HomeUiState
 import com.thripleq.cirro.ui.home.HomeViewModel
@@ -68,6 +70,9 @@ fun HomeScreen(
     val listState = rememberLazyListState()
     // 横滑列表状态同样 hoist（见 [HomeRowStates]）：面板开合会重组网格，留在内层会归零。
     val rowStates = rememberRowStates()
+    // 大标题收起状态同样 hoist：它是**累积**出来的（见 [CirroTitleCollapse]），内层重组
+    // 归零的话，列表还停在中间而标题已经弹回来了。
+    val collapse = rememberCirroTitleCollapse()
     val bottomPad = islandClearance + 16.dp
 
     // 展开壳打开时通知上层收起底部导航（保留迷你播放条）；离开页面时复位。
@@ -124,6 +129,7 @@ fun HomeScreen(
                         onWebLogin = onWebLogin,
                         onRefresh = onRefresh,
                         rowStates = rowStates,
+                        collapse = collapse,
                         shared = shared,
                         avScope = scope,
                     )
@@ -153,6 +159,7 @@ fun HomeScreen(
                 onWebLogin = onWebLogin,
                 onRefresh = onRefresh,
                 rowStates = rowStates,
+                collapse = collapse,
                 shared = null,
                 avScope = null,
             )
@@ -201,6 +208,7 @@ private fun HomeBodyUi(
     onExpand: (ExpandTarget) -> Unit,
     onWebLogin: () -> Unit,
     onRefresh: () -> Unit,
+    collapse: CirroTitleCollapse,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
 ) {
@@ -217,6 +225,7 @@ private fun HomeBodyUi(
             onRefresh = onRefresh,
             listState = listState,
             rowStates = rowStates,
+            collapse = collapse,
             shared = shared,
             avScope = avScope,
         )

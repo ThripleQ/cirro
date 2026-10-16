@@ -27,6 +27,9 @@
 | 改**「已购单曲」屏的档位**来源 | `core/repo/ProfileRepository.kt` 的 `purchasedSongs` —— 那个端点回的是**购买记录**（`songId`/`vip`/`sq`… 28 个键，**没有 `fee`**），所以拉完后按 songId 另发一次 `v3/song/detail` 补 `fee`/`durationMs`。**别改用购买记录里的 `vip` 字段**：样本全是 VIP 歌、无法证伪，且 song 对象里没有这个键可对照 |
 | 徽标用的圆角 | `ui/theme/Shape.kt` 的 `CirroShape.Badge`（2dp，实测 kanade 截图 4px@d3 ≈ 1.3dp） | |
 | 改底部导航胶囊：加删 tab、换图标、改顺序 | `CirroApp.kt` | 导航目的地也集中在这一个文件 |
+| 改一级页**顶部大标题**（探索 / 搜索 / 我的：字形 / 内缩 / 高度） | `ui/components/PageTitleBar.kt` | 三页共用一份 `CirroPageTitleBar`（详情页的 `TrackListTitleBar` 是另一份）。高度 `CirroTitleBarHeight` = `headlineSmall` 行高，**它同时就是内容圆角纸的顶边线** —— 三页 + 详情页靠这个值共线，动它之前先读那段注释 |
+| 改大标题**「滑进半遮」**（上滑时纸顶抬起来把标题吞掉：抬多快、什么时候淡出、圆角） | `ui/components/TitleCollapse.kt` | 一处定义、三页共享：`CirroTitleCollapse`（收起点，须 hoist 到 Screen）+ `cirroCollapsingSheet`（会长的纸）+ `rememberCirroSheetTop`。**⚠️ 嵌套滚动 `y` 的符号在这里**（上滑为负、所以是减），写反效果整个反过来 |
+| 让**新的页面**也参与「滑进半遮」 | 外层容器改 `Box` + `.cirroTitleCollapse(collapse)`；标题条传 `collapse = collapse`；内容容器 `.fillMaxSize().cirroCollapsingSheet(collapse, sheetTop)`、顶部让位改成 `contentPadding` / `padding`（**别用 `Column`**：纸要能向上画进标题条那一段） | 照着 `HomeContent.kt` 抄；三页结构现已一致 |
 | 改点某处跳到哪个页面 | `CirroApp.kt` | 跳转逻辑只在这里 |
 
 ## 2. 数据：列表里有什么、怎么排

@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,7 +31,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
@@ -43,13 +41,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thripleq.cirro.core.model.Album
 import com.thripleq.cirro.core.model.PlaylistSummary
 import com.thripleq.cirro.ui.components.CirroErrorState
+import com.thripleq.cirro.ui.components.CirroMiniTitleBar
 import com.thripleq.cirro.ui.components.CirroPageTitleBar
+import com.thripleq.cirro.ui.components.CirroTitleCollapse
 import com.thripleq.cirro.ui.components.ShellPanel
+import com.thripleq.cirro.ui.components.cirroCollapsingSheet
+import com.thripleq.cirro.ui.components.cirroTitleCollapse
+import com.thripleq.cirro.ui.components.rememberCirroSheetTop
+import com.thripleq.cirro.ui.components.rememberCirroTitleCollapse
 import com.thripleq.cirro.ui.components.rememberSharedSourceGuard
+import com.thripleq.cirro.ui.components.rememberSheetViewportTop
 import com.thripleq.cirro.ui.profile.ProfileUiState
 import com.thripleq.cirro.ui.profile.ProfileViewModel
 import com.thripleq.cirro.ui.theme.Motion
-import com.thripleq.cirro.ui.theme.CirroShape
 
 /**
  * 我的页：账号抬头 + 「喜欢的音乐」全宽横幅 + 「已购」原地撑开的壳卡 + 创建/收藏两张行卡。
@@ -103,6 +107,9 @@ fun ProfileScreen(
     // 滚动位置 hoist：共享壳用 AnimatedContent 在「卡片网格 ↔ 面板」间切换，关闭面板时
     // 网格会重新组合——不 hoist 就会跳回顶部（同 HomeScreen 的 listState）。
     val scrollState = rememberScrollState()
+    // 大标题收起状态同理 hoist：它是累积出来的，跟着 AnimatedContent 重组会归零 ——
+    // 列表还停在中间、标题却弹回来了。见 [CirroTitleCollapse]。
+    val collapse = rememberCirroTitleCollapse()
 
     val onOpenPanel = remember {
         { target: ProfilePanel, rect: Rect?, morph: Boolean ->
@@ -140,6 +147,7 @@ fun ProfileScreen(
                     ProfileBodyUi(
                         state = state,
                         scrollState = scrollState,
+                        collapse = collapse,
                         onOpenTracks = onOpenTracks,
                         onOpenPanel = onOpenPanel,
                         onWebLogin = onWebLogin,
@@ -171,6 +179,7 @@ fun ProfileScreen(
             ProfileBodyUi(
                 state = state,
                 scrollState = scrollState,
+                collapse = collapse,
                 onOpenTracks = onOpenTracks,
                 onOpenPanel = onOpenPanel,
                 onWebLogin = onWebLogin,
@@ -200,6 +209,7 @@ fun ProfileScreen(
 private fun ProfileBodyUi(
     state: ProfileUiState,
     scrollState: ScrollState,
+    collapse: CirroTitleCollapse,
     onOpenTracks: (source: String, id: String, title: String) -> Unit,
     onOpenPanel: (ProfilePanel, Rect?, morphable: Boolean) -> Unit,
     onWebLogin: () -> Unit,
@@ -212,14 +222,21 @@ private fun ProfileBodyUi(
     // `surface` 圆角纸 —— 纸的顶角把容器色露出来，就是状态栏那条容器色 + 下方圆角内容的关系。
     // 标题条走 [CirroPageTitleBar]（三页共用一份实现，内缩 24dp 与字形永远一致），
     // 状态栏让位随之从内容挪到标题条上。
-    Column(
+    //
+    // 2026-10-16 起外层是 `Box`：纸顶会随滚动上抬把标题吞掉（滑进半遮），需要纸能向上画进
+    // 标题条那一段。见 [CirroTitleCollapse]。`collapse` 由 [ProfileScreen] 传入（须 hoist）。
+    val sheetTop = rememberCirroSheetTop()
+    Box(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .cirroTitleCollapse(collapse),
     ) {
         // 顶栏刷新键与探索页**同规格**：28dp 的 IconButton、默认右侧内缩
         // （[TitleBarEndInset]），三个 tab 页看起来是一套。
-        CirroPageTitleBar("我的") {
+        // 吸附小标题在**更下层**：纸把它半遮着长出来（见 [CirroMiniTitleBar]）。
+        CirroMiniTitleBar("我的", collapse)
+        CirroPageTitleBar("我的", collapse = collapse) {
             IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
                 Icon(
                     Icons.Filled.Refresh,
@@ -237,18 +254,21 @@ private fun ProfileBodyUi(
         // 放在外层 padding 会在岛背后留一条永久空白带，卡片进不去、岛像贴在画布上。
         // 顶部反过来：状态栏让位**不再**由内容承担，改由标题条兜住 —— 内容从纸上沿起，
         // 第一张卡（登录卡 / hero）压不到状态栏与挖孔上。
+        //
+        // 内容铺满整屏（含标题条那一段），靠 `padding(top = sheetTop)` 把第一项停在纸顶 ——
+        // 与改动前逐像素一致。顶部内缩放在 `verticalScroll` **之后**（与底部、左右同一处）：
+        // 那样它是滚动内容的一部分，滚上去的卡片能进入标题条那一段、被纸顶上移让出来。
         Column(
             Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .clip(CirroShape.SheetTop)
-                .background(MaterialTheme.colorScheme.surface)
+                .fillMaxSize()
+                .cirroCollapsingSheet(collapse, sheetTop)
                 // 视口 = 这张纸的裁切边界。**必须挂在 `.padding(...)` 之前**：
                 // onGloballyPositioned 量的是它所在链条位置的尺寸，放到 padding 之后
                 // 会量到内缩后的小矩形，贴着纸边的卡会被误判成「没被切」。
-                .then(guard.viewportModifier())
+                // 上边界还要跟着纸顶走（纸顶会被吞标题那套往上抬），见 [rememberSheetViewportTop]。
+                .then(guard.viewportModifier(rememberSheetViewportTop(collapse, sheetTop)))
                 .verticalScroll(scrollState)
-                .padding(start = 16.dp, end = 16.dp, bottom = bottomPadding),
+                .padding(start = 16.dp, end = 16.dp, top = sheetTop, bottom = bottomPadding),
         ) {
             Spacer(Modifier.height(20.dp))
             when (val s = state) {

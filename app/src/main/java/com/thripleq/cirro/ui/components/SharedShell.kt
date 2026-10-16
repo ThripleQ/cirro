@@ -85,14 +85,38 @@ fun Modifier.shellSharedCover(
  * 所以记录视口不会因为滚动而触发重组。
  *
  * 注：只约束**源**。目标（面板 banner）永远完整可见，不需要问。
+ *
+ * ## 视口上边界会动（2026-10-16）
+ *
+ * 大标题「滑进半遮」落地后，承载裁切的那张圆角纸**顶边本身会随滚动上抬**（见
+ * `CirroTitleCollapse`）。若视口只记节点自身的 bounds，上边界就永远停在节点顶边 ——
+ * 纸顶已经抬到标题条里了，这里却仍按「标题条下沿」算，于是滚进标题条那一段的卡片
+ * 会被误判成「完整可见」，点开就会从纸底下飞出一张封面（正是本文档开头描述的那种错动画）。
+ *
+ * 所以 [viewportModifier] 收一个**动态上内缩**：调用方把「纸顶相对本节点顶边」的位置报进来。
  */
 @Stable
 class SharedSourceGuard {
     private var viewport: Rect? = null
 
-    /** 绑到真正承载裁切的滚动容器上（探索页的 LazyColumn / 我的页那张圆角纸）。 */
-    fun viewportModifier(): Modifier =
-        Modifier.onGloballyPositioned { viewport = it.boundsInWindow() }
+    /**
+     * 视口**上边界**的动态内缩（px，相对 [viewportModifier] 所在节点的顶边）。
+     * 默认 `0f` = 节点顶边就是裁切线（不参与「滑进半遮」的页面即此）。
+     *
+     * 与 [viewport] 一样是普通字段、不是 state：读它发生在 [isFullyVisible]（点击那一刻），
+     * 而它内部要读 `CirroTitleCollapse` 的进度 —— 若走 state 会把每帧滚动都变成重组。
+     */
+    private var topInsetPx: () -> Float = { 0f }
+
+    /**
+     * 绑到真正承载裁切的滚动容器上（探索页的 LazyColumn / 我的页那张圆角纸）。
+     *
+     * @param topInsetPx 纸顶相对本节点顶边的位置（px），见类文档。
+     */
+    fun viewportModifier(topInsetPx: () -> Float = { 0f }): Modifier {
+        this.topInsetPx = topInsetPx
+        return Modifier.onGloballyPositioned { viewport = it.boundsInWindow() }
+    }
 
     /**
      * [r]（源封面在窗口坐标里的矩形）是否完整落在视口内。
@@ -102,7 +126,8 @@ class SharedSourceGuard {
      */
     fun isFullyVisible(r: Rect): Boolean {
         val vp = viewport ?: return true
-        return r.left >= vp.left - SLACK && r.top >= vp.top - SLACK &&
+        val top = vp.top + topInsetPx()
+        return r.left >= vp.left - SLACK && r.top >= top - SLACK &&
             r.right <= vp.right + SLACK && r.bottom <= vp.bottom + SLACK
     }
 

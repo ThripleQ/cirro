@@ -54,12 +54,18 @@ import coil.request.ImageRequest
 import com.thripleq.cirro.core.model.Track
 import com.thripleq.cirro.ui.components.BigCoverVisual
 import com.thripleq.cirro.ui.components.CirroMediaRow
+import com.thripleq.cirro.ui.components.CirroMiniTitleBar
 import com.thripleq.cirro.ui.components.CirroPageTitleBar
 import com.thripleq.cirro.ui.components.CirroSectionHeader
+import com.thripleq.cirro.ui.components.CirroTitleCollapse
 import com.thripleq.cirro.ui.components.SharedSourceGuard
+import com.thripleq.cirro.ui.components.cirroCollapsingSheet
 import com.thripleq.cirro.ui.components.cirroEntrySurface
+import com.thripleq.cirro.ui.components.cirroTitleCollapse
+import com.thripleq.cirro.ui.components.rememberCirroSheetTop
 import com.thripleq.cirro.ui.components.rememberPayTags
 import com.thripleq.cirro.ui.components.rememberSharedSourceGuard
+import com.thripleq.cirro.ui.components.rememberSheetViewportTop
 import com.thripleq.cirro.ui.components.shellSharedCover
 import com.thripleq.cirro.ui.home.HomeUiState
 import com.thripleq.cirro.ui.home.HomeViewModel
@@ -92,6 +98,7 @@ internal fun HomeContent(
     onRefresh: () -> Unit,
     listState: LazyListState,
     rowStates: HomeRowStates,
+    collapse: CirroTitleCollapse,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
 ) {
@@ -101,12 +108,21 @@ internal fun HomeContent(
 
     // 顶层铺 `surfaceContainer` 当「标题条」底色，内容是一张 `surface` 圆角纸：纸的顶角
     // 圆角把底下的容器色露出来 —— 就是状态栏那条容器色 + 下方圆角内容的关系（用户参照）。
-    Column(
+    //
+    // 2026-10-16 起是 `Box` 而不是 `Column`：纸要能**向上画进标题条那一段**（滑进半遮时
+    // 纸顶抬起来把标题吞掉），`Column` 里第二个子项的高度被压在标题条之下、够不到那里。
+    // 绘制顺序也因此成了效果的一部分：标题条先画、纸后画 ⇒ 纸天然盖住标题。
+    val sheetTop = rememberCirroSheetTop()
+    Box(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            // 只读不消费地接住列表的滚动量，驱动纸顶与标题透明度（见 [CirroTitleCollapse]）。
+            .cirroTitleCollapse(collapse),
     ) {
-        CirroPageTitleBar("探索") {
+        // 吸附小标题在**更下层**：纸把它半遮着长出来（见 [CirroMiniTitleBar]）。
+        CirroMiniTitleBar("探索", collapse)
+        CirroPageTitleBar("探索", collapse = collapse) {
             IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
                 Icon(
                     Icons.Filled.Refresh,
@@ -118,13 +134,17 @@ internal fun HomeContent(
         LazyColumn(
             state = listState,
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .clip(CirroShape.SheetTop)
-                .background(MaterialTheme.colorScheme.surface)
+                // 铺满整屏（含标题条那一段）：纸顶是这个盒子的**绘制期裁剪边界**，
+                // 会随滚动上抬；内容本身只按手势滚，不跟着多移一份。
+                .fillMaxSize()
+                .cirroCollapsingSheet(collapse, sheetTop)
                 // 视口 = 这张纸的裁切边界（列表就在纸里，标题条在纸外）。
-                .then(guard.viewportModifier()),
-            contentPadding = PaddingValues(bottom = bottomPadding),
+                // 上边界跟着纸顶走（纸顶会被吞标题那套往上抬）——不传的话，滚进标题条
+                // 那一段的卡片会被判成「完整可见」，点开就从纸底下飞出一张封面。
+                .then(guard.viewportModifier(rememberSheetViewportTop(collapse, sheetTop))),
+            // 顶部让位从「布局上排在标题条之后」改成 `contentPadding`：内容现在铺满整屏，
+            // 靠这个内缩把第一项停在纸顶（= 标题条下沿），与改动前的位置逐像素一致。
+            contentPadding = PaddingValues(top = sheetTop, bottom = bottomPadding),
         ) {
 
         // 逐块渲染：null = 这块还没就绪，整个区块（含标题）不显示，避免未就绪
