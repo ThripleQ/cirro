@@ -87,6 +87,7 @@
 | 播放页 / 迷你条界面与手势 | `ui/playerbar/PlayerDock.kt` |
 | **歌曲音频 URL 从哪取**（音质档回退 / URL 缓存 / 合成 URI） | `core/playback/PlaybackUrls.kt`；判据与实测依据在 `core/playback/PlayableUrl.kt` |
 | **试听片段**（VIP 歌 + 非会员 → 官方只给 30 秒）：怎么**认出来**、播完怎么**收尾** | 认：`core/playback/PlayableUrl.kt` 的 `freeTrialInfo` → `TrialClip`（**判据只能取自响应，不能拿 `fee`/`payed` 推** —— 已购单曲同样 `fee=1` 但实测是整曲）；收：`PlayerHolder.kt` 的 `refreshTrial` / `applyTrial` / `isTrialEnded` —— 片段末尾用 `ExoPlayer.pauseAtEndOfMediaItems` 停住而**不跳下一首**（用户 2026-10-11 选定，对齐官方） |
+| **VIP 歌要能拿到 URL / 试听，请求必须带 `os` + `appver`** | 服务端**按权益发 URL**：`/weapi/song/enhance/player/url/v1` 对未购 VIP 歌要求请求**同时带非空的 `os` 与 `appver`**，缺任一个一律回 `{code:200, data:[{code:-110, url:null, freeTrialInfo:null}]}`（免费与低音质免费歌不看这两个字段 ⇒ 症状恰好是「只有 VIP 歌播不了、连 30 秒试听都没有」）。内核里**只有这条端点**依赖「活 jar 恰好带这两个字段」（它走 `ne_call_weapi`，而那只发活 jar；别处的注入写的是 `jar_snapshot()` 的 scratch，不落回活 jar），所以它改走注入版 `ne_call_weapi_cookies(url, data, COOKIES_OS_IOS)` —— 见 `libnetease/src/service/services.c` 的 `ne_song_url_v1`。**别改回 `ne_call_weapi`，也别用 `COOKIES_OS_PC`**（后者 `appver` 会变空串，实测同样 -110） |
 | **「试听」标**与「试听已结束 · 开通 VIP 可听完整版」提示 | 标：`ui/components/TrialBadge.kt`（形制抄 `CirroPayBadge`，颜色用 `tertiary` —— 主色红已被红心占用）。挂载点：`PlayerDock.kt` 迷你条、`PlayerPage.kt` 歌手行 + 进度行下方；状态字段是 `PlayerUiState.trial` / `.trialEnded`（`ui/playerbar/PlayerState.kt`） |
 
 ## 4. 装配与其他
