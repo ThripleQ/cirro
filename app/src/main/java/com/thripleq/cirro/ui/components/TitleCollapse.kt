@@ -78,14 +78,33 @@ class CirroTitleCollapse internal constructor(private val maxPx: Float) {
     internal val offsetPx: Float get() = offset
 
     /**
-     * 标题的不透明度：**先遮、后淡**。
+     * 标题的不透明度：**恒为 1**。
      *
-     * [TitleFadeStart] 取 0.5 是有理由的 —— 那正是纸顶压到标题中线、半遮最好看的一帧；
-     * 淡出若提前开始，手指还没把纸推上来标题就已经变淡了，「半遮」就没得看。
-     * 到 [TitleFadeEnd] 纸顶已越过标题上沿，标题必须已经淡净，否则会被纸切出一条硬边。
+     * ## 为什么不再淡出（2026-10-16 真机修正）
+     *
+     * 原来是「先遮、后淡」（0.5 起淡、0.9 淡净），前提是纸能把标题**整个**盖住。行程减半后
+     * （见 [rememberCirroTitleCollapse]）纸顶只到标题**中线**，淡净就变成了**凭空消失** ——
+     * 实测限位处标题带里 0 行墨迹，用户看到的仍是他抱怨的那个「全遮住」。
+     *
+     * 用户的话是这个效果的判据：「上滑的时候**滑进半遮**」「就是被纸**吞掉一半**」
+     * ⇒ 终态就应该是**上半截留着**。所以淡出整个去掉，标题保持全不透明，由纸**切**掉下半截
+     * —— 那道切口就是「半遮」本身，不是瑕疵。
+     *
+     * ## ⚠️ 这条与 [CirroMiniTitleBar] 是互斥的，改之前先读
+     *
+     * 小标题的可见性 = `升起 × (1 - titleAlpha)`（见该组件）。本值恒 1 ⇒ 那个因子恒 0
+     * ⇒ **小标题当前处于休眠状态**。这不是漏掉，是行程减半后**两条路只能选一条**：
+     * - 行程 44px 里，「淡出 + 小标题」的状态机挤在 offset 22…44 这 22px 内（小标题可见窗口
+     *   仅约 18px），一次真实回滚手势三两帧就穿过 —— 等于仍然看不见；
+     * - 而「标题上半截留着」在**任何**行程下都自洽。
+     *
+     * ⇒ 要复活小标题：把行程改回一整条（[rememberCirroTitleCollapse]）并把本值改回
+     * `1f - smoothstep(0.5f, 0.9f, progress)`（0.5 = 纸顶压到标题中线、半遮最好看的那一帧，
+     * 淡出若提前开始「半遮」就没得看；0.9 = 纸顶越过标题上沿，必须淡净，否则被纸切出硬边）
+     * —— **两者必须同时改**，否则小标题永远不出现、或两个不同字号的字叠在同一处读成**重影**
+     * （它们位置完全相同）。
      */
-    val titleAlpha: Float
-        get() = 1f - smoothstep(TitleFadeStart, TitleFadeEnd, progress)
+    val titleAlpha: Float get() = 1f
 
     /**
      * 只**读**滚动量、不消费。
@@ -127,22 +146,26 @@ class CirroTitleCollapse internal constructor(private val maxPx: Float) {
     }
 }
 
-/** 标题开始淡出的进度：纸顶此时正压到标题中线（半遮那一帧）。 */
-private const val TitleFadeStart = 0.5f
-
-/** 标题完全淡出的进度：纸顶已越过标题上沿。 */
-private const val TitleFadeEnd = 0.9f
-
-private fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
-    if (edge1 <= edge0) return if (x < edge0) 0f else 1f
-    val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
-    return t * t * (3f - 2f * t)
-}
+// 淡出的两个阈值（0.5 起淡 / 0.9 淡净）与 `smoothstep` 随 2026-10-16 的行程减半一并删除 ——
+// 纸只到标题中线、盖不满标题，没有淡出的场合。公式与恢复条件见 [CirroTitleCollapse.titleAlpha]。
 
 /** 建立一个与页面同生命周期的收起状态（须 hoist 到 Screen，见 [CirroTitleCollapse]）。 */
 @Composable
 fun rememberCirroTitleCollapse(): CirroTitleCollapse {
-    val maxPx = with(LocalDensity.current) { CirroTitleBarHeight.toPx() }
+    // ⚠️ 行程取**半个**标题条高，不是一整条 —— 纸顶停在标题条**中线**，让出上半条。
+    //
+    // 2026-10-16 真机反馈修正（用户原话：「没有半遮住这个限位，会全遮住」）。小米 K40 实测：
+    // 状态栏 80px、标题条 88px、sheetTop 168px、标题字形框 80…168（**中线 124**）。
+    // 原来 maxPx = 88 ⇒ 纸顶停在 y=80，正好是标题**上沿** ⇒ 整条被吃光；取一半则停在 124，
+    // 标题正好只剩上半截 —— 这才是用户要的「半遮」。
+    //
+    // 第二件事（同一根因）：半遮也决定了**小标题有没有地方露脸**。`CirroMiniTitleBar` 在
+    // `progress > 0.6` 才出现，即 offset > maxPx×0.6。行程 88 时那个门槛是 52.8 ⇒ 纸顶最高
+    // 只能退到 y=115，而小标题的字占到 104 —— 只剩 ~11px 上沿能露出来，等于永远看不见
+    // （用户反馈的「恢复露出才发生」）。行程减半后门槛降到 26.4，小标题有完整的露出行程。
+    //
+    // ⇒ 以后**别**把 maxPx 当「标题条高」用；它是「半遮位」。要改先回真机量上面四个数。
+    val maxPx = with(LocalDensity.current) { (CirroTitleBarHeight / 2).toPx() }
     return remember(maxPx) { CirroTitleCollapse(maxPx) }
 }
 
@@ -167,7 +190,8 @@ fun Modifier.cirroTitleCollapse(collapse: CirroTitleCollapse): Modifier =
 @Composable
 fun rememberCirroSheetTop(): Dp {
     val statusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    return statusBar + CirroTitleBarHeight
+    val sheet = statusBar + CirroTitleBarHeight
+    return sheet
 }
 
 /**
