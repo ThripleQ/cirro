@@ -452,7 +452,7 @@ private fun KanadeCard(
                     if (ok != shareable) shareable = ok
                 }
                 .then(
-                    // playKind 非空的卡（漫游 / 艺人）点了直接播、不展开面板 —— 没有
+                    // playKind 非空的卡（漫游 / 相似歌曲 / 相似艺人）点了直接播、不展开面板 —— 没有
                     // 对侧目标却挂共享元素，等于给转场注册一个孤儿 bounds，不挂。
                     //
                     // shareable = false（封面被列表裁切）：同样不挂 —— overlay 里飞的

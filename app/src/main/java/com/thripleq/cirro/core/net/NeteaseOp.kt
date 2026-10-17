@@ -101,6 +101,17 @@ object NeteaseOp {
      */
     const val SIMI_ARTIST = 48
 
+    /**
+     * 相似歌曲 `/weapi/discovery/simiSong`（args: songId）。
+     *
+     * 「相似歌曲」功能卡（kanade 登录态实测第 4 张，2026-10-17）：
+     * 种子歌（猜你喜欢第一首）→ **相似歌曲**。参数名 `songid` 全小写，
+     * 与 [SIMI_ARTIST] 的 `artistid` 同款；返回**老格式**歌对象
+     * （顶层 `album`/`artists`/`duration`），[com.thripleq.cirro.core.repo.parseTrack]
+     * 两套都认。
+     */
+    const val SIMI_SONG = 53
+
     // ── 收藏 / 点赞（2026-10-06，占位按钮接线）─────────────────────────
     // 这四条都是**写**接口。服务端把「下架歌曲无法收藏」这类失败放在 HTTP 200
     // 的 body.message 里（code=401），所以调用方一律走

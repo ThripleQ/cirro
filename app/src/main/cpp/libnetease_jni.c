@@ -237,6 +237,9 @@ static ne_resp *dispatch(int op, int narg, const char *const a[]) {
         /* 48: 相似歌手 /weapi/discovery/simiArtist（args: artistId）。
          * 「相似艺人」卡走这条：种子歌 → 歌手 → 相似歌手 → 他们的热门歌。 */
         case 48: return ne_simi_artist(A(0));
+        /* 53: 相似歌曲 /weapi/discovery/simiSong（args: songId）。
+         * 「相似歌曲」卡走这条：种子歌（猜你喜欢第一首）→ 相似歌曲。 */
+        case 53: return ne_simi_song(A(0));
         /* 49..52: 占位按钮接线（2026-10-06），全是**写**接口。
          * 服务端把「下架歌曲」那类失败放在 HTTP 200 的 message 里，调用方
          * 必须读 body.message，不能只看 err/code。 */

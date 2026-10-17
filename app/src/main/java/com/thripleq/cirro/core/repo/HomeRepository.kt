@@ -342,6 +342,25 @@ class HomeRepository @Inject constructor(
         }
     }
 
+    /**
+     * 相似歌曲（`/weapi/discovery/simiSong`，args: songId）。返回壳是 `songs[]`，
+     * **老格式**歌对象（顶层 `album`/`artists`/`duration`），[parseTrack] 两套都认。
+     *
+     * 「相似歌曲」功能卡（kanade 登录态实测第 4 张）的内容源：种子歌 → 相似歌曲，
+     * 与「相似艺人」的种子同源（都是猜你喜欢第一首）。服务端每次给约 5 首。
+     */
+    suspend fun simiSongs(songId: String): List<Track> = withContext(Dispatchers.IO) {
+        val r = gateway.call(NeteaseOp.SIMI_SONG, songId)
+        dbg { "simiSong song=$songId err=${r.err} len=${r.body.size} body=${String(r.body, Charsets.UTF_8).take(300)}" }
+        if (r.err != 0 || r.body.isEmpty()) return@withContext emptyList()
+        try {
+            findTrackArray(JSONObject(String(r.body, Charsets.UTF_8)))?.let { parseTracks(it) }
+                ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     /** 某歌手的 50 首热门歌（`artist/songs`, order=hot）。注意 C 侧签名 offset 在 limit 前。 */
     private suspend fun artistTopSongs(artistId: String, limit: Int = 50): List<Track> {
         val r = gateway.call(NeteaseOp.ARTIST_SONGS, artistId, "0", limit.toString(), "hot")
