@@ -1,5 +1,8 @@
+@file:OptIn(UnstableApi::class)
+
 package com.thripleq.cirro
 
+import androidx.media3.common.util.UnstableApi
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterExitState
@@ -61,7 +64,6 @@ import com.thripleq.cirro.ui.profile.ProfileViewModel
 import com.thripleq.cirro.ui.screens.ArtistScreen
 import com.thripleq.cirro.ui.screens.CommentsScreen
 import com.thripleq.cirro.ui.screens.HomeScreen
-import com.thripleq.cirro.ui.screens.LibraryScreen
 import com.thripleq.cirro.ui.screens.PodcastScreen
 import com.thripleq.cirro.ui.screens.ProfileScreen
 import com.thripleq.cirro.ui.screens.SearchScreen
@@ -73,9 +75,6 @@ import kotlinx.serialization.Serializable
 /** Type-safe navigation destinations. Navigation lives only in [CirroApp]. */
 @Serializable
 object Home
-
-@Serializable
-object Library
 
 @Serializable
 object Search
@@ -353,15 +352,6 @@ fun CirroApp() {
                         islandHeight = islandHeightDp,
                         onShellOpenChange = { shellOpen = it },
                         shared = this@SharedTransitionLayout,
-                    )
-                }
-                composable<Library> {
-                    LibraryScreen(
-                        onOpenChart = { id, name, origin ->
-                            openWithOrigin(origin) {
-                                navController.navigate(ChartDestination(chartId = id, name = name))
-                            }
-                        },
                     )
                 }
                 composable<ChartDestination> { entry ->

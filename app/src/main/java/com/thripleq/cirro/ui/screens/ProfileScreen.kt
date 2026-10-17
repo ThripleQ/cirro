@@ -121,6 +121,8 @@ fun ProfileScreen(
     val onDismiss = remember { { panel = null } }
     // 「无条件重取一次」：错误态的重试与顶栏那颗刷新键共用同一个动作。
     val onRefresh = remember(vm) { { vm.refresh() } }
+    // 退出登录只在这里接到 VM：按钮自己在 ProfileCards 里（连同二次确认）。
+    val onLogout = remember(vm) { { vm.logout() } }
 
     if (Motion.SharedShellEnabled && shared != null) {
         // 官方容器变换：源大卡封面与面板 banner 封面挂同一 key 的 sharedBounds，
@@ -152,6 +154,7 @@ fun ProfileScreen(
                         onOpenPanel = onOpenPanel,
                         onWebLogin = onWebLogin,
                         onRefresh = onRefresh,
+                        onLogout = onLogout,
                         shared = shared,
                         avScope = scope,
                         bottomPadding = panelBottomPad,
@@ -184,6 +187,7 @@ fun ProfileScreen(
                 onOpenPanel = onOpenPanel,
                 onWebLogin = onWebLogin,
                 onRefresh = onRefresh,
+                onLogout = onLogout,
                 shared = null,
                 avScope = null,
                 bottomPadding = panelBottomPad,
@@ -214,6 +218,7 @@ private fun ProfileBodyUi(
     onOpenPanel: (ProfilePanel, Rect?, morphable: Boolean) -> Unit,
     onWebLogin: () -> Unit,
     onRefresh: () -> Unit,
+    onLogout: () -> Unit,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
     bottomPadding: Dp,
@@ -281,6 +286,7 @@ private fun ProfileBodyUi(
                     data = s.data,
                     onOpenTracks = onOpenTracks,
                     onOpenPanel = onOpenPanel,
+                    onLogout = onLogout,
                     shared = shared,
                     avScope = avScope,
                     guard = guard,

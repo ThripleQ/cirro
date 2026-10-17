@@ -33,8 +33,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          # 不能是默认的 1：release notes 要按上次 tag 以来的提交生成，
-          # 浅克隆会让它退化成「整个仓库只有一个提交」。
+          # 不能是默认的 1，两个理由：
+          # 1. release notes 要按上次 tag 以来的提交生成，浅克隆会让它退化成
+          #    「整个仓库只有一个提交」；
+          # 2. versionCode = `git rev-list --count HEAD`（见 app/build.gradle.kts），
+          #    浅克隆下只返回 1 ⇒ 每次发布的包都同号，用户装第二版时报降级。
           fetch-depth: 0
 
       - name: Resolve tag and version
@@ -109,6 +112,11 @@ jobs:
         # 发版前跑一遍（与 build.yml 同一段）：tag 可能打在一个没走过 push 门禁的
         # commit 上，解析判据挂了不该进发布页。纯 JVM，几十秒。
         run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Lint
+        # 与 build.yml 同一步（两处都要改）：tag 也可能打在一个没走过 push 门禁的
+        # commit 上，Error 级 lint（比如 NewApi —— 用了高于 minSdk 的 API）不该进发布页。
+        run: ./gradlew :app:lintDebug --stacktrace
 
       - name: Build release APK
         # 只出 release：发布页上放 debug 包会让人装错（Compose 没优化、R8 没跑，

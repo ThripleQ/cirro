@@ -1,5 +1,8 @@
+@file:OptIn(UnstableApi::class)
+
 package com.thripleq.cirro.ui.playerbar
 
+import androidx.media3.common.util.UnstableApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Person

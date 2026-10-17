@@ -1,5 +1,8 @@
+@file:OptIn(UnstableApi::class)
+
 package com.thripleq.cirro.ui.playerbar
 
+import androidx.media3.common.util.UnstableApi
 import com.thripleq.cirro.ui.theme.Motion
 import com.thripleq.cirro.ui.theme.CirroShape
 import android.net.Uri

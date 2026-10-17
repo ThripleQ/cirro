@@ -45,6 +45,25 @@ Cirro 是桌面端播放器 [Netune](https://github.com/ThripleQ/Netune) 的安�
 message）住在 `core/repo/InteractionRepository.kt`，`RequestFailedException` 住在
 `core/repo/RepoErrors.kt`：它们描述「这次调用怎么样」，不是领域数据。
 
+**依赖方向（2026-10-17 收口）**：`core/` **零反向依赖 `ui/`**，UI 只碰 `repo` —— 此前唯一的
+破例是 `ProfileViewModel` 直接 `import NetEaseGateway`（只为导入 cookie），现已收进
+`core/repo/AuthRepository`。**UI 不该知道 cookie 存在哪、jar 是进程内单例这类细节**，它只需要
+「登录 / 登出」两个动作。同理，任何新加的"某件事怎么进出"都先在 `core/repo` 落一层。
+
+### 登录态的进与出（`core/repo/AuthRepository`）
+
+登录态**不在 Kotlin 手里**：libnetease 的 cookie jar 才是唯一真相，Kotlin 侧只有一个文件
+路径（`core/net/CookieStore`）。
+
+| 动作 | 做了什么 | 为什么是这样 |
+|---|---|---|
+| 登录 | WebView 拿到 cookie 串 → `importCookies` 合入 jar 并落盘 | 下次冷启动据此恢复登录态 |
+| 登出 | **删 cookie 文件** + `ne_jar_reload()` | jar **进程内只创建一次**：`ne_set_cookie_file` 只改路径不重建，所以只删文件的话内存里那份 MUSIC_U 还在，下一个请求照样带登录态。两步缺一都不算登出 |
+
+登出还要连带失效**账号短缓存与收藏 / 已购镜像**（`ProfileRepository.invalidateAccount()` +
+`LibraryStateStore.invalidate()`）：镜像按 uid 记账，不清就会在下一次登录里把上一个人的红心
+和已购徽标带进来 —— 比看到旧昵称严重得多。
+
 ## 二、两条数据流
 
 - **元数据路径**（歌单 / 歌词 / 封面 / 账号）：

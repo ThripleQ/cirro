@@ -2,7 +2,7 @@ package com.thripleq.cirro.ui.profile
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.thripleq.cirro.core.net.NetEaseGateway
+import com.thripleq.cirro.core.repo.AuthRepository
 import com.thripleq.cirro.core.repo.LibraryStateStore
 import com.thripleq.cirro.core.model.ProfileData
 import com.thripleq.cirro.core.repo.ProfileRepository
@@ -36,7 +36,7 @@ sealed interface ProfileUiState {
 class ProfileViewModel @Inject constructor(
     private val repository: ProfileRepository,
     private val library: LibraryStateStore,
-    private val gateway: NetEaseGateway,
+    private val auth: AuthRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)
@@ -133,7 +133,7 @@ class ProfileViewModel @Inject constructor(
             repository.invalidateAccount() // 登录态变了，丢弃账号短缓存与集合副本
             library.invalidate()           // 收藏镜像整份作废，避免下个账号看到上个人的红心
             enterGate.reset()              // 换账号后的第一次可见必须真刷一次
-            gateway.importCookies(cookieStr)
+            auth.importCookies(cookieStr)
             val account = repository.account()
             _busy.value = false
             if (account == null) {
@@ -146,6 +146,31 @@ class ProfileViewModel @Inject constructor(
                 val data = repository.loadProfile(account)
                 if (data != null) _uiState.value = ProfileUiState.LoggedIn(data)
             }
+        }
+    }
+
+    /**
+     * 退出登录。
+     *
+     * 三步，**一步都不能省**：
+     * 1. [AuthRepository.clearCookies] —— C 层那份 jar（登出的实质）；
+     * 2. `repository.invalidateAccount()` / `library.invalidate()` —— 账号短缓存与
+     *    **收藏 + 已购镜像**。镜像是「这个 uid 已载入」记账的，不清就会在下一次登录里
+     *    把上一个人的红心和已购徽标带进来（比看到旧昵称严重得多）；
+     * 3. 页面落到 [ProfileUiState.LoggedOut] —— 不设的话页面还挂着旧数据，用户会以为没退成。
+     *
+     * 之后**不**再取数：未登录页不需要任何请求，`enterGate.reset()` 让下次进页面（或
+     * 重新登录后的第一次可见）真刷一次。
+     */
+    fun logout() {
+        viewModelScope.launch {
+            _busy.value = true
+            auth.clearCookies()
+            repository.invalidateAccount()
+            library.invalidate()
+            enterGate.reset()
+            _busy.value = false
+            _uiState.value = ProfileUiState.LoggedOut
         }
     }
 

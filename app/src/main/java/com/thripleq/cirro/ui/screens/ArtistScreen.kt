@@ -41,6 +41,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -73,7 +74,6 @@ import com.thripleq.cirro.ui.theme.CirroShape
 import com.valentinilk.shimmer.shimmer
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 /**
  * 歌手主页：头像/别名/简介 + 专辑横滑 + 热门歌曲列表。
@@ -300,8 +300,14 @@ private fun AlbumCard(album: ArtistAlbum, onClick: (Rect) -> Unit) {
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
+        // 年份那行的格式化要读 locale，而它必须**可观察**（`LocalConfiguration`）：
+        // 直接 `Locale.getDefault()` 的话切语言不会重组，这一行会留在旧语言
+        // （lint 的 NonObservableLocale 抓的就是这个）。年份是纯数字，观感上看不出语言
+        // 差异，但同一个坑在别处（月份/星期）就是实打实的错译。
+        val locale = LocalConfiguration.current.locales[0]
         val year = if (album.publishTime > 0) {
-            SimpleDateFormat("yyyy", Locale.getDefault()).format(Date(album.publishTime))
+            remember(locale) { SimpleDateFormat("yyyy", locale) }
+                .format(Date(album.publishTime))
         } else {
             ""
         }

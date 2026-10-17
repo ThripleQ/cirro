@@ -62,6 +62,9 @@
 | ~~底部滚动操作行（滑出头部按钮后出现的三按钮）~~ | **已全局删除，别再加回来** | `ActionNavRow` / `actionVisible` / `actionsOffscreen` 上报链都没了；dock 只有「迷你条 + 导航行」两段，「播放全部」是列表页自己的吸顶行（见上一行），评论入口只在全屏播放页 |
 | 大卡 → 全屏列表时 hero 封面飞到哪里 | `ui/screens/{HomeExpandShell,ProfilePanels}.kt` 传的 `heroCover*`（必须与 `TrackListMetrics` 一致） |
 | 登录 / 验证码接口（JNI op 30/31、cookie 导入） | `app/src/main/cpp/libnetease_jni.c` + `core/net/NeteaseOp.kt` |
+| **登录态的进与出**（导入 cookie / 退出登录） | `core/repo/AuthRepository.kt` —— UI 只认这一层（原先 `ProfileViewModel` 直接调 `NetEaseGateway`，是全项目唯一的 `ui/` → `core/net` 反向依赖）。按钮与二次确认在 `ui/screens/ProfileLoginCards.kt` 的 `LogoutButton` |
+| cookie 文件**路径** | `core/net/CookieStore.kt`（唯一定义处）。启动时由 `di/AppModule` 交给 C 层，登出时由 `AuthRepository` 删 —— **两处必须用同一个对象**，各写死一串文件名迟早分叉（分叉的表现是「点了退出登录却还是登录态」） |
+| 退出登录**为什么是两步** | 删文件（下次冷启动读不到）+ `ne_jar_reload()`（清内存）。jar 是**进程内只创建一次**的：`ne_set_cookie_file` 只改路径不重建 ⇒ 只删文件的话内存里那份 MUSIC_U 还在，下一个请求照样带登录态 |
 
 ## 2.6 点赞 / 收藏 / 分享 / 排序（写操作，2026-10-06）
 
@@ -88,7 +91,9 @@
 | **歌曲音频 URL 从哪取**（音质档回退 / URL 缓存 / 合成 URI） | `core/playback/PlaybackUrls.kt`；判据与实测依据在 `core/playback/PlayableUrl.kt` |
 | **试听片段**（VIP 歌 + 非会员 → 官方只给 30 秒）：怎么**认出来**、播完怎么**收尾** | 认：`core/playback/PlayableUrl.kt` 的 `freeTrialInfo` → `TrialClip`（**判据只能取自响应，不能拿 `fee`/`payed` 推** —— 已购单曲同样 `fee=1` 但实测是整曲）；收：`PlayerHolder.kt` 的 `refreshTrial` / `applyTrial` / `isTrialEnded` —— 片段末尾用 `ExoPlayer.pauseAtEndOfMediaItems` 停住而**不跳下一首**（用户 2026-10-11 选定，对齐官方） |
 | **VIP 歌要能拿到 URL / 试听，请求必须带 `os` + `appver`** | 服务端**按权益发 URL**：`/weapi/song/enhance/player/url/v1` 对未购 VIP 歌要求请求**同时带非空的 `os` 与 `appver`**，缺任一个一律回 `{code:200, data:[{code:-110, url:null, freeTrialInfo:null}]}`（免费与低音质免费歌不看这两个字段 ⇒ 症状恰好是「只有 VIP 歌播不了、连 30 秒试听都没有」）。内核里**只有这条端点**依赖「活 jar 恰好带这两个字段」（它走 `ne_call_weapi`，而那只发活 jar；别处的注入写的是 `jar_snapshot()` 的 scratch，不落回活 jar），所以它改走注入版 `ne_call_weapi_cookies(url, data, COOKIES_OS_IOS)` —— 见 `libnetease/src/service/services.c` 的 `ne_song_url_v1`。**别改回 `ne_call_weapi`，也别用 `COOKIES_OS_PC`**（后者 `appver` 会变空串，实测同样 -110） |
-| **「试听」标**与「试听已结束 · 开通 VIP 可听完整版」提示 | 标：`ui/components/TrialBadge.kt`（形制抄 `CirroPayBadge`，颜色用 `tertiary` —— 主色红已被红心占用）。挂载点：`PlayerDock.kt` 迷你条、`PlayerPage.kt` 歌手行 + 进度行下方；状态字段是 `PlayerUiState.trial` / `.trialEnded`（`ui/playerbar/PlayerState.kt`） |
+| **「试听」标**与「试听已结束 · 开通 VIP 可听完整版」提示 | 标：`ui/components/TrialBadge.kt`（形制抄 `CirroPayBadge`，颜色用 `tertiary` —— 主色红已被红心占用）。挂载点：`PlayerDock.kt` 迷你条、`PlayerPageContent.kt` 歌手行 + 进度行下方；状态字段是 `PlayerUiState.trial` / `.trialEnded`（`ui/playerbar/PlayerState.kt`） |
+| 播放页：改**壳**（圆角/投影/展开手势/系统栏）还是改**壳里排什么** | 壳 = `ui/playerbar/PlayerPage.kt`；内容区（封面→标题→进度→控制整列）= `ui/playerbar/PlayerPageContent.kt`（2026-10-17 从 1009 行拆出）。⚠️ 内容区是全项目**唯一逐帧重组**的组合，往里加东西按「每帧都会重跑」估价 |
+| 「我的」页：改**卡片零件**还是改**登录态版面** | 零件（行卡 / 已购壳 / hero 卡）= `ui/screens/ProfileCards.kt`；登录态版面（未登录引导 + 已登录组合 + 退出登录）= `ui/screens/ProfileLoginCards.kt`（2026-10-17 拆出）。共用的零件是 `internal`，**只放宽真正被跨文件用到的那几个** |
 
 ## 4. 装配与其他
 

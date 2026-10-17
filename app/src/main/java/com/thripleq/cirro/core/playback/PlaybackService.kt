@@ -1,11 +1,15 @@
+@file:OptIn(UnstableApi::class)
+
 package com.thripleq.cirro.core.playback
 
 import android.app.Notification
+import androidx.media3.common.util.UnstableApi
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.media3.common.Player
 import androidx.media3.session.MediaSession
@@ -53,11 +57,20 @@ class PlaybackService : MediaSessionService() {
         mediaSession = session
 
         // 立即进入前台：满足 startForegroundService() 的 5s 窗口，避免慢加载被杀。
-        startForeground(
-            NOTIF_ID,
-            buildNotification(player, session, activityIntent),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
-        )
+        //
+        // 三参那个 `startForeground(id, notification, type)` 是 **API 29** 才有的，
+        // 而 minSdk = 26 —— 在 Android 8/9 上调它直接 `NoSuchMethodError`（lint 的
+        // NewApi 抓到的就是这条）。type 只是给系统声明「这是放音乐的」，低版本没有
+        // 这个概念，走两参重载即可。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIF_ID,
+                buildNotification(player, session, activityIntent),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
+            )
+        } else {
+            startForeground(NOTIF_ID, buildNotification(player, session, activityIntent))
+        }
         lastNotifKey = notifKey(player)
 
         // 随播放器事件刷新通知（标题/艺人/播放暂停）。只 notify，不再重复 startForeground。

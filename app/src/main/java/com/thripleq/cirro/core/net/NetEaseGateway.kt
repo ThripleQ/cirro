@@ -28,6 +28,16 @@ class NetEaseGateway(
         CirroNative.importCookies(cookieStr)
     }
 
+    /**
+     * 把 jar **整份丢掉**重建（重新读 cookie 文件；文件不存在 = 空 jar）。
+     *
+     * 登出用。调用方必须先删掉 cookie 文件（见 [com.thripleq.cirro.core.net.CookieStore]）：
+     * jar 在进程里只创建一次，[configure] 只改路径不重建，光删文件不影响内存里那份。
+     */
+    fun reloadCookies() {
+        CirroNative.reloadCookies()
+    }
+
     /** Runs one libnetease service call, blocking on [io] while it round-trips. */
     suspend fun call(op: Int, vararg args: String): ApiResult =
         withContext(io) { callBlocking(op, *args) }

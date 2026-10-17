@@ -7,7 +7,7 @@ An Android music player. The mobile counterpart to the desktop player
 ## Tech stack
 
 - **Language**: Kotlin
-- **UI**: Jetpack Compose + Material 3 (dynamic color / Material You)
+- **UI**: Jetpack Compose + Material 3 — **动态取色是关的**（见下）
 - **Playback**: AndroidX Media3 (ExoPlayer + Session)
 - **Networking**: OkHttp — the Kotlin layer that replaces libnetease's built-in curl transport
 - **Native bridge**: libnetease integrated via JNI + transport injection
@@ -21,9 +21,18 @@ app/
     CirroApp.kt             # root UI + type-safe navigation graph
     di/                    # Hilt wiring (AppModule provides the gateway)
     ui/                    # Compose 屏 + 各功能 ViewModel/UiState
-      playerbar/           # 常驻 dock + 全屏播放页合体（PlayerDock）、列表操作按钮
+      playerbar/           # 常驻 dock + 全屏播放页合体（PlayerDock）、队列/设置/睡眠定时浮层
       components/          # 跨功能通用组件（ExpandableShell 伸展壳；CoverUrls 封面地址的唯一出口）
-    core/                  # model (domain models), net (libnetease gateway), repo, playback (Media3)
+      menu/                # 曲目 ⋮ 菜单 —— 全站共用一份
+      splash/              # 开屏（Compose 画的那层「准备缓冲」）
+    core/
+      model/               # 领域模型的唯一去处（零 Android/Compose 依赖）
+      net/                 # libnetease gateway + OkHttp 传输注入
+      repo/                # 各端点取数 + 编排（AuthRepository 管登录态进出）
+      playback/            # Media3（ExoPlayer / 队列持久化 / URL 惰性解析）
+      db/                  # Room 收藏缓存
+      startup/             # StartupGate：开屏的放行判据与「一次进程只演一次」的名额
+      util/                # 冷却门等零依赖小工具
   src/main/cpp/            # JNI bridge to libnetease (CMake + NDK)
 ```
 
@@ -49,6 +58,16 @@ Playback and caching lean on Media3 end-to-end: `ExoPlayer` + `MediaSessionServi
 `SimpleCache`+`CacheDataSource` for format-agnostic byte caching (we chose to depend on Media3
 rather than hand-roll Netune's segment cache — see the architecture doc for the trade-off).
 
+**Dynamic color is deliberately off** (`CirroTheme(dynamicColor = false)`). Material You would
+derive the whole scheme from the wallpaper and overwrite the brand red, and on some wallpapers the
+derived `onSurface` is dark enough that unstyled text disappears in dark theme. The shipped palette
+is contrast-checked pair by pair instead. Flip that flag to follow the wallpaper.
+
+**Login state lives in the C layer**, not in Kotlin: libnetease owns the cookie jar (persisted to an
+app-private file). Login imports a cookie string from the in-app WebView; logout **deletes that file
+and calls `ne_jar_reload()`** — the jar is created once per process, so deleting the file alone
+would leave the in-memory `MUSIC_U` intact and the next request would still be authenticated.
+
 ## Building
 
 ```bash
@@ -68,11 +87,15 @@ rather than hand-roll Netune's segment cache — see the architecture doc for th
 CI (GitHub Actions) — two workflows:
 
 - **[build.yml](.github/workflows/build.yml)** — every push to `main`/`beta` (plus manual runs):
-  runs the unit tests, then uploads `cirro-debug`, `cirro-release` and the test report as artifacts.
-  Artifacts expire after 7 days and need a GitHub login to download.
+  runs the unit tests, then lint, then uploads `cirro-debug`, `cirro-release` and the test/lint
+  reports as artifacts. Artifacts expire after 7 days and need a GitHub login to download.
 - **[release.yml](.github/workflows/release.yml)** — a `v*` tag (or manual run): builds only the
   release APK and attaches it as `cirro-<tag>.apk` to a **GitHub Release**, which is login-free and
   permanent.
+
+Both workflows need `fetch-depth: 0` on checkout: `versionCode` is `git rev-list --count HEAD`
+(see `app/build.gradle.kts`), and a shallow clone makes every build number 1 — which only shows up
+as *"can't install, version downgrade"* on device, never in CI.
 
 ### Tests
 
@@ -80,8 +103,19 @@ CI (GitHub Actions) — two workflows:
 ./gradlew :app:testDebugUnitTest     # pure JVM — no device, no emulator
 ```
 
-Covers the JSON→model parsers, the pure rules (pay/VIP badge, cover URL sizing) and the refresh
-orchestration. Both workflows run them *before* packaging.
+Covers the JSON→model parsers, the pure rules (pay/VIP badge, cover URL sizing), the refresh
+orchestration and the splash "ready" gate (**101 tests**). Both workflows run them *before*
+packaging — a parser regression shows up as silently missing badges, never as a crash, so these
+tests are the only guardrail.
+
+```bash
+./gradlew :app:lintDebug            # static checks; runs in CI too (blocks on Error only)
+```
+
+Lint is the only thing that catches the "compiles fine, crashes on old devices" class of bug —
+e.g. `startForeground`'s three-arg overload is API 29 while `minSdk` is 26. Warnings are not
+gated (dependency-update notices are not ours to fix); see `app/lint.xml` for the one check we
+deliberately downgraded.
 
 ### Performance & diagnostics
 

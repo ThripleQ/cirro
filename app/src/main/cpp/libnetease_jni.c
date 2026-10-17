@@ -8,8 +8,9 @@
  *   - Here we install that transport (via ne_http_set_transport): a C shim that
  *     jumps over JNI to the Kotlin singleton CirroTransport.httpRequest(...),
  *     which runs OkHttp synchronously and returns status/body/Set-Cookie.
- *   - Kotlin talks back into the library through the three CirroNative methods
- *     bound below (setCookieFile / setApiBase / request). The cookie jar is
+ *   - Kotlin talks back into the library through the CirroNative methods
+ *     bound below (setCookieFile / setApiBase / importCookies / reloadCookies /
+ *     request). The cookie jar is
  *     internally mutex-guarded (see the thread contract in netease/request.h),
  *     so multiple request threads can drive the library concurrently.
  */
@@ -272,6 +273,20 @@ static void native_import_cookies(JNIEnv *env, jobject thiz, jstring cookieStr) 
     free(s);
 }
 
+/* Logout: throw away every cookie the global jar currently holds and build a
+ * fresh one from the cookie file.
+ *
+ * Callers delete that file first — ne_jar_reload() treats a missing file as an
+ * empty jar (it re-seeds sDeviceId), so this is the only way to make the
+ * in-memory jar forget MUSIC_U. There is no "remove one cookie" entry point
+ * exposed to hosts, and leaving even one login cookie behind would keep the
+ * next request authenticated, which is exactly what a logout must not do. */
+static void native_reload_cookies(JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
+    ne_jar_reload();
+}
+
 static jobject native_request(JNIEnv *env, jobject thiz, jint op,
                               jobjectArray jargs) {
     jsize n = jargs ? (*env)->GetArrayLength(env, jargs) : 0;
@@ -308,6 +323,7 @@ static JNINativeMethod g_methods[] = {
     { "setCookieFile", "(Ljava/lang/String;)V", (void *)native_set_cookie_file },
     { "setApiBase",    "(Ljava/lang/String;)V", (void *)native_set_api_base },
     { "importCookies", "(Ljava/lang/String;)V", (void *)native_import_cookies },
+    { "reloadCookies", "()V", (void *)native_reload_cookies },
     { "request",
       "(I[Ljava/lang/String;)L" NE_NS "ApiResult;", (void *)native_request },
 };
@@ -319,7 +335,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
 
     jclass nc = (*e)->FindClass(e, NE_NS "CirroNative");
     if (nc) {
-        (*e)->RegisterNatives(e, nc, g_methods, 4);
+        (*e)->RegisterNatives(e, nc, g_methods, 5);
         (*e)->DeleteLocalRef(e, nc);
     }
 

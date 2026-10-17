@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+      Media3 把 SimpleCache / CacheDataSource 与一大票 ExoPlayer API 标成了 `@UnstableApi`
+      （Media3 1.x 里它们的形态长期没变）。用到这些 API 的文件都已显式加了
+      `@file:OptIn(UnstableApi::class)` 作记录，但**文件级注解自身也会触发这条检查**
+      —— 它引用了 marker class，而文件级注解保护不到自己 —— 于是这条 Error 永远清不掉。
+
+      降到 Warning：它不是「会崩」的那类问题（编译期本来就过），挡在 CI 上只会让每个新
+      文件都先红一次。真正该以 Error 挡住的是 [NewApi]（用了高于 minSdk 的 API，编译过、
+      老设备上直接崩）与 [NonObservableLocale]（切语言不重组）那两类 —— 它们都已在
+      build.yml 的 lint 那一步里挡着，首个战果见 PlaybackService / ArtistScreen 的注释。
+    -->
+    <issue id="UnsafeOptInUsageError" severity="Warning" />
+</lint>

@@ -1,5 +1,8 @@
+@file:OptIn(UnstableApi::class)
+
 package com.thripleq.cirro
 
+import androidx.media3.common.util.UnstableApi
 import android.app.Application
 import android.os.Build
 import android.os.StrictMode

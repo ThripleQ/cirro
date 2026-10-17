@@ -1,9 +1,12 @@
+@file:OptIn(UnstableApi::class)
+
 package com.thripleq.cirro.core.playback
 
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.ContextCompat
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem

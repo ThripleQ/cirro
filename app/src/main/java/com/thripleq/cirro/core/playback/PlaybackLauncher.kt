@@ -1,5 +1,8 @@
+@file:OptIn(UnstableApi::class)
+
 package com.thripleq.cirro.core.playback
 
+import androidx.media3.common.util.UnstableApi
 import android.content.Context
 import android.content.Intent
 import android.net.Uri

@@ -9,6 +9,23 @@ plugins {
     alias(libs.plugins.androidx.baselineprofile)
 }
 
+/**
+ * 提交数 = versionCode（理由见 [android.defaultConfig] 那一段注释）。
+ *
+ * ⚠️ **必须用 `providers.exec` 而不是 `ProcessBuilder`**：项目开了配置缓存，配置期
+ * 直接起进程会被 Gradle 判为不支持（`Starting an external process ... is unsupported`），
+ * 整个构建直接红 —— `providers.exec` 是它认可的那条路。
+ *
+ * ⚠️ CI 上必须 `fetch-depth: 0`（两个 workflow 都已配）：浅克隆下这条命令只会返回 1，
+ * 于是又退回「所有包同号」—— 而且**看不出来**，只有装包时才发现装不上。
+ */
+val commitCount: Int = runCatching {
+    providers.exec {
+        commandLine("git", "rev-list", "--count", "HEAD")
+        workingDir = rootDir
+    }.standardOutput.asText.get().trim().toIntOrNull()
+}.getOrNull() ?: 1
+
 android {
     compileSdk = libs.versions.compileSdk.get().toInt()
     namespace = "com.thripleq.cirro"
@@ -18,7 +35,16 @@ android {
         applicationId = "com.thripleq.cirro"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
+        // versionCode = 仓库提交数（见脚本末尾的 [commitCount]）。
+        //
+        // 手机只认这个数的**大小**：相同/更低直接 INSTALL_FAILED_VERSION_DOWNGRADE。
+        // 写死 1 的话每个 release 包都同号 —— 分不清装的是哪一版，也没法回退。
+        //
+        // 用提交数而**不是** CI 的 run_number：同一个 commit 上本地打的包与 CI 打的包
+        // 必须**同号**，否则先装 CI 版再装本地版就是降级、装不上，而「本机包与 CI 包
+        // 可以互相覆盖」正是仓库里那份 keystore 的意义（见 [signingConfigs]）。
+        // 拿不到 git（源码包 / PATH 里没有）就退回 1，别让构建挂掉。
+        versionCode = commitCount
         versionName = "0.1.0"
         vectorDrawables.useSupportLibrary = true
 

@@ -24,7 +24,6 @@
 ```
 ui/
 ├── theme/         # 主题（颜色/字体/尺寸）
-├── library/       # 排行榜列表（LibraryScreen + LibraryViewModel）
 ├── profile/       # 我的（ProfileViewModel：登录态+区块数据；TrackListViewModel：统一"壳+列表"页状态）
 ├── playerbar/     # 播放（PlayerDock.kt：常驻 dock + 全屏播放页**合体**，一份 PlayerDockState；
 │                  #   rememberPlayerState/rememberPlayerPosition 是播放状态的唯一真相源；
@@ -34,9 +33,10 @@ ui/
 │                  #   CoverUrls：封面地址的唯一出口；PayTagRules / PayBadge：徽标判据与画法）
 └── screens/       # 布局主体（哑组件，跨功能）
     ├── HomeScreen.kt        # 探索 tab 首页（横滑卡片行 + 展开壳内嵌 TrackListScreen）
-    ├── LibraryScreen.kt
     ├── SearchScreen.kt      # 搜索 tab（落地页 + 结果列表）
-    ├── ProfileScreen.kt     # 我的：登录入口 + 喜欢/已购/歌单区块 + 登录对话框
+    ├── ProfileScreen.kt     # 我的：登录入口 + 喜欢/已购/歌单区块
+    ├── ProfileCards.kt      # 我的页的卡片零件（行卡 / hero 卡 / 已购壳）— 2026-10-17 拆出
+    ├── ProfileLoginCards.kt # 我的页的登录态版面（未登录引导 / 已登录组合 / 退出登录）— 同上
     ├── TrackListScreen.kt   # 统一详情页主入口（编排 / 三态门 / 排序面板 / 分享）
     ├── TrackListMetrics.kt  # 版式令牌 + 本屏私有常量（糊底、退场编舞、色晕）
     ├── TrackListChrome.kt   # 外壳：状态栏让位、页底糊底、顶部标题条
