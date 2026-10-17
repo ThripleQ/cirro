@@ -31,14 +31,18 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    /** 开屏退场的判据：首页第一块内容落地（见 [StartupGate]）。 */
+    /** 开屏退场的判据（三条就绪信号）与演出名额（见 [StartupGate]）。 */
     @Inject lateinit var startupGate: StartupGate
 
     private var jankStats: JankStats? = null
 
     /**
-     * 开屏只在**冷启动**演（`savedInstanceState == null`）：旋转屏幕、切深色模式这类
-     * 重建 Activity 的情况再演一遍，只会让人以为 App 又重启了一次。
+     * 开屏只在**进程冷启动**演一次：旋转屏幕、切深色模式、从后台回来、从通知栏另开一个
+     * Activity 都是同一个进程里的事，再演一遍只会让人以为 App 又重启了一次。
+     *
+     * 判据是 [StartupGate.acquire] 的一次性名额（名额与进程同生共死），**不是**
+     * `savedInstanceState == null` —— 后者在「Activity 被系统回收后重建」时也可能是 null
+     * （Compose 没有 View 层状态要存），那样就会在没重启的情况下白演一遍。
      */
     private var splashVisible by mutableStateOf(false)
 
@@ -52,7 +56,9 @@ class MainActivity : ComponentActivity() {
         // first Compose frame, then hands off to Theme.Cirro (postSplashScreenTheme).
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        splashVisible = savedInstanceState == null
+        // savedInstanceState != null 一定不是冷启动（Activity 是从回收里恢复的），短路掉 ——
+        // 别在这种时候把名额白白用掉。
+        splashVisible = savedInstanceState == null && startupGate.acquire()
         // 系统栏完全透明，底色交给应用自己画（dock 的 surfaceContainer / 页面 surface 会
         // 一直铺到导航栏后面）。默认的 edge-to-edge 会给导航栏蒙一层半透明 scrim —— 三键
         // 导航下就是那条和界面不同色的"灰条"；Play 商店那类做法是让应用背景直接透上来。

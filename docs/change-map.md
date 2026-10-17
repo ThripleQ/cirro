@@ -98,7 +98,9 @@
 | 应用启动时做的初始化 | `CirroApplication.kt`、`MainActivity.kt` |
 | 改 / 换**品牌 mark**（启动图标与开屏**同一份**几何） | `tools/gen_launcher_icon.py` 的 `MARK` + `BACKGROUND` / `GLYPH`，重跑 `python tools/gen_launcher_icon.py`。产物：`res/drawable/ic_launcher_foreground|monochrome.xml`、`res/mipmap-anydpi-v26/ic_launcher*.xml`、`res/values/ic_launcher_colors.xml`、`ui/theme/BrandMark.kt` —— **后四个都是机器生成，别手改**。脚本会自动居中并按「到中心的**最远距离** ≤ 32」收口（安全圆半径 33），超了直接 assert 失败 |
 | 调**开屏动画**（描边生长的时长 / 缩放 /  logo 占短边多少） | `ui/splash/SplashOverlay.kt`（画法）+ `ui/theme/Motion.kt` 的 `Splash*` 一段（时长与曲线，注释里有一份「设计稿比例 → 实际毫秒」对照表） |
-| 改开屏**什么时候可以退场**（它在等谁） | `core/startup/StartupGate.kt`（释放点 `HomeViewModel.publish()` 与取数彻底失败那一支；最长等待 `Motion.SplashMaxHoldMs`）。**退场一定配超时** —— 离线时没有任何一方会释放这个闩，没超时用户就被锁在红屏里 |
+| 改开屏**什么时候可以退场**（它在等谁 / 什么叫「App 就绪」） | `core/startup/StartupGate.kt` —— 三条信号（`Content` 首页第一块内容落地或确定取不到、`Session` 登录态已定、`Playback` 上次队列已恢复）**全到齐**才放行；上报点分别在 `HomeViewModel.publish()` / 取数失败那一支、`HomeViewModel` 里 `loggedInAsync` 出结果那次 publish 后、`CirroApplication` 那趟 `prewarm` 的 `finally`。加判据前先问「少它会不会让画面自己变样」。**退场一定配超时** —— 离线时没有任何一方会上报，没超时用户就被锁在红屏里 |
+| 改开屏**在哪次启动演** | `MainActivity.onCreate` 里的 `startupGate.acquire()`（**一次性名额，与进程同生共死 = 冷启动**）。**别换回 `savedInstanceState == null`** —— Activity 被系统回收后重建时它也可能是 null，会变成「没重启也演一遍」 |
+| 调**整段开屏**的时长上限 | `ui/theme/Motion.kt` 的 `SplashMaxHoldMs`（**总预算，含动画**，不是「演完再等这么久」） |
 | 改**开屏底色** | `res/values/colors.xml` 的 `cirro_splash_background` —— 必须与 `ui/splash/SplashOverlay.kt` 的 `SplashBackdrop` **同值**（一个是 Compose 第一帧之前系统画的那层，一个是 Compose 画的那层） |
 
 ## 5. 性能 / 诊断 / 构建

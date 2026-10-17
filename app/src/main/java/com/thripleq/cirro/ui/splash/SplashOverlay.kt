@@ -1,6 +1,8 @@
 package com.thripleq.cirro.ui.splash
 
+import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -24,6 +26,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.util.lerp
+import com.thripleq.cirro.BuildConfig
 import com.thripleq.cirro.core.startup.StartupGate
 import com.thripleq.cirro.ui.theme.BrandMark
 import com.thripleq.cirro.ui.theme.Motion
@@ -49,8 +52,14 @@ private val SplashInk = Color(0xFFFFFAF6)
  * 1. **入场**：整层淡入 + 从 [Motion.SplashEnterScale] 长到 1，与描边生长同时起手；
  * 2. **描边 → 填充**：轮廓沿路径长出来，长完才把填充淡进来（PNG 时代做不到的效果，
  *    这里靠 `PathMeasure` 现算，不需要任何切图）；
- * 3. **缓冲 → 退场**：等 [gate] 放行（首页第一块内容落地，最多 [Motion.SplashMaxHoldMs]），
- *    然后整层淡出并放大到 [Motion.SplashExitScale]，把舞台交给页面。
+ * 3. **缓冲 → 退场**：等 [gate] 放行（App 就绪 = [StartupGate] 那三条信号全到齐；**整段**
+ *    开屏最长 [Motion.SplashMaxHoldMs]，含前面已经演掉的动画），然后整层淡出并放大到
+ *    [Motion.SplashExitScale]，把舞台交给页面。
+ *
+ * ## 它盖住的到底是什么
+ * 首页在它底下照常组合、照常取数。退场那一刻必须已经满足「画面不会再自己变样」：内容有了
+ * （第一块落地）、登录态定了（决定「每日推荐」那块的有无）、播放队列恢复了（决定底部迷你条
+ * 的有无）—— 少一条就会看到开屏退场后页面又自己动一下，那比多盖 200ms 难看得多。
  *
  * ## 为什么图形是算出来的而不是一张 PNG / 一个 AnimatedVectorDrawable
  * - 与启动图标**同一份几何**（`BrandMark.OUTLINES`，由 `tools/gen_launcher_icon.py`
@@ -107,6 +116,9 @@ fun SplashOverlay(
     }
 
     LaunchedEffect(Unit) {
+        // 记起手时刻：[Motion.SplashMaxHoldMs] 是**整段开屏**的预算（含下面这段动画），
+        // 不是「演完再等 3 秒」—— 加一条就绪判据就多等 3 秒，用户等不起。
+        val startedAt = SystemClock.elapsedRealtime()
         if (reduceMotion) {
             // 不演，但**缓冲照等** —— 缓冲不是动画，去掉了就变成「红屏一闪」。
             wrap.snapTo(1f); draw.snapTo(1f); fill.snapTo(1f)
@@ -115,9 +127,20 @@ fun SplashOverlay(
             draw.animateTo(1f, Motion.splashDraw())
             fill.animateTo(1f, Motion.splashFill())
         }
-        // 缓冲：等首页第一块内容落地。从来不保证会被打开（离线时没有一方会 release），
-        // 所以必须带超时 —— 宁可早放，也不能把用户锁在红屏里。
-        withTimeoutOrNull(Motion.SplashMaxHoldMs) { gate.ready.first { it } }
+        // 缓冲：等 App 就绪（三条信号，见 [StartupGate]）。从来不保证会被打开（离线时
+        // 没有一方会上报），所以必须带超时 —— 宁可早放，也不能把用户锁在红屏里。
+        val remaining = Motion.SplashMaxHoldMs - (SystemClock.elapsedRealtime() - startedAt)
+        if (remaining > 0L) withTimeoutOrNull(remaining) { gate.ready.first { it } }
+        if (BuildConfig.DEBUG) {
+            // 诊断：开屏是走了「就绪」还是被超时轰下来的、被谁拖住。[pendingSignals] 只
+            // 在这条日志里出现 —— 正式路径一律只看 `ready`，别拿它判该不该退场。
+            Log.d(
+                "CirroSplash",
+                "gate ${if (gate.ready.value) "ready" else "timeout"} " +
+                    "pending=${gate.pendingSignals} " +
+                    "at ${SystemClock.elapsedRealtime() - startedAt}ms",
+            )
+        }
         if (reduceMotion) exit.snapTo(1f) else exit.animateTo(1f, Motion.splashExit())
         onDismissed()
     }

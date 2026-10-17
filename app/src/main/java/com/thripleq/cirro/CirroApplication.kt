@@ -9,6 +9,7 @@ import coil.disk.DiskCache
 import com.thripleq.cirro.core.playback.PlaybackStateStore
 import com.thripleq.cirro.core.playback.PlaybackUrls
 import com.thripleq.cirro.core.playback.PlayerHolder
+import com.thripleq.cirro.core.startup.StartupGate
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -24,6 +25,10 @@ class CirroApplication : Application() {
     // Activity/Service 之前唯一确定的时机。
     @Inject
     lateinit var playbackUrls: PlaybackUrls
+
+    /** 开屏的「就绪」判据之一见 [com.thripleq.cirro.core.startup.StartupGate]。 */
+    @Inject
+    lateinit var startupGate: StartupGate
 
     override fun onCreate() {
         super.onCreate()
@@ -54,7 +59,14 @@ class CirroApplication : Application() {
         // `PlayerHolder.get()` 里同步执行，而那是在**首帧组合期的主线程**上
         // （restore → PlaybackStateStore.load）。这里提前预热，首帧只剩「取缓存」。
         CoroutineScope(Dispatchers.IO).launch {
-            runCatching { PlaybackStateStore.prewarm(applicationContext) }
+            try {
+                runCatching { PlaybackStateStore.prewarm(applicationContext) }
+            } finally {
+                // 开屏的第三条就绪信号：**迷你条的有无**已定（= 上次队列恢复完了）。
+                // 预热失败也算到 —— 那时 `PlayerHolder` 会走真读那条路，页面上至多是
+                // 没有迷你条，不该为它把开屏多盖几秒。
+                startupGate.signal(StartupGate.Signal.Playback)
+            }
         }
     }
 

@@ -445,10 +445,10 @@ class HomeViewModel @Inject constructor(
             fun publish() {
                 lastContent = ready
                 _uiState.value = ready
-                // 开屏可以退场了：第一块内容已经能画 —— 判据见 [StartupGate]。
+                // 开屏的第一条就绪信号：第一块内容已经能画 —— 判据见 [StartupGate]。
                 // 放这里而不是等全部块回来：剩下的块在开屏退场后接着填，等全部只会白
                 // 白把开屏拖长。
-                startupGate.release()
+                startupGate.signal(StartupGate.Signal.Content)
             }
 
             /**
@@ -493,7 +493,15 @@ class HomeViewModel @Inject constructor(
             }
 
             val da = daily.await()
-            val online = loggedInAsync.await()
+            // try/finally：拿到结果、或**判定本身失败**，都算「登录态已定」—— 失败时的
+            // 画面就是「未登录」，也是个确定的状态。别把开屏拖到超时才放。
+            val online = try {
+                loggedInAsync.await()
+            } finally {
+                // 开屏的第二条就绪信号：登录态决定「每日推荐 + 登录引导」这一整块的有无，
+                // 未定就放行会看到它在退场后凭空长出来（见 [StartupGate.Signal.Session]）。
+                startupGate.signal(StartupGate.Signal.Session)
+            }
             ready = ready.copy(
                 dailySongs = keep(da, ready.dailySongs) { it.isEmpty() },
                 // 登录态是单向的上升：只有未登录 → 登录才有信息量。静默刷新时抖动返回的
@@ -536,7 +544,7 @@ class HomeViewModel @Inject constructor(
                 _uiState.value = HomeUiState.Error
                 // 取数彻底失败也要放行：那时该给用户看的是**错误页**，而不是把错误页
                 // 藏在开屏的红背后（开屏自己有超时兜底，但能早放就早放）。
-                startupGate.release()
+                startupGate.signal(StartupGate.Signal.Content)
             } else {
                 publish()
             }
