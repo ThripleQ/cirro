@@ -345,18 +345,24 @@ internal data class KanadeCardModel(
 /**
  * 一种卡片规格（三处横滑行各一份）。
  *
- * 数值全部来自 kanade 主页的 uiautomator bounds（1080px 屏 ÷ 3 = dp），**别再凭感觉改**：
+ * 数值全部来自 kanade 主页的 uiautomator bounds 实测，**别再凭感觉改**：
  *
- * | 行 | 卡宽 | 封面高 | 名称条 | 卡总高 |
+ * | 行 | 卡宽 | 封面高 | 名称条 | 卡总高 |（kanade 实测 px）
  * |---|---|---|---|---|
- * | 精选推荐 | 146dp（440px） | 146（方形） | 37 | 183 |
- * | 雷达歌单 | **110**（330px） | 110（方形，纯封面） | — | 110 |
- * | 场景音乐 | 110（330px） | **92**（275px，不是方形） | 29（88px） | 121 |
+ * | 精选推荐 | **160dp** | 160（方形） | 40 | 200 | 440×550
+ * | 雷达歌单 | **120** | **100**（不是方形） | — | 100 | 330×275
+ * | 场景音乐 | 120 | 100 | 32 | 132 | 330×363
  *
- * 【踩过的坑】雷达卡一开始跟着精选推荐用了 146dp —— 但 kanade 的雷达行与场景行
+ * 【⚠️ px → dp 必须除以 2.75，不是 3】本机是 **440dpi（屏宽 392.7dp）**，不是 480dpi。
+ * 2026-10-04 首次量化时按「1080 ÷ 3 = 360dp」算，导致这批值**系统性偏小约 9%**
+ * （146 / 110 / 92 就是这么来的，卡片因此比 kanade 小一圈）。2026-10-17 重新对照
+ * 时才发现 —— 换算系数搞错是「照抄了却还是不像」最难查的一种原因：每个数字单看
+ * 都像模像样，只有并排量才看得出来。
+ *
+ * 【踩过的坑】雷达卡一开始跟着精选用了同一档宽度 —— 但 kanade 的雷达行与场景行
  * 是同一档宽度（都是 330px），只有精选推荐是 440px。雷达行比场景行矮，是因为它
  * **没有名称条**（雷达名印在封面海报上），而不是因为它更小。两组数字一混就会
- * 得出「雷达卡 146 方 + 无条 = 110 高」这种自相矛盾的规格，看上去就是雷达区
+ * 得出「雷达卡 160 方 + 无条 = 100 高」这种自相矛盾的规格，看上去就是雷达区
  * 比场景区大一圈、两者对不上。
  */
 internal data class KanadeCardSpec(
@@ -369,14 +375,14 @@ internal data class KanadeCardSpec(
     val showTitleBar: Boolean,
 )
 
-/** 精选推荐：440×550px = 146.7×183.3dp（方形封面 146.7 + 名称条 36.7）。 */
-internal val FeaturedCardSpec = KanadeCardSpec(146.dp, 146.dp, 37.dp, showTitleBar = true)
+/** 精选推荐：440×550px = 160×200dp（方形封面 160 + 名称条 40）。 */
+internal val FeaturedCardSpec = KanadeCardSpec(160.dp, 160.dp, 40.dp, showTitleBar = true)
 
-/** 雷达歌单：330×330px = 110dp 方形**纯封面**（名称条不画，雷达名是海报图的一部分）。 */
-internal val RadarCardSpec = KanadeCardSpec(110.dp, 110.dp, 0.dp, showTitleBar = false)
+/** 雷达歌单：330×275px = 120×100dp **纯封面**（名称条不画，雷达名是海报图的一部分）。 */
+internal val RadarCardSpec = KanadeCardSpec(120.dp, 100.dp, 0.dp, showTitleBar = false)
 
-/** 场景音乐：330×363px = 110×121dp（封面 110×91.7 + 名称条 29.3）。 */
-internal val SceneCardSpec = KanadeCardSpec(110.dp, 92.dp, 29.dp, showTitleBar = true)
+/** 场景音乐：330×363px = 120×132dp（封面 120×100 + 名称条 32）。 */
+internal val SceneCardSpec = KanadeCardSpec(120.dp, 100.dp, 32.dp, showTitleBar = true)
 
 /** 猜你喜欢好歌展示行数（kanade 实测 3 行）。 */
 private const val GUESS_ROW_COUNT = 3
@@ -488,7 +494,19 @@ private fun KanadeCard(
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                 )
             } else {
-                BigCoverVisual(card.coverUrl, card.title, Modifier.fillMaxSize())
+                // showName = false：**封面上不再叠一次名字**。
+                //
+                // kanade 的卡面就一个身份文本 —— 精选推荐是左上角卡名、雷达/场景是海报
+                // 图里自带的大字；名字不会在「封面上」和「名称条上」各出现一遍。
+                // 而 [BigCoverVisual] 默认会在封面**左下角**带渐变再画一次 `name`
+                // （它别的用法确实要这个），精选卡的名称条又写同一个名字 ⇒ 同一张卡把
+                // 名字写了两遍。这里显式关掉，只留徽标 chip（左上）+ 名称条（下方）。
+                BigCoverVisual(
+                    coverUrl = card.coverUrl,
+                    name = card.title,
+                    modifier = Modifier.fillMaxSize(),
+                    showName = false,
+                )
             }
             card.badge?.let { badge ->
                 Text(
