@@ -3,9 +3,14 @@
     <!-- 图标背景色不在这里：它由 tools/gen_launcher_icon.py 生成到 ic_launcher_colors.xml，
          改图标配色请改那里的一行常量。 -->
 
+    <!-- 开屏底色 = 品牌红（与 ui/splash/SplashOverlay.kt 的 SplashBackdrop 同值）。
+         它**不跟** surface：开屏就是一整屏品牌红，Compose 那一层与系统开屏窗都用这个
+         资源，两层同色交接才看不出来。窗口底色（cirro_window_background）才是 surface，
+         那是开屏退场之后露出来的那一层。 -->
+    <color name="cirro_splash_background">#F51F43</color>
+
     <!-- 与 theme/Palette.kt 的 `surface` 同值（浅色 F6F9FD / 深色 121417，夜间由
-         values-night 覆盖）。这两处是平台在 Compose 第一帧之前画的底色，值不一致
-         就会在启动时闪一帧反差色 —— splash 与窗口背景锚到同一档即可。 -->
-    <color name="cirro_splash_background">#F6F9FD</color>
+         values-night 覆盖）。这是平台在 Compose 第一帧之前画的**窗口**底色，值不一致
+        就会在启动时闪一帧反差色。 -->
     <color name="cirro_window_background">#F6F9FD</color>
 </resources>

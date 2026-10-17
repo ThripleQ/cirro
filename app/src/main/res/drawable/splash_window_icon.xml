@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 系统开屏窗（Compose 第一帧之前那一屏）的图标位：**故意什么也不画**。
+
+     那一屏只铺品牌红（windowSplashScreenBackground），图形由 Compose 的
+     ui/splash/SplashOverlay.kt 画 —— 因为 mark 要「自己描出来」，而系统开屏的图标
+     动画只在 Android 12+ 才播、时长还受系统限制。
+
+     留空还有一层原因：如果这里放一枚**静态** mark，Compose 那一层从 opacity 0 起手，
+     交接时就会看到「先有一枚 mark → 忽然没了 → 再从头描一遍」。两层都空着，交接的
+     那一帧两边都是纯红，看不出来。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M0,0 L108,0 L108,108 L0,108 Z" />
+</vector>

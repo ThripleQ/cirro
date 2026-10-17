@@ -474,6 +474,69 @@ object Motion {
     fun overlayExit(): FiniteAnimationSpec<Float> =
         tween(OverlayExitMs, easing = Emphasized)
 
+    // ── 开屏（[com.thripleq.cirro.ui.splash.SplashOverlay]）──────────────────
+    //
+    // 时间线照设计稿那份 HTML（3.6s 一轮）的**比例**压到启动能接受的量级：
+    //   HTML   0 → 6%   整层淡入（opacity 0→1，scale .9→1）
+    //         0 → 40%   描边生长（stroke-dashoffset 1→0）
+    //        40 → 56%   填充显现（fill-opacity 0→1）
+    //        56 → 82%   保持
+    //        82 → 100%  淡出（scale 1→1.06）
+    // 「保持」那一段在 App 里**不是固定时长**：它就是开屏作为「准备缓冲」的意义 ——
+    // 等首页第一块内容落地（见 `StartupGate`），最多再等 [SplashMaxHoldMs] 就放行。
+    // 所以只有前三段和最后一段有固定时长，其余等数据。
+
+    /** 开屏：整层淡入 + 轻微放大（与描边生长**同时**跑，对应 HTML 的 0→6%）。 */
+    const val SplashWrapInMs = 190
+
+    /** 开屏：mark 描边生长（对应 0→40%）。 */
+    const val SplashDrawMs = 880
+
+    /** 开屏：填充显现 —— 描边长完之后才开始（对应 40→56%）。 */
+    const val SplashFillMs = 340
+
+    /** 开屏：退场（整层淡出 + 放大到 [SplashExitScale]，对应 82→100%）。 */
+    const val SplashExitMs = 380
+
+    /**
+     * 缓冲上限（毫秒）：首页迟迟不就绪（离线 / 接口挂住）时，最多再等这么久就放行。
+     *
+     * 没有这条兜底，开屏会一直盖着 —— 用户看到的是「卡在红屏」，比看到空列表糟得多。
+     * 注意它只兜**等待**那一截，前面的描边/填充时长是固定跑完的。
+     */
+    const val SplashMaxHoldMs = 3_000L
+
+    /** 入场起点的缩放（HTML 的 .9）。 */
+    const val SplashEnterScale = 0.9f
+
+    /** 退场终点的缩放（HTML 的 1.06）：交给页面时轻轻涨一下，读作「让位」。 */
+    const val SplashExitScale = 1.06f
+
+    /** mark 占**短边**的比例（HTML 的 40vmin）。 */
+    const val SplashLogoFraction = 0.40f
+
+    /**
+     * mark 的描边宽度，单位是**品牌 SVG 的 1248 画布**（HTML 的 stroke-width 6）。
+     * 开屏里整条轮廓按同一个矩阵缩放，所以这个 6 会跟着一起缩，比例与设计稿一致。
+     */
+    const val SplashStrokeWidth = 6f
+
+    /** 开屏：整层淡入。 */
+    fun splashWrapIn(): FiniteAnimationSpec<Float> =
+        tween(SplashWrapInMs, easing = Standard)
+
+    /** 开屏：描边生长。缓入缓出，笔画两头都不该「弹」。 */
+    fun splashDraw(): FiniteAnimationSpec<Float> =
+        tween(SplashDrawMs, easing = Standard)
+
+    /** 开屏：填充显现。 */
+    fun splashFill(): FiniteAnimationSpec<Float> =
+        tween(SplashFillMs, easing = Standard)
+
+    /** 开屏：退场。 */
+    fun splashExit(): FiniteAnimationSpec<Float> =
+        tween(SplashExitMs, easing = Emphasized)
+
     // ── 逐帧量化（过场不掉帧的关键一刀，2026-10-17 体检）──────────────────────
     //
     // 过场动画里壳的圆角与投影都是**逐帧连续**插值的。而 `graphicsLayer` 的

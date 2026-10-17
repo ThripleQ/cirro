@@ -10,6 +10,7 @@ import com.thripleq.cirro.core.repo.HomeRepository
 import com.thripleq.cirro.core.model.PlaylistCard
 import com.thripleq.cirro.core.model.StyleTag
 import com.thripleq.cirro.core.model.Track
+import com.thripleq.cirro.core.startup.StartupGate
 import com.thripleq.cirro.core.util.RefreshGate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -296,6 +297,7 @@ class HomeViewModel @Inject constructor(
     private val homeRepo: HomeRepository,
     private val chartRepo: ChartRepository,
     private val playback: PlaybackLauncher,
+    private val startupGate: StartupGate,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -443,6 +445,10 @@ class HomeViewModel @Inject constructor(
             fun publish() {
                 lastContent = ready
                 _uiState.value = ready
+                // 开屏可以退场了：第一块内容已经能画 —— 判据见 [StartupGate]。
+                // 放这里而不是等全部块回来：剩下的块在开屏退场后接着填，等全部只会白
+                // 白把开屏拖长。
+                startupGate.release()
             }
 
             /**
@@ -528,6 +534,9 @@ class HomeViewModel @Inject constructor(
             // 没有理由因为这一趟全拉空就清掉它去显示错误页。
             if (allEmpty && !hasContent) {
                 _uiState.value = HomeUiState.Error
+                // 取数彻底失败也要放行：那时该给用户看的是**错误页**，而不是把错误页
+                // 藏在开屏的红背后（开屏自己有超时兜底，但能早放就早放）。
+                startupGate.release()
             } else {
                 publish()
             }

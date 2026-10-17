@@ -96,6 +96,10 @@
 |---|---|
 | 谁注入了谁、换个实现 | `di/AppModule.kt` |
 | 应用启动时做的初始化 | `CirroApplication.kt`、`MainActivity.kt` |
+| 改 / 换**品牌 mark**（启动图标与开屏**同一份**几何） | `tools/gen_launcher_icon.py` 的 `MARK` + `BACKGROUND` / `GLYPH`，重跑 `python tools/gen_launcher_icon.py`。产物：`res/drawable/ic_launcher_foreground|monochrome.xml`、`res/mipmap-anydpi-v26/ic_launcher*.xml`、`res/values/ic_launcher_colors.xml`、`ui/theme/BrandMark.kt` —— **后四个都是机器生成，别手改**。脚本会自动居中并按「到中心的**最远距离** ≤ 32」收口（安全圆半径 33），超了直接 assert 失败 |
+| 调**开屏动画**（描边生长的时长 / 缩放 /  logo 占短边多少） | `ui/splash/SplashOverlay.kt`（画法）+ `ui/theme/Motion.kt` 的 `Splash*` 一段（时长与曲线，注释里有一份「设计稿比例 → 实际毫秒」对照表） |
+| 改开屏**什么时候可以退场**（它在等谁） | `core/startup/StartupGate.kt`（释放点 `HomeViewModel.publish()` 与取数彻底失败那一支；最长等待 `Motion.SplashMaxHoldMs`）。**退场一定配超时** —— 离线时没有任何一方会释放这个闩，没超时用户就被锁在红屏里 |
+| 改**开屏底色** | `res/values/colors.xml` 的 `cirro_splash_background` —— 必须与 `ui/splash/SplashOverlay.kt` 的 `SplashBackdrop` **同值**（一个是 Compose 第一帧之前系统画的那层，一个是 Compose 画的那层） |
 
 ## 5. 性能 / 诊断 / 构建
 
@@ -104,7 +108,8 @@
 | 调 release 优化（R8 / 资源压缩） | `app/build.gradle.kts` 的 `buildTypes.release` |
 | JNI 被 R8 裁剪/改名导致运行期崩 | `app/proguard-rules.pro` |
 | 看 Compose 类稳定性 / composable 可跳过性 | 构建后 `app/build/compose-reports/`、`compose-metrics/`（开关在 `app/build.gradle.kts` 的 `composeCompiler{}`） |
-| 线上掉帧统计 / 冷启动 splash / 启动初始化 | `MainActivity.kt`（JankStats、installSplashScreen） |
+| 线上掉帧统计 / 启动初始化 | `MainActivity.kt`（JankStats） |
+| 冷启动**那一层系统开屏**（Compose 第一帧之前，只有品牌红、不带图形） | `res/values/themes.xml` 的 `Theme.Cirro.Starting` + `res/drawable/splash_window_icon.xml`（**故意留空**：图形交给 Compose 那一层从零描出来，这里放静态图会在交接时闪一下）+ `MainActivity.installSplashScreen()` |
 | StrictMode / 全局初始化 / 图片加载 | `CirroApplication.kt` |
 | HTTP 请求日志（仅 debug，tag = **`CirroHttp`**） | `core/net/CirroTransport.kt`（`BuildConfig.DEBUG` 下 BASIC 级） |
 | 生成/调整 Baseline Profile | `baselineprofile/`（`BaselineProfileGenerator.kt`）、`./gradlew :app:generateReleaseBaselineProfile` |

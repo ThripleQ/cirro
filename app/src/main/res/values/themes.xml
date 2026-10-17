@@ -12,11 +12,12 @@
         <item name="android:windowBackground">@color/cirro_window_background</item>
     </style>
 
-    <!-- Launch theme: shows the system splash (back-ported to API 26) until the
-         first Compose frame, then switches to Theme.Cirro. -->
+    <!-- Launch theme: covers the window before the first Compose frame, then hands
+         over to Theme.Cirro. Only the brand-red backdrop is used here — the mark is
+         drawn (and animated) by ui/splash/SplashOverlay.kt, see splash_window_icon. -->
     <style name="Theme.Cirro.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/cirro_splash_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_window_icon</item>
         <item name="postSplashScreenTheme">@style/Theme.Cirro</item>
     </style>
 </resources>

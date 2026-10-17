@@ -233,8 +233,7 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
   `./gradlew :app:generateReleaseBaselineProfile` 产出安装期 AOT profile；部分 ROM（如 vivo）的
   安装拦截会挡住 UTP 自动安装，需换设备/模拟器生成。
 - **诊断工具**：Compose 编译器报告（`app/build/compose-reports|metrics`，查稳定性/可跳过性）、
-  JankStats（`MainActivity`，按生命周期启停）、LeakCanary / OkHttp 日志 / StrictMode（仅 debug）、
-  `Theme.Cirro.Starting` 冷启动 splash。
+  JankStats（`MainActivity`，按生命周期启停）、LeakCanary / OkHttp 日志 / StrictMode（仅 debug）。
 - **构建提速**：`gradle.properties` 开 configuration cache + build cache。
 - CI：两个工作流 —— **`build.yml`**（push `main`/`beta` 或手动）先跑单测，再上传 `cirro-debug` /
   `cirro-release` artifact（7 天过期、下载要登录）+ 测试报告；**`release.yml`**（push `v*` tag 或手动）
@@ -304,6 +303,47 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
 
 其余十几个 Repository 仍是 concrete class，**不是遗漏**：要么还没轮到，要么（如
 `HomeRepository`）编排与 ViewModel 的「逐块回填」状态缠在一起，抽接口前得先拆开。
+
+### 八·补3 启动：品牌图形只有一个来源，开屏是「准备缓冲」—— 2026-10-17
+
+**品牌图形（mark）只写一份**：`tools/gen_launcher_icon.py` 的 `MARK`。同一份轮廓同时产出
+启动图标（自适应图标的 foreground / monochrome 两层）与 `ui/theme/BrandMark.kt` —— 后者是
+开屏动画的数据源。換形状只改那一处再 `python tools/gen_launcher_icon.py`，不存在「图标换了、
+开屏忘了换」。生成出来的四个文件都不该手改。
+
+**图标的自动收口**：自适应图标有条硬约束 —— 108dp 图层里所有墨迹必须在**居中、直径 66 的
+安全圆**内，否则圆形启动器会切边，而「切了一点点」在 48dp  launcher 里几乎看不出来。脚本
+因此按「到中心的**最远距离** ≤ 32（安全半径 33，留 1dp 给启动器的视差位移）」自动居中缩放，
+超了直接 assert 失败。当前 mark 落成 50.6×57.4。
+
+**为什么开屏画在 Compose 里，而不是交给系统开屏（`core-splashscreen`）**：
+
+| | 系统开屏 | Compose 这一层 |
+|---|---|---|
+| 图标动画 | 仅 Android 12+ 播，时长受系统限制 | 全版本一致，时长自定 |
+| 图形来源 | 得再给一份静态图（会与 `BrandMark` 脱钩） | 直接跑 `PathMeasure` 抠段 |
+| 能等多久 | 系统在第一帧就把它换掉 | 可以一直盖着，直到数据落地（见下） |
+
+代价是**交接**：`Theme.Cirro.Starting` 只铺品牌红，`windowSplashScreenAnimatedIcon` 指向一份
+**故意留空**的 vector（`splash_window_icon.xml`）—— 若这里放一枚静态 mark，Compose 那层从
+opacity 0 起手，交接那一帧就会看到「先有一枚 mark → 忽然没了 → 再从头描一遍」。两层同样小心
+的是**颜色**：`res/values/colors.xml` 的 `cirro_splash_background` 必须与 `SplashOverlay` 里的
+`SplashBackdrop` 同值，否则交接闪一帧不同的红。
+
+**开屏不是装饰，是缓冲**：它**盖在**内容之上而不是替代内容 —— 底下首页照常组合、照常取数，
+退场时页面已经有内容，不会「退场 → 先闪一屏骨架」。放行的判据是「首页**第一块**内容落地」
+（`HomeViewModel.publish()` 释放 `core/startup/StartupGate`），不是「所有请求都回来」：首页是
+逐块回填的，等全部只会白白拖长这一屏。两条必备的兜底：
+
+1. **取数彻底失败也要放行** —— 那时该给用户看的是错误页，而不是把错误页藏在红背后；
+2. **等待必须有上限**（`Motion.SplashMaxHoldMs`）—— 这个闩没有任何一方保证会打开（离线时
+   谁都不会 release），没有超时用户就被锁在红屏里，比看到空列表糟得多。
+
+**为什么不引起额外重组**：四个动画值**只在绘制期读**（`graphicsLayer { }` 与 `Canvas` 的
+lambda 内）—— 进度变化只作废绘制，不重跑组合。首帧还是最紧张的那几百毫秒，不该再往主线程
+堆组合工作。几何（含 `PathMeasure` 的量长）全部 `remember` 一次，`getSegment` 的输出容器逐帧
+复用。系统「移除动画」开关（`ANIMATOR_DURATION_SCALE == 0`）下**不演但照等**：缓冲不是动画，
+省掉它就退化成「红屏一闪」。
 
 ## 九、色彩体系（生成式调色板）
 

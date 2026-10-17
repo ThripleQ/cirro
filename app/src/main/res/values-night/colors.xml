@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 开屏底色**不随主题变**：它是品牌红那一屏，深色模式下也是红的（与
+         ui/splash/SplashOverlay.kt 的 SplashBackdrop 同值）。 -->
+    <color name="cirro_splash_background">#F51F43</color>
+
     <!-- 深色主题下的平台底色，取 theme/Palette.kt 的 `surface`（深色）。 -->
-    <color name="cirro_splash_background">#121417</color>
     <color name="cirro_window_background">#121417</color>
 </resources>
