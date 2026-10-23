@@ -117,7 +117,17 @@ fun WebLoginScreen(
                                 domStorageEnabled = true
                                 mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                             }
-                            loadUrl("https://music.163.com/m/login")
+                            // 加载前先清 WebView 自己的 cookie 商店。登出时已经清过一次
+                            // （AuthRepository.clearCookies），这里是兜底：清除是异步的，
+                            // 「登出 → 立刻进登录页」两步之间可能没跑完；而且只要商店里
+                            // 还留着旧 MUSIC_U，官方登录页就会被服务端直接认成已登录，
+                            // 用户看不到选账号 / 填表单 —— 表现就是登出后秒登回旧号
+                            // （2026-10-23 用户实测反馈）。
+                            // **必须等清除回调再 loadUrl**：不等待的话旧 cookie 可能还
+                            // 跟着这次页面请求发出去，清了也白清。
+                            CookieManager.getInstance().removeAllCookies {
+                                loadUrl(LOGIN_URL)
+                            }
                         }
                     },
                 )
@@ -125,3 +135,6 @@ fun WebLoginScreen(
         }
     }
 }
+
+/** 官方登录页地址（`/m/login`，手机号 / 扫码 / 密码 + 官方人机验证都在这页）。 */
+private const val LOGIN_URL = "https://music.163.com/m/login"
