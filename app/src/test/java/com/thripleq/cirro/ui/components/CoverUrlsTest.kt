@@ -113,6 +113,54 @@ class CoverUrlsTest {
         assertThat(coverSizedUrl(withPort, 480)).isEqualTo("$withPort?param=480y480")
     }
 
+    // ── 网易自家图片处理参数：剥掉再拼（2026-10-23 场景音乐封面发虚） ──────
+
+    /**
+     * `/weapi/playlist/list` 的歌单封面实测长这样（尾部还挂一枚 `thumbnail=140y140`
+     * 和水印图）：服务端回 **140×140 / 4KB**，追加 `param=` 也压不动它。
+     * 剥掉整段 query 才拿得到 480×480。
+     */
+    @Test
+    fun neteaseImageParams_areStrippedBeforeParam() {
+        val real =
+            "http://p1.music.126.net/GBnOO2JcXn_RLqBYMXZ60g==/109951168679686581.jpg" +
+                "?imageView=1&thumbnail=800y800&enlarge=1%7CimageView=1&watermark" +
+                "&type=1&image=b2JqL3c1bkRrTUtRd3JMRGpEekNtOE9t&dx=0&dy=0" +
+                "%7CimageView=1&thumbnail=140y140&"
+        val path = real.substringBefore('?')
+        assertThat(coverSizedUrl(real, 480)).isEqualTo("$path?param=480y480")
+    }
+
+    /** 只带 `thumbnail` 也要剥（最小复现：带它服务端就按它缩，`param` 说了不算）。 */
+    @Test
+    fun bareThumbnail_isStripped() {
+        val url = "https://p1.music.126.net/a/b.jpg?imageView=1&thumbnail=140y140"
+        assertThat(coverSizedUrl(url, 360))
+            .isEqualTo("https://p1.music.126.net/a/b.jpg?param=360y360")
+    }
+
+    /** `watermark` 无值形态（`watermark&type=1…`）也要认出来。 */
+    @Test
+    fun valuelessWatermark_isStripped() {
+        val url = "https://p1.music.126.net/a/b.jpg?watermark&type=1&image=abc"
+        assertThat(coverSizedUrl(url, 120))
+            .isEqualTo("https://p1.music.126.net/a/b.jpg?param=120y120")
+    }
+
+    /** 非网易图床带 imageView：`param` 是网易自家服务，别处不动。 */
+    @Test
+    fun foreignHostWithImageView_isLeftAlone() {
+        val url = "https://i.scdn.co/image/x.jpg?imageView=1&thumbnail=140y140"
+        assertThat(coverSizedUrl(url, 480)).isEqualTo(url)
+    }
+
+    /** 已带 `param=` 的仍不动 —— 既定尺寸优先，哪怕还挂着 thumbnail。 */
+    @Test
+    fun existingParamWinsOverImageParams() {
+        val url = "https://p1.music.126.net/a/b.jpg?param=200y200"
+        assertThat(coverSizedUrl(url, 480)).isEqualTo(url)
+    }
+
     /** 各调用点实际在用的尺寸，逐个确认拼得出来（含取色用的 24 与糊底用的 64）。 */
     @Test
     fun everySizeInUse_roundTrips() {
