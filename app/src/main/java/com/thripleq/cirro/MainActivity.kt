@@ -65,9 +65,7 @@ class MainActivity : ComponentActivity() {
         // 开屏期间例外：整屏是品牌红，图标必须反白（见 [applySystemBars]）。
         applySystemBars(forSplash = splashVisible)
         // 关掉系统给导航栏加的对比度蒙层（部分 OEM 仍会在透明底色上再压一层）。
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            window.isNavigationBarContrastEnforced = false
-        }
+        disableNavigationBarContrastScrim()
         installJankStats()
         requestNotificationPermissionIfNeeded()
         setContent {
@@ -105,6 +103,26 @@ class MainActivity : ComponentActivity() {
             SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT)
         }
         enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+        // enableEdgeToEdge 不是幂等的「设个颜色」：它的实现（EdgeToEdgeApi29.setUp，
+        // API 30+ 未覆写 setUp 所以同样走这里）每次都会按 SystemBarStyle.nightMode
+        // 重写 isNavigationBarContrastEnforced —— auto 样式 nightMode 恒为 0 ⇒ 强制置
+        // true。冷启动时开屏退场会再走一次本函数（forSplash=false → auto），把 onCreate
+        // 里设好的 false 又掀翻成 true：浅色模式下系统随即在透明导航栏上压一层半透明白
+        // scrim，就是三键导航下那条和界面不同色的「白条」。所以每次调用之后都要补设。
+        disableNavigationBarContrastScrim()
+    }
+
+    /**
+     * 关掉系统给导航栏加的对比度蒙层（部分 OEM 仍会在透明底色上再压一层）。
+     *
+     * 必须在**每次** [enableEdgeToEdge] 之后调用：库内部会按 SystemBarStyle 重写这个
+     * 标志（见 [applySystemBars] 的注释），只在 onCreate 里设一次会被开屏退场的那次
+     * 调用覆盖掉。
+     */
+    private fun disableNavigationBarContrastScrim() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
     }
 
     /** Android 13+ 首次进入时请求通知权限（用于前台播放的媒体通知）。 */
