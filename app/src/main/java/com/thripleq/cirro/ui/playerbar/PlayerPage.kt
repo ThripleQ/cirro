@@ -127,6 +127,9 @@ internal fun PlayerPage(
     /** 导航收起时整块壳要下移的量（px）；导航可见时为 0。 */
     dockShiftPx: Float,
     onComments: (Rect) -> Unit,
+    /** 当前曲目是否已红心（状态归 [PlayerDock] 管，这里只负责画和转发点击）。 */
+    liked: Boolean,
+    onToggleLike: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -389,6 +392,11 @@ internal fun PlayerPage(
     }
     /** 壳上的空点击（吃掉落在壳上的指针）。必须 remember —— 见上面 clickable 的注释。 */
     val swallowClick = remember { {} }
+    // 歌词页（内联/沉浸）在场时关掉壳的竖向拖拽：歌词页自己要用「下滑」进沉浸，
+    // 同一条手势若还挂在壳上，手指一拉就先把整页收走（用户 2026-10-24：「歌词页与
+    // 下滑退出全屏播放页冲突」）。歌词页的退出改由「点歌词回封面 / 返回键逐级退」，
+    // 回到封面档后这里自动恢复，下滑收起照旧。
+    var lyricsEngaged by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize()) {
         // 壳：显式宽高 + 平移（与 ExpandableShell 同构），随 progress 每帧布局。
@@ -434,7 +442,9 @@ internal fun PlayerPage(
                 .anchoredDraggable(
                     state.sheetState,
                     flingBehavior = state.flingBehavior,
-                    enabled = !tapExpand,
+                    // 歌词页禁用（见 [lyricsEngaged]）：竖向手势归歌词页，避免下拉歌词
+                    // 时把整个播放面收走。
+                    enabled = !tapExpand && !lyricsEngaged,
                     reverseDirection = true,
                     orientation = Orientation.Vertical,
                 ),
@@ -454,6 +464,9 @@ internal fun PlayerPage(
                 sleepEndAt = state.sleepEndAt,
                 onSleepEndAtChange = { state.sleepEndAt = it },
                 onComments = onComments,
+                liked = liked,
+                onToggleLike = onToggleLike,
+                onLyricsEngaged = { lyricsEngaged = it },
                 modifier = Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha },
             )
             Box(

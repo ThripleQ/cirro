@@ -6,6 +6,7 @@ import androidx.media3.common.util.UnstableApi
 import com.thripleq.cirro.ui.theme.Motion
 import com.thripleq.cirro.ui.theme.CirroShape
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -79,6 +80,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.zIndex
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import coil.compose.rememberAsyncImagePainter
 import coil.imageLoader
@@ -128,6 +131,16 @@ fun PlayerDock(
     val playerState = rememberPlayerState(player)
     // 进度是高频状态：单独订阅，只有进度条随 250ms 轮询重组。
     val positionState = rememberPlayerPosition(player)
+    // 红心：dock 是**始终在组合里**的那一层（全屏页收起后它还在），状态与动作就挂这里，
+    // 迷你条和全屏页吃同一份 liked / 回调。全屏页因此不再自己起一套 —— 否则两边各收一次
+    // [PlayerActionsViewModel.message]，收藏失败会连弹两个 Toast。
+    val actionsVm: PlayerActionsViewModel = hiltViewModel()
+    val liked by actionsVm.liked.collectAsStateWithLifecycle()
+    LaunchedEffect(playerState.trackId) { actionsVm.onTrackChanged(playerState.trackId) }
+    val appContext = LocalContext.current.applicationContext
+    LaunchedEffect(actionsVm) {
+        actionsVm.message.collect { Toast.makeText(appContext, it, Toast.LENGTH_SHORT).show() }
+    }
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
     // 是否已进入「卡片→全屏」档：决定 dock 与气泡的叠放层级。
@@ -358,6 +371,8 @@ fun PlayerDock(
                 dockHeightPx = geometryDockHeightPx,
                 dockShiftPx = dockShiftPx,
                 onComments = onComments,
+                liked = liked,
+                onToggleLike = actionsVm::toggleLike,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -556,7 +571,6 @@ internal fun PlayerBarContent(
         Spacer(Modifier.width(12.dp))
         if (playerState.hasTrack) {
             SpectrumPlaceholder()
-            Spacer(Modifier.width(8.dp))
         }
         IconButton(onClick = { PlayerHolder.togglePlay(player) }) {
             Icon(
