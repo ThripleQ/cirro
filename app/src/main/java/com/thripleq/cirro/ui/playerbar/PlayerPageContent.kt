@@ -506,6 +506,7 @@ internal fun PlayerPageContent(
                         LyricsView(
                             uiState = lyricsState,
                             positionState = positionState,
+                            playing = state.isPlaying,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
