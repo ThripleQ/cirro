@@ -1,7 +1,6 @@
 package com.thripleq.cirro.ui.playerbar
 
 import android.provider.Settings
-import android.widget.Toast
 import com.thripleq.cirro.ui.theme.Motion
 import com.thripleq.cirro.ui.theme.CirroFade
 import com.thripleq.cirro.ui.theme.CirroShape
@@ -9,13 +8,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -29,32 +25,14 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -62,34 +40,22 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
-import com.thripleq.cirro.core.playback.PlayerHolder
-import com.thripleq.cirro.ui.components.CirroTrialBadge
-import com.thripleq.cirro.ui.components.FadingMarqueeText
-import com.thripleq.cirro.ui.components.quantizedFontSize
 import kotlinx.coroutines.flow.collect
 
 /**
@@ -509,38 +475,3 @@ internal fun PlayerPage(
         }
     }
 }
-
-/**
- * 歌名右侧红心/评论的图标尺寸。
- *
- * 2026-10-03 用户：「红心和评论太小了……最终调成一样高」。原来是 `Icon` 的默认 24dp，
- * 而全屏档歌名是 28sp —— 图标明显矮一头；现在歌名收到 24sp（见 `titleFont`）、
- * 图标抬到 28dp，两者的**字面/图形高度**相当（中文字面高 ≈ 0.86em ≈ 21dp，
- * Material 图标墨迹 ≈ 0.83×28 ≈ 23dp）。
- *
- * 触控盒仍是 40dp（见 [TitleActionRowWidth]）：图标只动图形，不动点按区域。
- */
-internal val TitleActionIcon = 28.dp
-
-/** 红心/评论的触控盒边长（图标只动图形，不动这个）。 */
-internal val TitleActionButton = 40.dp
-
-/**
- * 红心 + 评论那一行的宽度（也是展开时宽度动画的终点值）。
- *
- * = 2 × [TitleActionButton]。这个值必须与盒宽之和严格相等：小的那个会被裁
- * （外层 `clipToBounds`），大的那个会凭空占走歌名的宽度。
- */
-internal val TitleActionRowWidth = TitleActionButton * 2
-
-/**
- * 三键（切歌/播放）之下、底部功能胶囊行之上的间距。
- *
- * 原来是 24dp。这里额外多出 33dp —— 那是上半段**那条 1dp 分割线连同上下各 16dp 内缩**
- * 让出来的量（用户：「歌手下边的分割线删掉」）。整块撤掉之后原样挪到这里，于是：
- * - 整列总高**不变**（不会把胶囊行挤出屏幕，也不会挤压封面）；
- * - 进度条与三键整体**上移 33dp**（用户：「进度条上移，下面的操作按钮也都上移」）——
- *   因为这两者的绝对位置是在它们**之下**的内容高度决定的（块底贴着列底），
- *   把分割线的高度挪到三键之下，就等于把这两者往上抬。
- */
-internal val TransportBottomGap = 24.dp + 33.dp
