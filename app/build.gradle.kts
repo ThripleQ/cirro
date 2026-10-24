@@ -45,7 +45,7 @@ android {
         // 可以互相覆盖」正是仓库里那份 keystore 的意义（见 [signingConfigs]）。
         // 拿不到 git（源码包 / PATH 里没有）就退回 1，别让构建挂掉。
         versionCode = commitCount
-        versionName = "0.3.2"
+        versionName = "0.3.3"
         vectorDrawables.useSupportLibrary = true
 
         // libnetease is compiled without curl; the app installs an OkHttp
