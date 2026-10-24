@@ -39,7 +39,6 @@ import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -110,7 +109,6 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -268,14 +266,6 @@ internal fun PlayerPageContent(
     }
     val artistStyle = remember(typography, artistFont) {
         typography.bodyMedium.copy(fontSize = artistFont)
-    }
-    // 标题块**不可压缩**的高度：标题行（固定 [TitleActionButton]）+ 4dp 间隔 + 歌手行行盒。
-    // 取 `lineHeight` 而不是字号（行盒比字号高 6dp）；sp→dp 换算会把系统字号缩放算进去 ——
-    // 用户把字体调大时这条预留也跟着长，不会又退回「压扁徽标」。
-    // 用途见 [fittedCover]：卡片档空间不够时缩封面，而不是压扁标题块里的徽标。
-    val headingReserve = TitleActionButton + 4.dp + with(density) {
-        val lineHeight = artistStyle.lineHeight
-        if (lineHeight == TextUnit.Unspecified) artistFont.toDp() else lineHeight.toDp()
     }
     val titleColor = lerp(
         MaterialTheme.colorScheme.onSurface,
@@ -437,52 +427,47 @@ internal fun PlayerPageContent(
                 // ── 封面档 ────────────────────────────────────────────────────
                 // 点封面进内联歌词（门槛见 [onCoverClick]）。封面尺寸/圆角不变，下面依次是
                 // 标题块 → 弹性空白 → 底部控制，与加歌词功能之前的版式完全一致。
-                BoxWithConstraints(Modifier.fillMaxSize()) {
-                    // 封面要按「槽位里剩下的高度」让一让，理由与算式见 [fittedCover]：
-                    // 卡片档封面按内容区同宽取（高度=宽度）会把槽位吃满，标题块作为最后一个
-                    // 子项被 Column 压扁，徽标行是它里面唯一「软」的部分。
-                    val cover = fittedCover(
-                        coverDim = coverDim,
-                        slotHeight = maxHeight,
-                        titleGap = titleGap,
-                        headingReserve = headingReserve,
-                    )
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                //
+                // ⚠️ 封面尺寸**只由 sc 决定**，不要再拿「槽位剩下的高度」去夹它（2026-10-24
+                // 用户指出「出场退场方式变了，原来宽度不变」）：展开/收起时壳是逐帧长高的，
+                // 中途槽位比卡片档的封面还矮 —— 一旦按实时 maxHeight 夹一下，封面就会跟着
+                // 壳从小长到大，「定宽上滑」的出场变成了「放大浮现」。要留空间只能在**静态**
+                // 几何上算，不能挂在动画中的测量值上。
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(coverDim)
+                            .clip(RoundedCornerShape(coverCorner))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { onCoverClick() },
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(cover)
-                                .clip(RoundedCornerShape(coverCorner))
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                ) { onCoverClick() },
-                        ) {
-                            CoverArt(
-                                state = state,
-                                dim = cover,
-                                corner = coverCorner,
-                                iconSize = androidx.compose.ui.unit.lerp(88.dp, 96.dp, sc),
-                            )
-                        }
-
-                        Spacer(Modifier.height(titleGap))
-
-                        PlayerHeading(
+                        CoverArt(
                             state = state,
-                            sc = sc,
-                            titleStyle = titleStyle,
-                            titleColor = titleColor,
-                            artistStyle = artistStyle,
-                            liked = liked,
-                            onToggleLike = onToggleLike,
-                            onComments = onComments,
-                            commentRect = commentRect,
-                            onCommentBounds = { commentRect = it },
+                            dim = coverDim,
+                            corner = coverCorner,
+                            iconSize = androidx.compose.ui.unit.lerp(88.dp, 96.dp, sc),
                         )
                     }
+
+                    Spacer(Modifier.height(titleGap))
+
+                    PlayerHeading(
+                        state = state,
+                        sc = sc,
+                        titleStyle = titleStyle,
+                        titleColor = titleColor,
+                        artistStyle = artistStyle,
+                        liked = liked,
+                        onToggleLike = onToggleLike,
+                        onComments = onComments,
+                        commentRect = commentRect,
+                        onCommentBounds = { commentRect = it },
+                    )
                 }
             } else {
                 // ── 歌词档（内联 / 沉浸共用**同一套版式**）────────────────────────
@@ -799,41 +784,6 @@ private val ImmersivePullDp = 72.dp
  *  比浮层显隐（[Motion.MicroMs]）重、比页面导航轻。退场减半：让位要利索（同 [Motion.NavExitMs] 取向）。 */
 private const val ImmersiveMs = 360
 private const val ImmersiveExitMs = 180
-
-/**
- * 封面在「封面 + 标题块」这个槽位里的实际尺寸 —— 空间不够时**让封面让**。
- *
- * ## 为什么需要它（2026-10-24 用户报：「卡片里『试听』标被压扁、VIP 标不存在」）
- *
- * 封面与标题块共处一个 `Column`，标题块是**最后一个**子项。Compose 的 `Column` 按顺序用
- * 「剩下的高度」去量每个子项，两者一旦加起来超过槽位，短缺**全部**落在标题块上。而标题块
- * 内部三样东西的弹性完全不同：
- *  - 标题行：`Modifier.height(TitleActionButton)` —— 固定 40dp，不缩；
- *  - 歌手跑马：`FadingMarqueeText` 用 `requiredHeight` —— **忽略**来约束，也不缩；
- *  - 徽标行：两个 `Text`，唯一「软」的东西 —— 差额全被它吃掉，10dp 的小框被压成一条线。
- * 于是症状很怪：标题、歌手都好好的，只有徽标坏 —— 金色「试听」剩一条看着像**被压扁**，
- * 灰色 `VIP` 只有 1dp 描边、压没了就成「不存在」。迷你条里同一份徽标却正常，因为那
- * 68dp 的横条高度富余 —— 这条不对称正是「责任在高度、不在宽度/颜色」的反证。
- *
- * 卡片档正处在这个局面：封面尺寸取「内容区同宽」（高度=宽度），把槽位吃满之后标题块
- * 没有余量。封面是装饰、标题块是信息，所以这里把超出量从封面上扣掉：
- * `返回值 = min(想做多大, 槽位 - 间隔 - 标题块预留)`。
- * 槽位富余时（全屏档）原样返回 [coverDim]，卡片档逐像素调过的封面尺寸不受影响。
- *
- * @param slotHeight 槽位高度（= 外层 `BoxWithConstraints` 的 `maxHeight`，底部控制簇在外面）
- * @param headingReserve 标题块不可压缩的最小高度（见 `headingReserve`）
- */
-internal fun fittedCover(
-    coverDim: Dp,
-    slotHeight: Dp,
-    titleGap: Dp,
-    headingReserve: Dp,
-): Dp {
-    val room = slotHeight - titleGap - headingReserve
-    // 槽位比「间隔 + 标题块」还矮（不该发生）：宁可封面归零，也不返回负的 Dp。
-    if (room <= 0.dp) return 0.dp
-    return if (coverDim < room) coverDim else room
-}
 
 /**
  * 标题块：歌名（带右侧红心/评论）+ 歌手（带试听标）。封面档在封面之下，歌词档**常驻
