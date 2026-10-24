@@ -2,6 +2,7 @@ package com.thripleq.cirro.ui.components
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -72,6 +73,9 @@ fun CirroPayBadge(tag: PayTag, modifier: Modifier = Modifier) {
         letterSpacing = 0.5.sp,
         maxLines = 1,
         modifier = modifier
+            // 竖向不许被压 —— 理由与完整说明见 [CirroTrialBadge] 同名位置：徽标行是播放
+            // 卡片标题块里唯一能缩的东西，卡片档竖向只差几 dp 时，差额全压在它身上。
+            .wrapContentHeight(unbounded = true)
             .border(1.dp, color, CirroShape.Badge)
             .padding(horizontal = 3.dp),
     )

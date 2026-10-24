@@ -2,6 +2,7 @@ package com.thripleq.cirro.ui.components
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,6 +52,14 @@ fun CirroTrialBadge(modifier: Modifier = Modifier) {
         letterSpacing = 0.5.sp,
         maxLines = 1,
         modifier = modifier
+            // 竖向**不许被压**（2026-10-24）：徽标行是播放卡片标题块里唯一「软」的东西 ——
+            // 同行的歌手名用 `requiredHeight` 忽略来约束、标题行是固定高，只有这里能缩。
+            // 卡片档竖向预算实测差约 8dp，差额会全部落在这 10dp 的小框上 —— 表现就是
+            // 「试听」压成一条、VIP 只剩 1dp 描边（看着像不存在）。
+            // `unbounded = true` 让它按自己的行盒量、超出部分照画：宁可探出一点到下方留白，
+            // 也不许把字压扁。**不要**改成缩封面去腾地方 —— 封面尺寸只能由 sc 决定，否则
+            // 展开/收起的出场会变成「放大浮现」（用户 2026-10-24 亲自指出）。
+            .wrapContentHeight(unbounded = true)
             .border(1.dp, color, CirroShape.Badge)
             .padding(horizontal = 3.dp),
     )
