@@ -9,9 +9,12 @@ import org.json.JSONObject
  * 播放状态持久化（SharedPreferences + JSON）：进程被杀 / 用户退出后，下次启动恢复
  * **上次的队列、当前曲目、进度、随机/循环模式**（恢复为暂停态，等用户点播放）。
  *
- * 只存最小必要字段，逐项存 [Track]（id/名称/艺人/封面/时长/专辑）。恢复时据此重建
- * MediaItem —— 音频 URL 依旧由 [PlaybackUrls] 惰性解析，**不落盘任何带签名的 URL**
- * （签名有时效，存了也会过期，且属于敏感数据）。
+ * 只存最小必要字段，逐项存 [Track]（id/名称/艺人/封面/时长/专辑/付费档位）。恢复时据
+ * 此重建 MediaItem —— 音频 URL 依旧由 [PlaybackUrls] 惰性解析，**不落盘任何带签名的
+ * URL**（签名有时效，存了也会过期，且属于敏感数据）。
+ *
+ * `fee` 也要存：播放页/迷你条的 VIP 标读的是 MediaItem extras（见 `trackMediaItem`），
+ * 不存的话冷启动恢复出来的队列会暂时失去 VIP 标。
  */
 internal object PlaybackStateStore {
 
@@ -73,6 +76,7 @@ internal object PlaybackStateStore {
                         put("art", t.artworkUrl ?: JSONObject.NULL)
                         put("dur", t.durationMs)
                         put("album", t.albumName)
+                        put("fee", t.fee)
                     },
                 )
             }
@@ -122,6 +126,8 @@ internal object PlaybackStateStore {
                                 .takeIf { it.isNotBlank() && it != "null" },
                             durationMs = o.optLong("dur"),
                             albumName = o.optString("album"),
+                            // 旧快照没有这一项 → 0（不标 VIP），等下次从列表重排队列时补上。
+                            fee = o.optInt("fee"),
                         ),
                     )
                 }

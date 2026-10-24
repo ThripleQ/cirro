@@ -27,6 +27,7 @@ import androidx.media3.common.Player
 import com.thripleq.cirro.Home
 import com.thripleq.cirro.Profile
 import com.thripleq.cirro.Search
+import com.thripleq.cirro.core.playback.MEDIA_EXTRA_FEE
 import com.thripleq.cirro.core.playback.PlayerHolder
 import com.thripleq.cirro.core.playback.TrialClip
 import kotlinx.coroutines.delay
@@ -66,7 +67,17 @@ data class PlayerUiState(
     val trial: TrialClip? = null,
     /** 试听片段已播完并停在末尾（不是「正在播」也不是「缓冲中」）。 */
     val trialEnded: Boolean = false,
+    /**
+     * 当前曲是 VIP 歌（`fee == 1`）。与 [trial] **并存**：试听是「你现在只能听 30 秒」
+     * 的临时状态，VIP 是这首歌的静态属性 —— 两件事都要说，别用一枚标替换另一枚。
+     * 值从 MediaItem 元数据 extras 取（见 `trackMediaItem`）。
+     */
+    val vip: Boolean = false,
 )
+
+/** MediaItem 元数据是否带 VIP 档位（判据口径同 `payTagsOf`：只看 `fee == 1`）。 */
+private fun MediaMetadata.isVip(): Boolean =
+    extras?.getInt(MEDIA_EXTRA_FEE, 0) == 1
 
 /**
  * Observes [player] (process-scoped singleton) with a metadata listener + 250ms poll.
@@ -101,6 +112,9 @@ fun rememberPlayerState(
                     coverUrl = mediaMetadata.artworkUri?.toString(),
                     durationMs = effectiveDurationMs(),
                     errorText = null,
+                    // 读 MediaItem 而不用回调里的 mediaMetadata：extras 是我们自己写进
+                    // MediaItem 的静态属性，媒体源自带的元数据没有义务把它带回回调。
+                    vip = player.currentMediaItem?.mediaMetadata?.isVip() == true,
                 )
             }
 
@@ -117,6 +131,8 @@ fun rememberPlayerState(
                     trial = trial,
                     // 新曲刚起播，必然不在片段末尾；trialEnded 交给轮询与 isTrialEnded 判。
                     trialEnded = false,
+                    // VIP 与试听并存：切歌时两枚标一起换，不留下上一首的任何一枚。
+                    vip = mediaItem?.mediaMetadata?.isVip() == true,
                 )
             }
 
@@ -164,6 +180,7 @@ fun rememberPlayerState(
             repeatMode = player.repeatMode,
             trial = PlayerHolder.currentTrial(),
             trialEnded = PlayerHolder.isTrialEnded(player),
+            vip = player.currentMediaItem?.mediaMetadata?.isVip() == true,
         )
         try {
             while (true) {

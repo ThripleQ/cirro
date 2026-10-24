@@ -6,6 +6,7 @@ import androidx.media3.common.util.UnstableApi
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -84,6 +85,10 @@ class PlaybackLauncher @Inject constructor() {
  *
  * 元数据里**声明时长**：恢复态停在 STATE_IDLE（不 prepare、不联网），此时
  * `player.duration` 为 0，UI 靠这个声明值把进度条/总时长显示出来（见 rememberPlayerState）。
+ *
+ * 元数据 extras 里带 `fee`：播放页/迷你条要显示 VIP 标，而 [MediaItem] 本身不带
+ * `Track` 的字段。恢复队列时 `trackMediaItem` 用 [PlaybackStateStore] 里存下的
+ * `fee` 重建，所以冷启动也能显示。
  */
 internal fun trackMediaItem(track: Track): MediaItem =
     MediaItem.Builder()
@@ -94,7 +99,11 @@ internal fun trackMediaItem(track: Track): MediaItem =
                 .setTitle(track.name)
                 .setArtist(track.artist)
                 .setArtworkUri(track.artworkUrl?.let { Uri.parse(it) })
+                .setExtras(Bundle().apply { putInt(MEDIA_EXTRA_FEE, track.fee) })
                 .apply { if (track.durationMs > 0L) setDurationMs(track.durationMs) }
                 .build(),
         )
         .build()
+
+/** MediaItem 元数据里携带的 `Track.fee`（判据口径见 `payTagsOf`）。 */
+internal const val MEDIA_EXTRA_FEE = "cirro.track.fee"

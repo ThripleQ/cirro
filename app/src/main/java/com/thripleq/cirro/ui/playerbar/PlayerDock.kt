@@ -88,7 +88,9 @@ import coil.imageLoader
 import coil.request.ImageRequest
 import com.thripleq.cirro.Profile
 import com.thripleq.cirro.core.playback.PlayerHolder
+import com.thripleq.cirro.ui.components.CirroPayBadge
 import com.thripleq.cirro.ui.components.CirroTrialBadge
+import com.thripleq.cirro.ui.components.PayTag
 import com.thripleq.cirro.ui.components.ShimmerImagePlaceholder
 import com.thripleq.cirro.ui.components.coverSizedUrl
 import com.thripleq.cirro.ui.components.swallowPointerInput
@@ -552,9 +554,15 @@ internal fun PlayerBarContent(
             )
             Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // 「试听」标紧贴歌手名前，位置与列表行「徽标贴在副标题前」同一处语言
+                // 徽标紧贴歌手名前，位置与列表行「徽标贴在副标题前」同一处语言
                 // （TrackListRows 的 VIP/PAY 也是这么贴的）。间距 2dp 沿用 [CirroPayBadge]
                 // 的实测口径（框右边框到 CJK 首墨 3dp，扣掉字形自带约 1dp 侧边距）。
+                // VIP 与「试听」**并存**：前者是歌的静态属性，后者是此刻只能听 30 秒，
+                // 少了哪一枚都丢信息；VIP 排在前面，与列表行一致。
+                if (playerState.vip) {
+                    CirroPayBadge(PayTag.VIP)
+                    Spacer(Modifier.width(2.dp))
+                }
                 if (playerState.trial != null) {
                     CirroTrialBadge()
                     Spacer(Modifier.width(2.dp))

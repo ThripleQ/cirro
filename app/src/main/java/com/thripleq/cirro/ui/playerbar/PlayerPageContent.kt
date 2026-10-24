@@ -121,8 +121,10 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import com.thripleq.cirro.core.playback.PlayerHolder
+import com.thripleq.cirro.ui.components.CirroPayBadge
 import com.thripleq.cirro.ui.components.CirroTrialBadge
 import com.thripleq.cirro.ui.components.FadingMarqueeText
+import com.thripleq.cirro.ui.components.PayTag
 import com.thripleq.cirro.ui.components.quantizedFontSize
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -875,15 +877,21 @@ private fun PlayerHeading(
                 }
             }
         }
-        // 歌手为空时整行折叠，不留空洞 —— 但**试听标不跟着折**：它是这一行的主要信息
-        // （歌手名缺失时，用户更需要知道「为什么这首只有 30 秒」）。
-        if (state.artist.isNotEmpty() || state.trial != null) {
+        // 歌手为空时整行折叠，不留空洞 —— 但**徽标不跟着折**：它们是这一行的主要信息
+        // （歌手名缺失时，用户更需要知道「这是 VIP 歌、当前只有 30 秒」）。
+        if (state.artist.isNotEmpty() || state.trial != null || state.vip) {
             Spacer(Modifier.height(4.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // 「试听」标贴在歌手名前，与曲目列表行「徽标贴在副标题前」同一处语言。
+                // 徽标贴在歌手名前，与曲目列表行「徽标贴在副标题前」同一处语言。
+                // VIP 在左、「试听」在右：前者是这首歌的静态属性，后者是此刻的播放状态，
+                // 顺序与列表行一致（VIP 永远第一枚）。两枚**同时出现**时信息才完整。
+                if (state.vip) {
+                    CirroPayBadge(PayTag.VIP)
+                    Spacer(Modifier.width(2.dp))
+                }
                 if (state.trial != null) {
                     CirroTrialBadge()
                     Spacer(Modifier.width(2.dp))
