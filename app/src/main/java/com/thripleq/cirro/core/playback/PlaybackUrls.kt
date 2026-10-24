@@ -27,6 +27,14 @@ class NoPlayableUrlException(songId: String) : IOException("no playable url for 
  * （非会员只能听到的**试听片段**，见 [TrialClip]）。这一项必须在这里取：响应的 body
  * 只在这一层出现过，播放器与 UI 都拿不到它。判断口径与实测依据全在 [PlayableUrl] 的注释里。
  *
+ * ## 缓存命中时不会走到这里
+ *
+ * [PlaybackCache] 在解析器的**下游**（见 `PlayerHolder.build`）：字节缓存命中时
+ * ExoPlayer 根本不打开 URL，于是本类既查不到、也学不到试听身份。而试听身份不能从
+ * `fee` 推（已购单曲 fee=1 却是整曲），所以必须由切歌路径主动补一次解析 ——
+ * 见 `PlayerHolder.learnTrial`。**别把这条当成可选优化删掉**：删了以后「重启后重播
+ * 缓存过的试听曲」会退回「无试听标记 + 播完自动跳下一首」。
+ *
  * [resolve] 运行在 ExoPlayer 的加载线程（非主线程），因此走 [NetEaseGateway.callBlocking]。
  */
 @Singleton
@@ -38,11 +46,25 @@ class PlaybackUrls @Inject constructor(
 
     private val urlCache = ConcurrentHashMap<String, Cached>()
 
+    // 同一首歌的并发解析合并成一次。两条路径会同时要它：ExoPlayer 打开字节流（加载线程）
+    // 与切歌时的试听补登记（PlayerHolder.learnTrial，IO 线程）。没有这个锁，
+    // 缓存未命中的新歌会连发两次 URL 请求。
+    private val resolveLocks = ConcurrentHashMap<String, Any>()
+
     /**
      * 解析歌曲的音频 URL；解析失败（无版权 / 未登录无权益 / 风控 / 网络）返回 null，
      * 由 ExoPlayer 的加载错误触发 [PlayerHolder] 的"自动跳下一首"。
      */
     override fun resolve(songId: String): PlayableUrl? {
+        val lock = resolveLocks.getOrPut(songId) { Any() }
+        try {
+            synchronized(lock) { return resolveLocked(songId) }
+        } finally {
+            resolveLocks.remove(songId, lock)
+        }
+    }
+
+    private fun resolveLocked(songId: String): PlayableUrl? {
         val now = System.currentTimeMillis()
         urlCache[songId]?.let { hit ->
             // 成功结果按 CACHE_TTL_MS 复用；失败（null）只短缓存：网络抖动 / VIP 判定
@@ -74,6 +96,15 @@ class PlaybackUrls @Inject constructor(
         val hit = urlCache[songId] ?: return null
         if (System.currentTimeMillis() - hit.at >= CACHE_TTL_MS) return null
         return hit.result?.trial
+    }
+
+    /**
+     * 该曲的试听身份是否**已知**（已知「不是试听」也算已知，与 [trialOf] 返回 null 的
+     * 「不知道」区分开）。切歌时据此决定要不要补一次解析，见 [PlayerHolder.learnTrial]。
+     */
+    override fun isTrialKnown(songId: String): Boolean {
+        val hit = urlCache[songId] ?: return false
+        return hit.result != null && System.currentTimeMillis() - hit.at < CACHE_TTL_MS
     }
 
     private fun query(songId: String): PlayableUrl? {

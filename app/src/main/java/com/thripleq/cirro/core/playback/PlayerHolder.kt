@@ -24,6 +24,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 惰性音频 URL 的来源：由 [PlaybackUrls] 实现，[PlayerHolder] 在 ExoPlayer 打开
@@ -41,6 +42,9 @@ interface PlaybackUrlSource {
      * 未知、已过期、或本来就不是试听 → null。
      */
     fun trialOf(songId: String): TrialClip?
+
+    /** 该曲的试听身份是否**已知**（「不是试听」也算已知，与 [trialOf] 的 null 区分）。 */
+    fun isTrialKnown(songId: String): Boolean
 
     /** 丢弃缓存的 URL，下次 [resolve] 重新请求（用于签名过期）。 */
     fun invalidate(songId: String)
@@ -238,15 +242,17 @@ object PlayerHolder {
     /**
      * 登记当前曲目的试听身份并据此决定收尾方式。
      *
-     * ## 两条登记来源，缺一不可
+     * ## 三条登记来源，缺一不可
      *
      * 1. **切歌那一刻查缓存**（本函数，主线程）。查到的往往是**预加载**过的那首 ——
      *    ExoPlayer 会在当前曲还没播完时就去解析下一首的 URL，那次解析的回调会因为
      *    「已经不是当前曲」被丢弃（见 [onResolved]），所以缓存是此刻唯一的线索。
      * 2. **解析回调补登记**。首次播放时缓存里还没有，切歌那刻查不到。
-     *
-     * 反过来说：只有第 2 条也不行 —— 字节缓冲命中（[PlaybackCache]）时根本不会发起解析，
-     * 于是重播一首缓存过的试听曲将**永远不会**被登记。两条一起才闭合。
+     * 3. **补解析**（[learnTrial]）。前两条都盖不住**字节缓存命中**：缓存位于解析器的
+     *    上游（见 `PlayerHolder.build`），命中时 ExoPlayer 根本不解析 URL，进程重启后
+     *    URL 缓存也是空的 —— 一首缓存过的试听曲会以「不知道」的身份播放：没有「试听」
+     *    标、播到片段末尾还会自动跳下一首。2026-10-24 真机复现（Lovesong，fee=1，
+     *    缓存命中，0:29 的片段却没有试听标）。所以身份未知时主动解析一次。
      *
      * ## 为什么必须显式复位
      *
@@ -257,9 +263,25 @@ object PlayerHolder {
      * 参数取 [ExoPlayer] 而不是 [Player]：`pauseAtEndOfMediaItems` 是 `ExoPlayer` 自己的
      * 属性（不在 `Player` 接口上），而全 app 的这个实例本来就是 ExoPlayer。
      */
-    fun refreshTrial(player: ExoPlayer) {
+    fun refreshTrial(player: ExoPlayer, learn: Boolean = true) {
         val id = player.currentMediaItem?.mediaId
         player.applyTrial(id?.let { urlSource?.trialOf(it) })
+        if (learn && id != null && urlSource?.isTrialKnown(id) == false) learnTrial(id)
+    }
+
+    /**
+     * 试听身份未知时补一次解析（见 [refreshTrial] 第 3 条）。
+     *
+     * 补解析结果会写进 [PlaybackUrls] 的缓存，所以同一进程里每首歌至多一次；与 ExoPlayer
+     * 自己的解析并发时，由 `PlaybackUrls.resolve` 的按曲锁合并成一次请求。结果只在
+     * 「仍是当前曲」时才登记（同 [onResolved]），免得预加载的身份落到别的歌头上。
+     */
+    private fun learnTrial(id: String) {
+        persistScope.launch {
+            if (urlSource?.isTrialKnown(id) != false) return@launch
+            val playable = withContext(Dispatchers.IO) { urlSource?.resolve(id) } ?: return@launch
+            applyResolved(id, playable)
+        }
     }
 
     /**
@@ -284,11 +306,13 @@ object PlayerHolder {
      * 判等放在主线程做：`currentMediaItem` 只能在主线程读。
      */
     private fun onResolved(id: String, playable: PlayableUrl) {
-        persistScope.launch {
-            val p = player ?: return@launch
-            if (p.currentMediaItem?.mediaId != id) return@launch
-            p.applyTrial(playable.trial)
-        }
+        persistScope.launch { applyResolved(id, playable) }
+    }
+
+    private fun applyResolved(id: String, playable: PlayableUrl) {
+        val p = player ?: return
+        if (p.currentMediaItem?.mediaId != id) return
+        p.applyTrial(playable.trial)
     }
 
     /**
@@ -313,7 +337,11 @@ object PlayerHolder {
         val p = this
         addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                p.applyTrial(mediaItem?.mediaId?.let { urlSource?.trialOf(it) })
+                // 走 refreshTrial 而不是只查缓存：缓存命中时身份可能未知，需要补解析。
+                // 恢复态（冷启动 setMediaItems，暂停 + IDLE）例外：那时用户还没点播放，
+                // 补解析会打破「未点播放不发网络请求」（见 restore）；点播放时 togglePlay 补。
+                val coldRestore = playbackState == Player.STATE_IDLE && !playWhenReady
+                refreshTrial(p, learn = !coldRestore)
             }
         })
     }
@@ -403,7 +431,7 @@ object PlayerHolder {
         p.shuffleModeEnabled = snap.shuffle
         p.repeatMode = snap.repeatMode
         // 不 prepare()/play()：避免未点播放就发起网络请求；点播放时 togglePlay 会
-        // 检测到 STATE_IDLE 自动 prepare。
+        // 检测到 STATE_IDLE 自动 prepare（并补认领试听身份，见 [togglePlay]）。
     }
 
     /** error 或已恢复但尚未加载（STATE_IDLE）时都需 prepare，play() 才会真正出声。 */
@@ -418,6 +446,9 @@ object PlayerHolder {
             return
         }
         player.ensurePrepared()
+        // 恢复态点播放时补认领试听身份：冷启动的 URL 缓存是空的，若这首的字节已缓存，
+        // ExoPlayer 不会解析 URL，切歌回调也未必来（见 [learnTrial]）。
+        if (player is ExoPlayer) refreshTrial(player)
         // 试听片段播完时播放器停在片段末尾（见 [applyTrial]）。此刻若直接 play()，播放头已经在
         // 末尾、会立刻再次停下 —— 用户读到的是「播放键坏了」。显式回到片段开头重播：
         // 试听语境下这是最不容易误会的处理（想跳到下一首，用户有 ⏭ 那颗按钮）。
