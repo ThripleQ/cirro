@@ -1,6 +1,9 @@
 package com.thripleq.cirro.ui.playerbar
 
 import android.os.SystemClock
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalView
 import com.thripleq.cirro.ui.theme.Motion
 import com.thripleq.cirro.ui.theme.CirroFade
 import androidx.compose.animation.core.animateFloatAsState
@@ -87,11 +90,60 @@ internal fun currentLyricIndex(lines: List<LyricLine>, positionMs: Long): Int {
 /** 歌词行距：内联/沉浸两档共用（原内联 14dp、沉浸 20dp —— 统一取沉浸档，字号也是同一套）。 */
 private val LyricLineSpacing = 20.dp
 
-/** 上下留白：两档共用；上下各留出一条渐隐带（36dp）的高度，首尾行不会被边缘蒙版裁掉。 */
+/** 上下留白：两档共用；上下各留出一条渐隐带（36dp）的高度，首尾行不会被边缘蒙版裁掉。
+ *
+ *  它同时也是列表的 `contentPadding`，比黄金位（见 [LyricGoldenAnchor]）小得多 —— 所以
+ *  **开头几行贴视口顶、随着内容变多才逐渐落到黄金位**。这是刻意的：内联档视口只有约
+ *  530dp，若把顶部留白直接按黄金位（约 210dp）铺开，第一句歌词要压到视口 4 成的位置，
+ *  标题下方会空出一大片。中段之后焦点行稳稳停在黄金位，不受影响。 */
 private val LyricVerticalPadding = 40.dp
 
-/** 当前行在视口里的停靠比例（约 2/5，上方留足上下文）。两档共用，避免换档时重排。 */
-private const val LyricAnchor = 0.40f
+/**
+ * 焦点行的**黄金分割停靠点**：从**屏幕**顶部量 0.382（= 1 − 0.618，短的一段在上）。
+ *
+ * 用户 2026-10-24：「焦点歌词行应该在屏幕靠上部分，而不是中间。取个黄金比例吧。」
+ *
+ * ⚠️ 口径是**屏幕**，不是视口 —— 这是全部要点。此前按「视口高度 × 0.40」停靠，而
+ * 视口高度在两档之间差很多（内联档底部压着控制簇约 208dp，沉浸档整簇退场），于是同一个
+ * 比例算出来两个不同的像素值：
+ *
+ * | 档 | 视口高 | 旧停靠(×0.40) | 焦点行落到屏幕 |
+ * |---|---|---|---|
+ * | 内联 | ≈534dp | ≈214dp | ≈38% ✅ 靠上 |
+ * | 沉浸 | ≈742dp | ≈297dp | ≈48% ❌ **正中** |
+ *
+ * 而且换档瞬间 `LaunchedEffect` 不重跑（焦距没变），歌词当场不动；可是**下一句**一出来
+ * 就按新的视口高度重算 —— 观感就是「一进沉浸，焦点行自己出溜到屏幕中间」。
+ *
+ * 改成「屏幕高 × 0.382 − 视口顶的 y」之后，锚点是个**与档位无关的绝对值**（视口顶在
+ * 两档里都不动：标题常驻顶部），换档后切句也不再移动，两个诉求一次满足。
+ */
+private const val LyricGoldenAnchor = 0.382f
+
+/**
+ * 量不到窗口尺寸时的**退化口径**：视口高度 × 0.40（即改前那套算法）。
+ *
+ * 存在的唯一意义是「宁可退回旧观感，也不能把自动滚动弄坏」—— 停靠值一旦缺失，若直接跳过
+ * 滚动，歌词就再也不跟进度走了，那比焦点行位置偏低严重得多。这条路径正常走不到。
+ */
+private const val LyricFallbackAnchor = 0.40f
+
+/**
+ * 焦点行在**视口内**的停靠位置（px）：屏幕高 × [LyricGoldenAnchor] 减去视口顶的偏移。
+ *
+ * 抽成纯函数是为了能单测 —— 它只有两个整数输入，却是「焦点行到底落在屏幕哪里」的全部
+ * 依据（见 `LyricAnchorTest`）。
+ *
+ * @param windowHeightPx 窗口高度（含系统栏，与 [viewportTopPx] 同坐标系）
+ * @param viewportTopPx 歌词视口顶边在窗口中的 y；未测量时传负值
+ * @return 视口内锚点；窗口尺寸不可用时返回 -1，调用方退回 [LyricFallbackAnchor]。
+ *   `coerceAtLeast(0)` 兜的是横屏/悬浮窗那种「视口顶本身就在黄金线以下」的极端情形 ——
+ *   此时给负锚点会把目标行推出视口上方，列表再也不会回正。
+ */
+internal fun lyricAnchorPx(windowHeightPx: Int, viewportTopPx: Int): Float {
+    if (viewportTopPx < 0 || windowHeightPx <= 0) return -1f
+    return (windowHeightPx * LyricGoldenAnchor - viewportTopPx).coerceAtLeast(0f)
+}
 
 /**
  * 歌词面板：随播放进度自动滚动 + 高亮当前行。**行本身不做任何点击/seek** —— 用户
@@ -106,8 +158,9 @@ private const val LyricAnchor = 0.40f
  *
  * **两级版式完全一致**（用户 2026-10-24：「进入沉浸模式时，已显示的歌词不被顶走，行间距
  * 也不变」）：字号、行距、上下留白、自动滚动停靠位都不随档位变化 —— 正文 19sp / 选中 24sp、
- * 行距 [LyricLineSpacing]、留白 [LyricVerticalPadding]、停靠 [LyricAnchor]。换档只改变
- * 视口底边（底部控制簇退场、歌词向下变高），已显示的行原地不动。
+ * 行距 [LyricLineSpacing]、留白 [LyricVerticalPadding]、停靠 [LyricGoldenAnchor]（换算成
+ * 与视口高度**无关**的绝对像素值，见该常量的说明）。换档只改变视口底边（底部控制簇退场、
+ * 歌词向下变高），已显示的行原地不动，之后切句也不会移动。
  *
  * 列表两级都可滚动：内联档不再是「冻结的预览」，手指翻歌词时列表照常跟手，
  * 换档判定由调用方的嵌套滚动观察（不拦截、不消费），所以进入沉浸的过程不会把手势吃掉。
@@ -137,27 +190,42 @@ internal fun LyricsView(
             var lastUserScrollAt by remember { mutableLongStateOf(0L) }
             val lineSpacing = LyricLineSpacing
             val padVertical = LyricVerticalPadding
+            // 视口顶在窗口中的 y 与窗口高度：两者在**同一个** onGloballyPositioned 里取，
+            // 坐标系自洽（都是 window 坐标）。视口顶用来把「屏幕 38.2%」换算成「视口内多少
+            // px」—— 视口不顶屏（上面压着标题），不减这个偏移焦点行就会偏低半屏标题高。
+            // 未测量时 -1 标记，滚动逻辑等到测量完再动手，避免首帧按错值滚一下。
+            val view = LocalView.current
+            var viewportTopPx by remember { mutableIntStateOf(-1) }
+            var windowHeightPx by remember { mutableIntStateOf(0) }
+            val anchorPx = remember(viewportTopPx, windowHeightPx) {
+                lyricAnchorPx(windowHeightPx, viewportTopPx)
+            }
 
             LaunchedEffect(listState) {
                 snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
                     if (scrolling && !programmatic) lastUserScrollAt = System.currentTimeMillis()
                 }
             }
-            LaunchedEffect(currentIndex) {
+            LaunchedEffect(currentIndex, anchorPx) {
                 if (currentIndex < 0) return@LaunchedEffect
                 if (System.currentTimeMillis() - lastUserScrollAt < 4_000L) return@LaunchedEffect
+                // 量到窗口尺寸就用黄金位（与档位无关的绝对值）；量不到退回视口比例，
+                // 保证「停靠值缺了也照样自动滚」（见 [LyricFallbackAnchor]）。
+                val targetPx = if (anchorPx >= 0f) {
+                    anchorPx
+                } else {
+                    listState.layoutInfo.viewportSize.height * LyricFallbackAnchor
+                }
                 programmatic = true
                 try {
-                    val viewport = listState.layoutInfo.viewportSize.height
-                    val anchorPx = viewport * LyricAnchor
                     // 目标行没被测量（seek 跳远）时先粗定位；随后统一用下面的逐帧跟随后收敛。
                     if (listState.layoutInfo.visibleItemsInfo.none { it.index == currentIndex }) {
-                        listState.scrollToItem(currentIndex, -anchorPx.roundToInt())
+                        listState.scrollToItem(currentIndex, -targetPx.roundToInt())
                     }
                     // **逐帧跟随**而不是 animateScrollToItem：后者按“第几行”估算距离，一次性
                     // 滚完；而选中切换会一步改字号（24sp↔19sp，长行折行数可能变化），
                     // 列表行高随之跳变。这里每帧读目标行的真实 offset 再逼近，高度变化被
-                    // 持续吸收，最终精确停在 [LyricAnchor]，没有尾巴。
+                    // 持续吸收，最终精确停在 [LyricGoldenAnchor] 对应的 [targetPx]，没有尾巴。
                     var lastFrame = 0L
                     var startedAt = 0L
                     while (true) {
@@ -169,7 +237,7 @@ internal fun LyricsView(
                         if (System.currentTimeMillis() - lastUserScrollAt < 4_000L) break
                         // 首行贴顶时目标锚点不可达，delta 永远不为 0 —— 用超时兜底。
                         if (now - startedAt > Motion.MicroMs * 4) break
-                        val delta = item.offset - layout.viewportSize.height * LyricAnchor
+                        val delta = item.offset - targetPx
                         val dt = if (lastFrame == 0L) 16f else (now - lastFrame).toFloat().coerceIn(4f, 40f)
                         lastFrame = now
                         if (abs(delta) < 0.5f && now - startedAt >= Motion.MicroMs) break
@@ -190,6 +258,13 @@ internal fun LyricsView(
             LazyColumn(
                 state = listState,
                 modifier = modifier
+                    // 量停靠基准：视口顶在窗口中的位置 + 窗口高度（同一个回调里取，坐标系
+                    // 一致）。换档时视口顶不变、只有底边在变，所以锚点算出来两档相同 ——
+                    // 这正是「焦点行换档后不再往下跑」的兑现方式。
+                    .onGloballyPositioned {
+                        viewportTopPx = it.boundsInWindow().top.roundToInt()
+                        windowHeightPx = view.rootView.height
+                    }
                     // 上下边缘淡出：歌词档的视口边界正好压在标题/页眉上，硬切会在
                     // 「行被裁一半」处留下一条很脏的截断线。用离屏层做 DstIn 蒙版，
                     // 与父级渐变底色无关（壳色在展开中会变，不能用固定色块盖）。
