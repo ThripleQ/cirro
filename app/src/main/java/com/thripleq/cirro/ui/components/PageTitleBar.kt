@@ -4,10 +4,15 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,7 +22,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -62,7 +69,7 @@ val CirroTitleBarHeight: Dp
 val TitleBarStartInset = 24.dp
 
 /**
- * 标题条右侧的**默认**内缩：右端至多摆一颗 28dp 的小键（探索页那颗刷新键）。
+ * 标题条右侧的**默认**内缩：右端至多摆一颗 28dp 的小键（「我的」右上那颗设置键）。
  *
  * 大标题是 `weight(1f)`，所以这个值直接决定「标题最长能画到离右边缘多远」——
  * 键是 28dp、贴右端 8dp，标题最右也就停在 36dp 处，不会压到键上。
@@ -89,18 +96,20 @@ val TitleBarCloseInset = 56.dp
  *
  * 与 [CirroPaperPage] 的分工：那个是**详情页**的整套骨架（标题条 + 内容圆角纸 + 右上角收起键，
  * 歌手 / 播客 / 评论 / 歌单 / 榜单 / 专辑都走它）；这个是**底部 tab 的一级页面**顶栏
- * （没有收起键，尾部可追加 [actions]——探索页的刷新键就走这里）。
+ * （没有收起键，尾部可追加 [actions]——「我的」右上角的设置键就走这里；
+ * 刷新这类与标题强相关的动作走 [titleAction]，贴着标题文字放）。
  *
  * 规范（三页共用，改这里就是三页一起改）：
  * - 让开状态栏；
  * - 高度锁定为 [CirroTitleBarHeight]（= `headlineSmall` 行高）—— 右侧有没有动作键都一样高，
  *   于是三页的圆角纸顶边落在同一条水平线上；[actions] 里的 `IconButton` 自带 48dp 最小
- *   交互尺寸，只在探索页有，不锁高度就会把那一页的纸整整压低 16dp；
+ *   交互尺寸，只在「我的」有，不锁高度就会把那一页的纸整整压低 16dp；
  * - 左内缩 [TitleBarStartInset]（24dp，比内容的 16dp 多一档，详情页的标题条同引此值）；
  * - 右内缩按端上的键分档：[endInset] 默认 [TitleBarEndInset]（28dp 小键），详情页传
  *   [TitleBarCloseInset]（让开 36dp 浮层收起键）；
  * - 标题 `headlineSmall` 粗体 + `Trim.Both`：去掉行高上下多余的 leading，让字的上沿
  *   贴到状态栏（否则字上方还留着一条空隙）；
+ * - [titleAction] 紧贴标题文字之后（「探索」「我的」的刷新键），读作标题的一部分；
  * - 右侧 [actions] 贴右端、垂直居中。
  *
  * ## `collapse`：内容上滑时被下方那张纸压住下沿（2026-10-16）
@@ -115,8 +124,8 @@ val TitleBarCloseInset = 56.dp
  * [CirroTitleCollapse.titleAlpha] 现在恒为 1，下面那个 `graphicsLayer` 是空操作；
  * 留着它，只是为了让「标题要不要淡出」这个开关仍然只有一处（复活小标题时必须同时改）。
  *
- * ⚠️ 右上那颗动作键（探索 / 我的的刷新键）**也一起被纸沿的柔化雾化**，没有单独退场。它是
- * 36dp 左右的控件、位置落在右上角那 28dp 圆角缺口里，纸顶经过时会被圆角切掉一个角。
+ * ⚠️ 标题条里的动作键（行内刷新 / 「我的」右上设置）**也一起被纸沿的柔化雾化**，没有单独
+ * 退场。它们落在右上角那 28dp 圆角缺口附近，纸顶经过时会被圆角切掉一个角。
  * 这一点**用户 2026-10-16 明确知悉并说「之后会处理」**，别擅自加特判。
  *
  * 调用方自己铺 `surfaceContainer` 底色（它是「状态栏那条容器色带」，内容圆角纸的顶角
@@ -128,7 +137,84 @@ fun CirroPageTitleBar(
     modifier: Modifier = Modifier,
     /** 标题文字右侧让位宽度：见 [TitleBarEndInset] / [TitleBarCloseInset]。 */
     endInset: Dp = TitleBarEndInset,
+    /** 紧贴标题文字的行内动作（「探索」「我的」的刷新键）；null = 无。 */
+    titleAction: (@Composable () -> Unit)? = null,
     /** 非 null 则参与「滑进半遮」，滚动时按进度淡出。 */
+    collapse: CirroTitleCollapse? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    TitleBarRow(
+        title = title,
+        modifier = modifier,
+        endInset = endInset,
+        titleAction = titleAction,
+        collapse = collapse,
+        actions = actions,
+    )
+}
+
+/**
+ * 一级页标题条的**触摸层**：一个和 [CirroPageTitleBar] 逐像素同布局、但**不绘制**的副本。
+ *
+ * ## 为什么必须有它（2026-10-24）
+ *
+ * 三个 tab 页的结构是 `Box { 标题条; 内容 }`—— 内容（`LazyColumn` / `verticalScroll`）
+ * **铺满整屏**（含标题条那一段，见各页对 `contentPadding` 的注释），而 Compose 的命中测试
+ * 只走**绘制顺序最上面的那个兄弟**：内容排在标题条之后 ⇒ 它的 `scrollable` 节点独占了
+ * 整块区域的指针事件，标题条里的 `IconButton` 一个都收不到（2026-10-24 真机：
+ * 设置键 / 行内刷新键按下有 `MotionEvent`、却没有回调）。
+ *
+ * 想靠裁剪（[cirroCollapsingSheet] 的 `clipPath`）让内容让出这一段是做不到的：
+ * 裁剪只作用于**绘制**，命中测试仍按布局矩形算。
+ *
+ * ⇒ 在内容**之后**再叠一份同布局、不画任何东西的标题条：它是最上层兄弟，动作键照常可点。
+ * 视觉由下层那份负责，这份只吃触摸。
+ *
+ * ## 为什么视觉那份不改成「也放最上面、再让纸盖住它」
+ *
+ * 纸必须盖在标题条上（半遮效果的前提），而这套效果是**绘制期**画的；把标题条挪到最上层，
+ * 就得反过来再画一次纸 —— 两份纸比两份标题条更容易漂。
+ *
+ * ## 遮住下层那份**只能靠「不画」，不能靠 `alpha = 0`**
+ *
+ * 2026-10-24 真机实测：`graphicsLayer { alpha = 0f }` 会把本层连同**被它盖住的下层标题条**
+ * 一起从无障碍树里抹掉（`uiautomator dump` 里连「我的」「设置」「刷新」都没有了；
+ * 换成 `drawWithContent {}` 才恢复）。所以这里用「跳过绘制」而不是「画成透明」。
+ * 副作用是语义只剩本层这一份（下层那份被遮挡算法裁掉），正好不用 `clearAndSetSemantics`——
+ * 若哪天两份同时出现，再把语义收进本层、清掉下层那份。
+ *
+ * ⚠️ 内容滚上去、纸把标题压住之后，本层**仍然可点**（命中测试不看绘制）。
+ * 重叠区只有纸顶那 ≈10dp，且落在纸的 28dp 圆角缺口里（那一段没有可点内容），
+ * 所以没有按 `progress` 关掉它 —— 那会在补间全程重组。若以后圆角缺口里出现了
+ * 可点内容，再考虑在按下那一刻读 `collapse.offsetPx` 判定，而不是组合期读。
+ *
+ * ⚠️ 只给「内容铺满整屏盖住标题条」的一级页用。详情页（[CirroPaperPage]）的收起键
+ * 本来就在浮层里、不在这张纸后面，别顺手加。
+ */
+@Composable
+fun CirroPageTitleBarHitLayer(
+    title: String,
+    modifier: Modifier = Modifier,
+    endInset: Dp = TitleBarEndInset,
+    titleAction: (@Composable () -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    TitleBarRow(
+        title = title,
+        modifier = modifier
+            .drawWithContent { },
+        endInset = endInset,
+        titleAction = titleAction,
+        actions = actions,
+    )
+}
+
+@Composable
+private fun TitleBarRow(
+    title: String,
+    modifier: Modifier = Modifier,
+    endInset: Dp = TitleBarEndInset,
+    titleAction: (@Composable () -> Unit)? = null,
     collapse: CirroTitleCollapse? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
@@ -147,22 +233,58 @@ fun CirroPageTitleBar(
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall.copy(
-                lineHeightStyle = LineHeightStyle(
-                    alignment = LineHeightStyle.Alignment.Center,
-                    trim = LineHeightStyle.Trim.Both,
-                ),
-            ),
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-            // `weight(1f)` 让标题独占剩余宽度：有 actions 时标题再长也挤不走右侧动作。
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Row(
             modifier = Modifier.weight(1f),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    lineHeightStyle = LineHeightStyle(
+                        alignment = LineHeightStyle.Alignment.Center,
+                        trim = LineHeightStyle.Trim.Both,
+                    ),
+                ),
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                // `weight(1f, fill = false)`：标题按内容宽收紧（行内动作才能贴着它），
+                // 但长标题仍会被约束在这一行内、末尾省略，挤不到动作键。
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            titleAction?.let {
+                Spacer(Modifier.width(2.dp))
+                it()
+            }
+        }
         actions()
+    }
+}
+
+/**
+ * 标题条里的**行内**小动作键（贴在「探索」「我的」文字之后）。
+ *
+ * 尺寸比右上角那颗收起键小一档：20dp 图标 / 32dp 触控区。它是标题的一部分，
+ * 不是页面级动作，跟着标题一起读；色调用 `onSurfaceVariant`，不与粗体标题抢。
+ */
+@Composable
+fun CirroTitleInlineAction(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(32.dp),
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 

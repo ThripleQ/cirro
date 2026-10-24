@@ -67,6 +67,7 @@ import com.thripleq.cirro.ui.screens.HomeScreen
 import com.thripleq.cirro.ui.screens.PodcastScreen
 import com.thripleq.cirro.ui.screens.ProfileScreen
 import com.thripleq.cirro.ui.screens.SearchScreen
+import com.thripleq.cirro.ui.screens.SettingsScreen
 import com.thripleq.cirro.ui.screens.TrackListScreen
 import com.thripleq.cirro.ui.screens.WebLoginScreen
 import com.thripleq.cirro.ui.theme.Motion
@@ -81,6 +82,10 @@ object Search
 
 @Serializable
 object Profile
+
+/** 设置页（入口在「我的」右上角）。 */
+@Serializable
+object Settings
 
 /** [TrackListScreen] for a chart: chart id IS a playlist id. */
 @Serializable
@@ -401,11 +406,18 @@ fun CirroApp() {
                             }
                         },
                         onWebLogin = { navController.navigate(WebLogin) },
+                        onOpenSettings = { navController.navigate(Settings) },
                         onOpenPlayer = ::openPlayer,
                         islandHeight = islandHeightDp,
                         onShellOpenChange = { shellOpen = it },
                         shared = this@SharedTransitionLayout,
                         vm = profileVm,
+                    )
+                }
+                composable<Settings> {
+                    SettingsScreen(
+                        onBack = { goBack() },
+                        islandHeight = islandHeightDp,
                     )
                 }
                 composable<WebLogin> {

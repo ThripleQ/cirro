@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,7 +44,9 @@ import com.thripleq.cirro.core.model.PlaylistSummary
 import com.thripleq.cirro.ui.components.CirroErrorState
 import com.thripleq.cirro.ui.components.CirroMiniTitleBar
 import com.thripleq.cirro.ui.components.CirroPageTitleBar
+import com.thripleq.cirro.ui.components.CirroPageTitleBarHitLayer
 import com.thripleq.cirro.ui.components.CirroTitleCollapse
+import com.thripleq.cirro.ui.components.CirroTitleInlineAction
 import com.thripleq.cirro.ui.components.ShellPanel
 import com.thripleq.cirro.ui.components.cirroCollapsingSheet
 import com.thripleq.cirro.ui.components.cirroTitleCollapse
@@ -72,6 +75,7 @@ import com.thripleq.cirro.ui.theme.Motion
 fun ProfileScreen(
     onOpenTracks: (source: String, id: String, title: String) -> Unit,
     onWebLogin: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenPlayer: () -> Unit = {},
     islandHeight: Float = 0f,
     onShellOpenChange: (Boolean) -> Unit = {},
@@ -153,6 +157,7 @@ fun ProfileScreen(
                         onOpenTracks = onOpenTracks,
                         onOpenPanel = onOpenPanel,
                         onWebLogin = onWebLogin,
+                        onOpenSettings = onOpenSettings,
                         onRefresh = onRefresh,
                         onLogout = onLogout,
                         shared = shared,
@@ -186,6 +191,7 @@ fun ProfileScreen(
                 onOpenTracks = onOpenTracks,
                 onOpenPanel = onOpenPanel,
                 onWebLogin = onWebLogin,
+                onOpenSettings = onOpenSettings,
                 onRefresh = onRefresh,
                 onLogout = onLogout,
                 shared = null,
@@ -217,6 +223,7 @@ private fun ProfileBodyUi(
     onOpenTracks: (source: String, id: String, title: String) -> Unit,
     onOpenPanel: (ProfilePanel, Rect?, morphable: Boolean) -> Unit,
     onWebLogin: () -> Unit,
+    onOpenSettings: () -> Unit,
     onRefresh: () -> Unit,
     onLogout: () -> Unit,
     shared: SharedTransitionScope?,
@@ -237,15 +244,25 @@ private fun ProfileBodyUi(
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .cirroTitleCollapse(collapse),
     ) {
-        // 顶栏刷新键与探索页**同规格**：28dp 的 IconButton、默认右侧内缩
-        // （[TitleBarEndInset]），三个 tab 页看起来是一套。
+        // 顶栏刷新键与探索页**同规格**：贴着标题文字、20dp 图标，三个 tab 页看起来是一套。
+        // 右上角留给设置键（页面级动作），与详情页收起键同一位置语言。
         // 吸附小标题在**更下层**：纸把它半遮着长出来（见 [CirroMiniTitleBar]）。
         CirroMiniTitleBar("我的", collapse)
-        CirroPageTitleBar("我的", collapse = collapse) {
-            IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
-                Icon(
-                    Icons.Filled.Refresh,
+        CirroPageTitleBar(
+            title = "我的",
+            collapse = collapse,
+            titleAction = {
+                CirroTitleInlineAction(
+                    icon = Icons.Filled.Refresh,
                     contentDescription = "刷新",
+                    onClick = onRefresh,
+                )
+            },
+        ) {
+            IconButton(onClick = onOpenSettings, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    Icons.Filled.Settings,
+                    contentDescription = "设置",
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -290,6 +307,26 @@ private fun ProfileBodyUi(
                     shared = shared,
                     avScope = avScope,
                     guard = guard,
+                )
+            }
+        }
+        // 触摸层：内容列铺满整屏、在命中测试里独占这一整块，标题条的刷新键与设置键收不到点击。
+        // 必须排在内容**之后**（最上层兄弟），见 [CirroPageTitleBarHitLayer]。
+        CirroPageTitleBarHitLayer(
+            title = "我的",
+            titleAction = {
+                CirroTitleInlineAction(
+                    icon = Icons.Filled.Refresh,
+                    contentDescription = "刷新",
+                    onClick = onRefresh,
+                )
+            },
+        ) {
+            IconButton(onClick = onOpenSettings, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    Icons.Filled.Settings,
+                    contentDescription = "设置",
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }

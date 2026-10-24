@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -26,10 +25,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,8 +52,10 @@ import com.thripleq.cirro.ui.components.BigCoverVisual
 import com.thripleq.cirro.ui.components.CirroMediaRow
 import com.thripleq.cirro.ui.components.CirroMiniTitleBar
 import com.thripleq.cirro.ui.components.CirroPageTitleBar
+import com.thripleq.cirro.ui.components.CirroPageTitleBarHitLayer
 import com.thripleq.cirro.ui.components.CirroSectionHeader
 import com.thripleq.cirro.ui.components.CirroTitleCollapse
+import com.thripleq.cirro.ui.components.CirroTitleInlineAction
 import com.thripleq.cirro.ui.components.SharedSourceGuard
 import com.thripleq.cirro.ui.components.cirroCollapsingSheet
 import com.thripleq.cirro.ui.components.cirroEntrySurface
@@ -122,15 +120,17 @@ internal fun HomeContent(
     ) {
         // 吸附小标题在**更下层**：纸把它半遮着长出来（见 [CirroMiniTitleBar]）。
         CirroMiniTitleBar("探索", collapse)
-        CirroPageTitleBar("探索", collapse = collapse) {
-            IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
-                Icon(
-                    Icons.Filled.Refresh,
+        CirroPageTitleBar(
+            title = "探索",
+            collapse = collapse,
+            titleAction = {
+                CirroTitleInlineAction(
+                    icon = Icons.Filled.Refresh,
                     contentDescription = "刷新",
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    onClick = onRefresh,
                 )
-            }
-        }
+            },
+        )
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -310,7 +310,19 @@ internal fun HomeContent(
                 }
             }
         }
-    }
+        }
+        // 触摸层：列表铺满整屏、在命中测试里独占这一整块，标题条的刷新键收不到点击。
+        // 必须排在 LazyColumn **之后**（最上层兄弟），见 [CirroPageTitleBarHitLayer]。
+        CirroPageTitleBarHitLayer(
+            title = "探索",
+            titleAction = {
+                CirroTitleInlineAction(
+                    icon = Icons.Filled.Refresh,
+                    contentDescription = "刷新",
+                    onClick = onRefresh,
+                )
+            },
+        )
     }
 }
 
