@@ -40,16 +40,19 @@ private fun onDarkSurface(): Boolean =
  *
  * | 量 | 截图实测 | 本实现 |
  * |---|---|---|
- * | 框高 | 30px = 10dp | 8sp 行高 + 上下各 1dp 内缩 = 10dp |
+ * | 框高 | 30px = 10dp | 10sp 行盒 + 上下内缩 0 = 10dp |
  * | 框宽 | 61px = 20.3dp | 文本 ≈13.3dp + 左右各 3dp ≈ 19dp |
  * | 描边 | 3px = 1dp | 1dp |
  * | 圆角 | 4px ≈ 1.3dp | [CirroShape.Badge]（2dp） |
  * | 文字 | 大写字母高 17px = 5.67dp ⇒ ≈8sp 粗体 | 8sp Bold + 0.5sp 字距 |
  * | 框内留白 | 上 2.3dp / 下 2.0dp | 计算值 2.0dp / 2.3dp |
  *
- * `lineHeight` 与字号同为 8sp 是**故意的**：这样文本盒子就是 8dp，加 2dp 内缩正好 10dp，
- * 与截图等高；大写字母没有下伸部，墨迹（约 5.7dp）稳稳落在框内。改成默认行高
- * （≈1.17em）框就会长到 11.4dp，比截图高一头。
+ * **行盒取 10sp、上下内缩为 0**（框高仍是 10dp，与截图等高）。早先写的是「行盒 8sp +
+ * 上下各 1dp」，那套数字只在**拉丁大写**上成立：8sp 的字体的自然行高约 9.3dp，行盒只给
+ * 8dp 时字形装不下、会被裁掉一点 —— 而 `VIP`/`PAY` 的墨迹才 5.7dp、又没有下伸部，裁掉的
+ * 正好是它没墨的 leading，所以列表行一直看着正常。换成中文「试听」（[CirroTrialBadge]）
+ * 就露了：CJK 墨迹约 0.88em = 7dp 且上下都占，被裁后整枚标看着像**被压扁**。
+ * 行盒给到 10sp 后字形有余量，框高不变；改成默认行高（≈1.17em）框则会长到 11.4dp、高一头。
  *
  * 徽标**必须贴着「歌手 - 专辑」的前面放**（截图位置），间隔见调用方：
  * 实测框右边框到歌手首墨 9px = 3dp，其中 CJK 字形自带约 1dp 侧边距，
@@ -62,12 +65,14 @@ fun CirroPayBadge(tag: PayTag, modifier: Modifier = Modifier) {
         text = tag.label,
         color = color,
         fontSize = 8.sp,
-        lineHeight = 8.sp,
+        // 行盒 10sp 而不是 8sp：理由见上面 KDoc 的「行盒取 10sp」一段 —— 8sp 行盒装不下
+        // 8sp 字体的自然行高（≈9.3dp），CJK 字样会被裁成「被压扁」。
+        lineHeight = 10.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 0.5.sp,
         maxLines = 1,
         modifier = modifier
             .border(1.dp, color, CirroShape.Badge)
-            .padding(horizontal = 3.dp, vertical = 1.dp),
+            .padding(horizontal = 3.dp),
     )
 }

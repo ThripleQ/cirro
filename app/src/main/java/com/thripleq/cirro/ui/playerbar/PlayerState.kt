@@ -80,6 +80,23 @@ private fun MediaMetadata.isVip(): Boolean =
     extras?.getInt(MEDIA_EXTRA_FEE, 0) == 1
 
 /**
+ * 当前曲是否 VIP —— **两条来源取或**：MediaItem 里的 `fee`，或者「正在放试听片段」。
+ *
+ * 为什么不能只看 `fee`：`fee` 是入队那一刻写进 MediaItem 的，之后没有任何机会纠正。
+ * 两种情况下它是错的（都表现为「试听标出来了、VIP 标却不显示」）：
+ *  1. **旧快照恢复的队列**：`PlaybackStateStore` 早期版本没存 `fee`，恢复时按 0 补；
+ *  2. 来源接口没带 `fee` 的曲目（模型里就是 0）。
+ * 而试听身份是**解析响应现学的**（`freeTrialInfo`），不受入队时那份数据影响。
+ *
+ * 反过来，「试听 ⇒ VIP」在实测范围里成立且方向安全：试听片段只在 `fee=1` 且未购的曲目上
+ * 出现（已购单曲同样 `fee=1`，实测拿到的是**整曲**、`freeTrialInfo` 为 null，见
+ * `PlayableUrl` 的实测表）。所以一旦认出了试听，它就是一首 VIP 歌 —— 这条推断只会把
+ * 「少了一枚标」补回来，不会把非 VIP 歌标成 VIP。
+ */
+private fun vipOf(mediaItem: MediaItem?, trial: TrialClip?): Boolean =
+    mediaItem?.mediaMetadata?.isVip() == true || trial != null
+
+/**
  * Observes [player] (process-scoped singleton) with a metadata listener + 250ms poll.
  * 状态拆成快照：元数据/播放态（标题/封面/是否播放/时长/有无曲目）低频，
  * 仅在真实变化时才写，避免无谓重组。
@@ -114,7 +131,8 @@ fun rememberPlayerState(
                     errorText = null,
                     // 读 MediaItem 而不用回调里的 mediaMetadata：extras 是我们自己写进
                     // MediaItem 的静态属性，媒体源自带的元数据没有义务把它带回回调。
-                    vip = player.currentMediaItem?.mediaMetadata?.isVip() == true,
+                    // VIP 另有一条来源（试听身份），见 [vipOf]。
+                    vip = vipOf(player.currentMediaItem, meta.trial),
                 )
             }
 
@@ -132,7 +150,8 @@ fun rememberPlayerState(
                     // 新曲刚起播，必然不在片段末尾；trialEnded 交给轮询与 isTrialEnded 判。
                     trialEnded = false,
                     // VIP 与试听并存：切歌时两枚标一起换，不留下上一首的任何一枚。
-                    vip = mediaItem?.mediaMetadata?.isVip() == true,
+                    // vip 由 [vipOf] 算：媒体项里的 fee **或**试听身份（后者见该函数说明）。
+                    vip = vipOf(mediaItem, trial),
                 )
             }
 
@@ -180,7 +199,7 @@ fun rememberPlayerState(
             repeatMode = player.repeatMode,
             trial = PlayerHolder.currentTrial(),
             trialEnded = PlayerHolder.isTrialEnded(player),
-            vip = player.currentMediaItem?.mediaMetadata?.isVip() == true,
+            vip = vipOf(player.currentMediaItem, PlayerHolder.currentTrial()),
         )
         try {
             while (true) {
@@ -194,14 +213,19 @@ fun rememberPlayerState(
                 val duration = effectiveDurationMs()
                 val trial = PlayerHolder.currentTrial()
                 val trialEnded = PlayerHolder.isTrialEnded(player)
+                // 试听身份是轮询才学到的（解析回来 / 补解析成功），而 VIP 现在也要看它 ——
+                // 不在这里一起算，一首 fee 缺失的 VIP 歌会「试听标都出来了、VIP 标还不出来」，
+                // 只能等下一次切歌。所以把 vip 也放进判重条件：认出错的值就地纠正。
+                val vip = vipOf(player.currentMediaItem, trial)
                 if (meta.hasTrack != hasTrack || meta.durationMs != duration ||
-                    meta.trial != trial || meta.trialEnded != trialEnded
+                    meta.trial != trial || meta.trialEnded != trialEnded || meta.vip != vip
                 ) {
                     meta = meta.copy(
                         hasTrack = hasTrack,
                         durationMs = duration,
                         trial = trial,
                         trialEnded = trialEnded,
+                        vip = vip,
                     )
                 }
                 delay(250)

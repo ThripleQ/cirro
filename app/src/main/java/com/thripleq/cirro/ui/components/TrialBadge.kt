@@ -42,13 +42,16 @@ fun CirroTrialBadge(modifier: Modifier = Modifier) {
         text = "试听",
         color = color,
         fontSize = 8.sp,
-        // 与字号同为 8sp 的理由同 [CirroPayBadge]：文本盒 8dp + 上下各 1dp = 10dp 框高。
-        lineHeight = 8.sp,
+        // 行盒 10sp（不是 8sp）：8sp 字体的自然行高约 9.3dp，行盒只给 8dp 时装不下、
+        // 字形会被裁 —— 本标是**唯一的中文标**（CJK 墨迹约 0.88em 且上下都占），
+        // 所以「被压扁」只出现在它身上；拉丁大写（VIP / PAY）墨迹才 5.7dp，看不出来。
+        // 框高仍是 10dp：行盒 10 + 上下内缩 0 = 原先行盒 8 + 上下各 1。
+        lineHeight = 10.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 0.5.sp,
         maxLines = 1,
         modifier = modifier
             .border(1.dp, color, CirroShape.Badge)
-            .padding(horizontal = 3.dp, vertical = 1.dp),
+            .padding(horizontal = 3.dp),
     )
 }
