@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 应用内更新：安装自己下载的 APK。首次使用还需用户在系统设置里允许「安装未知应用」。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".CirroApplication"
@@ -33,6 +35,11 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- PackageInstaller 的安装结果回调（失败时提示原因 / 拉起系统确认框）。 -->
+        <receiver
+            android:name=".core.update.UpdateInstallReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

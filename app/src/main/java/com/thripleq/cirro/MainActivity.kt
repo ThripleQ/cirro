@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
                 // 组合、照常取数（这就是「准备缓冲」），退场时下面已经是有内容的页，
                 // 不会退场后先闪一屏骨架。
                 Box(Modifier.fillMaxSize()) {
-                    CirroApp()
+                    CirroApp(startupReady = !splashVisible)
                     if (splashVisible) {
                         SplashOverlay(startupGate) {
                             splashVisible = false
