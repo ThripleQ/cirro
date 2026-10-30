@@ -22,6 +22,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.metrics.performance.JankStats
+import com.thripleq.cirro.core.playback.PlayerHolder
 import com.thripleq.cirro.core.startup.StartupGate
 import com.thripleq.cirro.ui.splash.SplashOverlay
 import com.thripleq.cirro.ui.theme.CirroTheme
@@ -68,6 +69,9 @@ class MainActivity : ComponentActivity() {
         disableNavigationBarContrastScrim()
         installJankStats()
         requestNotificationPermissionIfNeeded()
+        // 通知常驻：冷启动恢复出来的队列（暂停态）也要有媒体通知，不必等用户按播放。
+        // 队列为空时是空操作（见 PlayerHolder.ensureNotification）。
+        PlayerHolder.ensureNotification(this)
         setContent {
             // 不走 Material You 动态取色（壁纸取色）: 那会用壁纸色整套顶掉 Palette.kt,
             // 品牌红消失; 且部分机型/壁纸下 dynamicDarkColorScheme 派生的 onSurface 偏深,

@@ -420,6 +420,19 @@ object PlayerHolder {
         }
     }
 
+    /**
+     * App 在前台时调用：只要队列里已经有歌（**包括冷启动恢复出来的暂停态**），就把前台
+     * 服务拉起来，让媒体通知从打开 App 那一刻就常驻 —— 通知不该只在按下播放之后才出现
+     * （用户 2026-10-30：「通知应该是常驻的，不是播放时候才有」）。
+     *
+     * 幂等（见 [foregroundServiceStarted]）；队列为空（首次安装、从没播过任何东西）时
+     * 什么都不做，免得弹出一张没内容的空通知。
+     */
+    fun ensureNotification(context: Context) {
+        if (get(context).mediaItemCount == 0) return
+        ensureForegroundService(context)
+    }
+
     /** 启动时恢复上次的队列/进度/随机/循环；**恢复为暂停态**，等用户点播放。 */
     private fun restore(p: ExoPlayer, context: Context) {
         if (restored) return

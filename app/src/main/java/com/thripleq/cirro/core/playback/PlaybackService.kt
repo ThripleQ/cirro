@@ -50,9 +50,19 @@ import kotlinx.coroutines.launch
  * 收起态只摆前三枚（[setShowActionsInCompactView]），展开后五枚全出 —— 与用户给的
  * 参考截图一致。封面异步加载进 largeIcon；没加载完先出门无图版，加载完再刷一张。
  *
- * **进度条不归我们画**：Android 13+ 的系统媒体卡片自己从 MediaSession 读位置与时长，
- * 播放中卡片底部就是那条可拖的进度线；13 以下的通知栏没有这种控件（`setProgress`
- * 那种静态细线要每 0.5s 重建通知，不值当），所以低版本干脆不做。
+ * **通知常驻**：服务活着通知就一直在，`setOngoing(true)` 让它连划都划不掉 —— 暂停后
+ * 不该消失（用户 2026-10-30：「通知应该是常驻的，不是播放时候才有」）。冷启动恢复出
+ * 暂停态的队列时也会把服务拉起来（见 `PlayerHolder.ensureNotification`），通知从打开
+ * App 那一刻就在，不必等按下播放。
+ *
+ * **进度条不归我们画**：Android 13+ 的系统媒体卡片本会从 MediaSession 读位置与时长，
+ * 播放中在卡片底部画一条可拖的进度线（原生系统如此）。但 **vivo OriginOS 把通知中心
+ * 媒体卡片的进度条砍掉了**（锁屏/状态栏的播放控件还有；原系统用户在社区里一直在问
+ * 「更新后进度条去哪了」）。2026-10-30 本机实测：Cirro 的 session 正常播放中
+ * （dumpsys 里 state=3、position 递增、actions 含 SEEK_TO），同一块通知中心里网易云、
+ * B 站、Kanade 的卡片也都没有进度条 —— 不是我们少给了什么，是这块 ROM 不给画。
+ * 位置/时长我们照常发布，原生 13+ 会自动画；自己用 RemoteViews 画一条就得放弃系统
+ * 媒体卡片（连同锁屏/车机控制），不值当。13 以下本来就没有这个控件。
  */
 @AndroidEntryPoint
 class PlaybackService : MediaSessionService() {
@@ -173,9 +183,9 @@ class PlaybackService : MediaSessionService() {
 
     /**
      * 通知内容指纹。**只放真正影响这张通知长相的字段**：少一个会漏更新（`isPlaying`
-     * 同时决定 `setOngoing` 与播放/暂停按钮；红心与播放顺序各决定一枚图标），
-     * 多一个（如进度）会让去重直接失效。标题/艺人在 [buildNotification] 里取自
-     * mediaMetadata，所以必须参与指纹。
+     * 决定播放/暂停那枚图标；红心与播放顺序各决定一枚图标），多一个（如进度）会让
+     * 去重直接失效。标题/艺人在 [buildNotification] 里取自 mediaMetadata，所以必须
+     * 参与指纹。
      */
     private fun notifKey(): String {
         val meta = player.mediaMetadata
@@ -242,7 +252,8 @@ class PlaybackService : MediaSessionService() {
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
-            .setOngoing(playing)
+            // 常驻：暂停也不消失、划也划不掉（见类注释「通知常驻」）。
+            .setOngoing(true)
             .addAction(R.drawable.ic_notif_prev, "上一首", serviceAction(2, ACTION_PREVIOUS))
             .addAction(
                 if (playing) R.drawable.ic_notif_pause else R.drawable.ic_notif_play,
