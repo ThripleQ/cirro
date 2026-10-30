@@ -466,6 +466,7 @@ internal fun PlayerPageContent(
             sleepEndAt = sleepEndAt,
             onSleepEndAtChange = onSleepEndAtChange,
             onSettings = { settingsOpen = true },
+            onQueue = { queueOpen = true },
         )
 
         // 两张 sheet 留在底部整簇外面：它们是 modal 浮层，不该跟着底部簇一起收拢

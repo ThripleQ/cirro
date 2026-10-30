@@ -429,7 +429,12 @@ object PlayerHolder {
         val idx = snap.index.coerceIn(0, snap.queue.lastIndex)
         p.setMediaItems(snap.queue.map(::trackMediaItem), idx, snap.positionMs.coerceAtLeast(0L))
         p.shuffleModeEnabled = snap.shuffle
-        p.repeatMode = snap.repeatMode
+        // 播放顺序只有三档（见 [cyclePlayOrder]），旧快照里的 REPEAT_MODE_OFF 归到列表循环。
+        p.repeatMode = if (snap.repeatMode == Player.REPEAT_MODE_OFF) {
+            Player.REPEAT_MODE_ALL
+        } else {
+            snap.repeatMode
+        }
         // 不 prepare()/play()：避免未点播放就发起网络请求；点播放时 togglePlay 会
         // 检测到 STATE_IDLE 自动 prepare（并补认领试听身份，见 [togglePlay]）。
     }
@@ -484,17 +489,24 @@ object PlayerHolder {
         player.seekTo(positionMs)
     }
 
-    /** 随机播放开关（直接映射 ExoPlayer.shuffleModeEnabled）。 */
-    fun toggleShuffle(player: Player) {
-        player.shuffleModeEnabled = !player.shuffleModeEnabled
-    }
-
-    /** 循环模式轮换：关 → 列表循环 → 单曲循环 → 关。 */
-    fun cycleRepeat(player: Player) {
-        player.repeatMode = when (player.repeatMode) {
-            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-            else -> Player.REPEAT_MODE_OFF
+    /**
+     * 播放顺序轮换，三档（对齐网易云）：列表循环 → 单曲循环 → 随机 → 列表循环。
+     *
+     * ExoPlayer 里只认 shuffle/repeat 两个互相独立的开关，这里把它们组合成**一个**轮换，
+     * 因为用户心里就是一枚按钮：随机态固定 repeat=ALL（随机时从头到尾绕圈），
+     * 不出现「随机 + 播完就停」这种第四种态。
+     */
+    fun cyclePlayOrder(player: Player) {
+        when {
+            player.shuffleModeEnabled -> {
+                player.shuffleModeEnabled = false
+                player.repeatMode = Player.REPEAT_MODE_ALL
+            }
+            player.repeatMode == Player.REPEAT_MODE_ONE -> {
+                player.shuffleModeEnabled = true
+                player.repeatMode = Player.REPEAT_MODE_ALL
+            }
+            else -> player.repeatMode = Player.REPEAT_MODE_ONE
         }
     }
 

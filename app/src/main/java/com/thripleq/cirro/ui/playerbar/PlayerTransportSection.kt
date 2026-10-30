@@ -1,7 +1,8 @@
 package com.thripleq.cirro.ui.playerbar
 
 /**
- * 底部整簇：进度行 → 试听结束提示 → 三键 → 功能胶囊行 → 错误文案，连同整簇的退场动画。
+ * 底部整簇：进度行 → 试听结束提示 → 控制行（播放顺序 / 三键 / 播放列表）→ 功能胶囊行
+ * → 错误文案，连同整簇的退场动画。
  *
  * 从 `PlayerPageContent.kt` 分出来的理由：这一簇是**最常被改的一块**（加按钮、换图标、调
  * 间距），而它的全部间距量（[TransportBottomGap]、播放键盒子、侧键尺寸）都只依赖展开进度
@@ -22,8 +23,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -44,9 +47,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
+import android.widget.Toast
 import androidx.media3.common.Player
 import com.thripleq.cirro.core.playback.PlayerHolder
 import com.thripleq.cirro.ui.theme.Motion
@@ -69,7 +74,10 @@ internal fun PlayerTransportSection(
     sleepEndAt: Long,
     onSleepEndAtChange: (Long) -> Unit,
     onSettings: () -> Unit,
+    /** 播放列表（队列）面板。 */
+    onQueue: () -> Unit,
 ) {
+    val context = LocalContext.current
     // 三键↔进度行的间距：卡片档 10dp → 全屏 18dp；歌词档再收到 10dp 把高度让给歌词。
     val ctrlGap = lerp(10.dp, 18.dp, sc)
     val bottomCtlGap = lerp(ctrlGap, 10.dp, lyricsLayout)
@@ -141,19 +149,38 @@ internal fun PlayerTransportSection(
 
             Spacer(Modifier.height(bottomCtlGap))
 
-            // Transport controls：三枚都是**裸图标**（用户：「播放按钮不要这种有红色圆圈的」）。
-            // 图标一律用 Rounded 变体（用户：「切歌，播放按钮都换成圆润一点的」）—— Filled 的
-            // 跳曲/播放是硬直边，Rounded 的圆角与整页的胶囊语言一致。
+            // 控制行，版式照网易云（2026-10-30 用户给的截图）：最左是**播放顺序**一枚键
+            // （列表循环 / 单曲循环 / 随机三档轮换），最右是**播放列表**，切歌与播放居中。
+            // 五枚图标 SpaceEvenly 均分整行 —— 与进度条同一宽度语言，两侧键贴边但不贴屏幕边。
+            //
+            // 三键仍是**裸图标**（用户：「播放按钮不要这种有红色圆圈的」），切歌/播放用
+            // Rounded 变体（用户：「切歌，播放按钮都换成圆润一点的」）—— Filled 的跳曲/播放
+            // 是硬直边，Rounded 的圆角与整页的胶囊语言一致；顺序/列表两枚用 Filled，
+            // 与网易云那套线面关系一致，也更容易和中间的 Rounded 三键分清主次。
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(
-                    // 40 → 32：撤掉圆播放键之后，盒子比图标大出来的那圈（(64-48)/2 = 8dp）
-                    // 会让视觉间距凭空变宽，这里减回去，让三枚图标的**边缘**间距与改前一致。
-                    lerp(0.dp, 32.dp, sc),
-                    Alignment.CenterHorizontally,
-                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = lerp(4.dp, 8.dp, sc)),
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                IconButton(onClick = {
+                    PlayerHolder.cyclePlayOrder(player)
+                    // 三档共用一枚键，档位之间只有图标差别，用一句 Toast 明确「现在是什么」。
+                    Toast.makeText(context, playOrderLabel(player), Toast.LENGTH_SHORT).show()
+                }) {
+                    Icon(
+                        imageVector = when {
+                            state.shuffleEnabled -> Icons.Filled.Shuffle
+                            state.repeatMode == Player.REPEAT_MODE_ONE -> Icons.Filled.RepeatOne
+                            else -> Icons.Filled.Repeat
+                        },
+                        contentDescription = "播放顺序：" +
+                            playOrderLabelOf(state.shuffleEnabled, state.repeatMode),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(sideBtnDim),
+                    )
+                }
                 IconButton(onClick = { PlayerHolder.skipPrevious(player) }) {
                     Icon(
                         Icons.Rounded.SkipPrevious,
@@ -191,9 +218,19 @@ internal fun PlayerTransportSection(
                         modifier = Modifier.size(sideBtnDim),
                     )
                 }
+                IconButton(onClick = onQueue) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "播放列表",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(sideBtnDim),
+                    )
+                }
             }
 
             // 全屏专属：功能胶囊行，高度与透明度随 sc 长出。
+            // 随机/循环挪进控制行之后这里只剩两枚，居中排 —— 原先 SpaceBetween 的两端
+            // 分别留给顺序和队列，现在它们已经在控制行两头了。
             Spacer(Modifier.height(capsuleGap))
             Row(
                 modifier = Modifier
@@ -201,25 +238,9 @@ internal fun PlayerTransportSection(
                     .height(44.dp * sc)
                     .clipToBounds()
                     .graphicsLayer { alpha = sc },
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(32.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                FullChip(
-                    icon = Icons.Filled.Shuffle,
-                    contentDescription = "随机播放",
-                    active = state.shuffleEnabled,
-                    onClick = { PlayerHolder.toggleShuffle(player) },
-                )
-                FullChip(
-                    icon = if (state.repeatMode == Player.REPEAT_MODE_ONE) {
-                        Icons.Filled.RepeatOne
-                    } else {
-                        Icons.Filled.Repeat
-                    },
-                    contentDescription = "循环模式",
-                    active = state.repeatMode != Player.REPEAT_MODE_OFF,
-                    onClick = { PlayerHolder.cycleRepeat(player) },
-                )
                 SleepTimerChip(endAt = sleepEndAt, onEndAtChange = onSleepEndAtChange)
                 FullChip(
                     icon = Icons.Filled.MoreVert,
@@ -242,3 +263,14 @@ internal fun PlayerTransportSection(
         }
     }
 }
+
+/** 三档播放顺序的文案（与网易云同一套说法）。 */
+private fun playOrderLabelOf(shuffle: Boolean, repeatMode: Int): String = when {
+    shuffle -> "随机播放"
+    repeatMode == Player.REPEAT_MODE_ONE -> "单曲循环"
+    else -> "列表循环"
+}
+
+/** 轮换刚结束时的档位（直接读 player，不复用组合里那份可能还没刷新的 [PlayerUiState]）。 */
+private fun playOrderLabel(player: Player): String =
+    playOrderLabelOf(player.shuffleModeEnabled, player.repeatMode)
