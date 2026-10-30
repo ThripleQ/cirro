@@ -54,7 +54,6 @@ class UpdateInstallReceiver : BroadcastReceiver() {
         PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> "与当前系统不兼容"
         PackageInstaller.STATUS_FAILURE_INVALID -> "安装包无效"
         PackageInstaller.STATUS_FAILURE_STORAGE -> "存储空间不足"
-        PackageInstaller.STATUS_FAILURE_INSUFFICIENT_SPACE -> "存储空间不足"
         else -> "状态码 $status"
     }
 
