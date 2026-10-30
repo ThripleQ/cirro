@@ -9,6 +9,7 @@ import com.thripleq.cirro.ui.theme.CirroFade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
@@ -146,6 +148,44 @@ internal fun lyricAnchorPx(windowHeightPx: Int, viewportTopPx: Int): Float {
 }
 
 /**
+ * 把来自「别处」的目标行滑到 [anchorPx]：按可见行的**真实行距**估算距离，一次带缓动的滚。
+ *
+ * **刻意不用 `LazyListState.animateScrollToItem`**，两个原因：
+ * 1. 它对远距离走默认 spring（stiffness 1500、无回弹）—— 3000px 的距离一百多毫秒就冲完，
+ *    观感仍然是「嗖」一下，没解决用户说的不顺滑；
+ * 2. 它按「第几行 × 平均行高」分两段跳，长歌词行折行多时落点会差，回头还得再拽一次。
+ *
+ * 这里改成**按距离给时长**（约 3px/ms，180ms 起步、520ms 封顶）的单次缓动，落点偏差交给
+ * 调用方的逐帧跟随收尾 —— 那段只剩几十 px，肉眼看不出是两段。
+ *
+ * @param anchorPx 目标行顶边在视口内的目标位置（[lyricAnchorPx] 或退化口径）
+ * @param fallbackPitchPx 只见得到一行时算不出行距，用这个值兜底
+ * @return 目标行是否已进入视口。false 表示估算完全失效（例如列表还没布局完），调用方退回瞬移。
+ */
+private suspend fun LazyListState.glideToIndex(
+    index: Int,
+    anchorPx: Float,
+    fallbackPitchPx: Float,
+): Boolean {
+    val visible = layoutInfo.visibleItemsInfo
+    if (visible.isEmpty()) return false
+    val first = visible.first()
+    // 行距（含行间距）用可见行 offset 之差算，比「平均行高」准：长行折行多也不会把估算带偏。
+    val pitch = if (visible.size > 1) {
+        (visible.last().offset - first.offset).toFloat() / (visible.size - 1)
+    } else {
+        fallbackPitchPx
+    }.coerceAtLeast(1f)
+    val distance = first.offset + (index - first.index) * pitch - anchorPx
+    if (abs(distance) < 1f) return true
+    val durationMs = (abs(distance) / 3f).toInt().coerceIn(180, 520)
+    scroll {
+        animateScrollBy(distance, tween(durationMs, easing = Motion.Standard))
+    }
+    return layoutInfo.visibleItemsInfo.any { it.index == index }
+}
+
+/**
  * 歌词面板：随播放进度自动滚动 + 高亮当前行。**行本身不做任何点击/seek** —— 用户
  * 2026-10-24 明确「按歌词 seek」是以后的功能区域，现在歌词区的任何位置都算「无关地方」
  * （回封面由调用方的整块点击负责）。
@@ -188,8 +228,12 @@ internal fun LyricsView(
             val listState = rememberLazyListState()
             var programmatic by remember { mutableStateOf(false) }
             var lastUserScrollAt by remember { mutableLongStateOf(0L) }
+            // 这首歌是否已经定位过：首个锚点直接切到位，之后从别处回来才滑（见 ① 的说明）。
+            var settled by remember(lines) { mutableStateOf(false) }
             val lineSpacing = LyricLineSpacing
             val padVertical = LyricVerticalPadding
+            // 行距的 px 值：远处滑回焦点时用它估算「差几行 = 差多少像素」（见 [glideToIndex]）。
+            val lineSpacingPx = with(LocalDensity.current) { lineSpacing.toPx() }
             // 视口顶在窗口中的 y 与窗口高度：两者在**同一个** onGloballyPositioned 里取，
             // 坐标系自洽（都是 window 坐标）。视口顶用来把「屏幕 38.2%」换算成「视口内多少
             // px」—— 视口不顶屏（上面压着标题），不减这个偏移焦点行就会偏低半屏标题高。
@@ -208,7 +252,13 @@ internal fun LyricsView(
             }
             LaunchedEffect(currentIndex, anchorPx) {
                 if (currentIndex < 0) return@LaunchedEffect
-                if (System.currentTimeMillis() - lastUserScrollAt < 4_000L) return@LaunchedEffect
+                if (System.currentTimeMillis() - lastUserScrollAt < 4_000L) {
+                    // 用户还在读，不抢滚动。但这一首到这里**已经不算首次定位**了 —— 他手
+                    // 动翻过，下一次回来就该是滑动。若不记这一笔，「刚进播放页就翻两下、
+                    // 4s 后再让它回焦点」会退化成一次硬跳。
+                    settled = true
+                    return@LaunchedEffect
+                }
                 // 量到窗口尺寸就用黄金位（与档位无关的绝对值）；量不到退回视口比例，
                 // 保证「停靠值缺了也照样自动滚」（见 [LyricFallbackAnchor]）。
                 val targetPx = if (anchorPx >= 0f) {
@@ -218,14 +268,28 @@ internal fun LyricsView(
                 }
                 programmatic = true
                 try {
-                    // 目标行没被测量（seek 跳远）时先粗定位；随后统一用下面的逐帧跟随后收敛。
+                    // ① 目标行不在视口里（用户刚翻到别处 / seek 跳远）→ **滑过去，不瞬移**。
+                    //    原实现是 `scrollToItem`，一步到位；从远处回到焦点时观感像被人一把
+                    //    拽回去（用户 2026-10-30：「从别的地方回到焦点时候，顺滑过渡」）。
+                    //    现在按平均行距估算距离、一次缓动过去；估算失准时由 ② 收尾，
+                    //    完全失效才退回瞬移（宁可硬一下，也不能停住不动）。
+                    //
+                    //    ⚠️ 只有**这一首歌已经定位过**才滑。首次定位（刚进播放页 / 换歌）
+                    //    直接切到位 —— 那是「本来就该在那」的场景，让它从第一句往下飘一段
+                    //    反而像故障。判据是 [settled]，换歌时随 `lines` 一起重置。
                     if (listState.layoutInfo.visibleItemsInfo.none { it.index == currentIndex }) {
-                        listState.scrollToItem(currentIndex, -targetPx.roundToInt())
+                        val reached = if (settled) {
+                            listState.glideToIndex(currentIndex, targetPx, lineSpacingPx)
+                        } else {
+                            false
+                        }
+                        if (!reached) listState.scrollToItem(currentIndex, -targetPx.roundToInt())
                     }
-                    // **逐帧跟随**而不是 animateScrollToItem：后者按“第几行”估算距离，一次性
+                    // ② **逐帧跟随**而不是 animateScrollToItem：后者按“第几行”估算距离，一次性
                     // 滚完；而选中切换会一步改字号（24sp↔19sp，长行折行数可能变化），
                     // 列表行高随之跳变。这里每帧读目标行的真实 offset 再逼近，高度变化被
                     // 持续吸收，最终精确停在 [LyricGoldenAnchor] 对应的 [targetPx]，没有尾巴。
+                    // ① 完成后这里只剩几十 px 的收尾，速度与缓动自然衔接。
                     var lastFrame = 0L
                     var startedAt = 0L
                     while (true) {
@@ -252,6 +316,8 @@ internal fun LyricsView(
                     }
                 } finally {
                     programmatic = false
+                    // 只要跑过一轮，这一首歌就算「定位过了」—— 之后从别处回来才走滑动。
+                    settled = true
                 }
             }
 
