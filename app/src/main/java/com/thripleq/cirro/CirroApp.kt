@@ -529,6 +529,7 @@ fun CirroApp(startupReady: Boolean = true) {
         // 只提示、不带下载：点「去设置」交给设置页里那一行继续（下载 / 安装）。
         UpdatePromptHost(
             startupReady = startupReady,
+            onSettingsScreen = destination?.hasRoute<Settings>() == true,
             onOpenSettings = {
                 navController.navigate(Settings) { launchSingleTop = true }
             },

@@ -61,19 +61,33 @@ internal object UpdateManager {
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
+    /**
+     * 当前这份 [State.Available] 是否来自启动检查 —— 只有它才值得开屏弹一次提示。
+     * 用户自己在设置里点「检查更新」，结果本来就摆在眼前，再弹窗只是重复。
+     */
+    @Volatile
+    private var promptEligible = false
+
     /** 启动时调用：距上次成功检查不足 24h 就什么都不做。 */
     fun checkOnLaunch(context: Context) {
         val prefs = UpdatePreferences(context)
         if (System.currentTimeMillis() - prefs.lastSuccessAt() < CHECK_INTERVAL_MS) return
-        check(context)
+        check(context, prompt = true)
     }
 
-    /** 手动/自动检查。正在下载或已下载待装时不打断那两个状态。 */
-    fun check(context: Context) {
+    /** 设置页里的手动检查：结果只留在页面上，不开屏弹窗。 */
+    fun check(context: Context) = check(context, prompt = false)
+
+    fun isPromptEligible(): Boolean = promptEligible
+
+    /** 正在下载或已下载待装时不打断那两个状态。 */
+    private fun check(context: Context, prompt: Boolean) {
         val app = context.applicationContext
         synchronized(lock) {
             if (job?.isActive == true) return
             if (_state.value is State.Downloading || _state.value is State.Ready) return
+            // 每次开查先收回提示资格：检查失败/已是最新都不该弹，查到新版时再按来源给回。
+            promptEligible = false
             _state.value = State.Checking
             job = scope.launch {
                 try {
@@ -83,6 +97,7 @@ internal object UpdateManager {
                     _state.value = if (
                         compareVersions(release.versionName, BuildConfig.VERSION_NAME) > 0
                     ) {
+                        promptEligible = prompt
                         State.Available(release)
                     } else {
                         State.UpToDate(BuildConfig.VERSION_NAME)
