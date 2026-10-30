@@ -71,6 +71,7 @@ import com.thripleq.cirro.ui.screens.SettingsScreen
 import com.thripleq.cirro.ui.screens.TrackListScreen
 import com.thripleq.cirro.ui.screens.WebLoginScreen
 import com.thripleq.cirro.ui.theme.Motion
+import com.thripleq.cirro.ui.update.UpdatePromptHost
 import kotlinx.serialization.Serializable
 
 /** Type-safe navigation destinations. Navigation lives only in [CirroApp]. */
@@ -161,9 +162,12 @@ private fun AnimatedVisibilityScope.rememberRevealProgress(
  * 常驻底部 dock（拉手+迷你播放条+底部导航）与全屏播放页合体在 [PlayerDock]：
  * 收起时只露 dock；点击迷你条整页弹出，迷你条上滑 1:1 跟手拉出全屏播放页。
  * 播放页盖住 dock 本身与下方内容，收起箭头/返回键回落。
+ *
+ * [startupReady] 由 MainActivity 传入（开屏是否已退场）：启动更新提示要等到这时才弹，
+ * 否则会盖在品牌开屏上。
  */
 @Composable
-fun CirroApp() {
+fun CirroApp(startupReady: Boolean = true) {
     val navController = rememberNavController()
     val context = LocalContext.current.applicationContext
     val player = remember { PlayerHolder.get(context) }
@@ -520,6 +524,15 @@ fun CirroApp() {
                 onIslandHeightChange = { islandHeightDp = it },
             )
         }
+
+        // ---- 启动更新提示（独立窗口，画在哪一层都不影响层级）----
+        // 只提示、不带下载：点「去设置」交给设置页里那一行继续（下载 / 安装）。
+        UpdatePromptHost(
+            startupReady = startupReady,
+            onOpenSettings = {
+                navController.navigate(Settings) { launchSingleTop = true }
+            },
+        )
 
         // ---- 评论浮层（最上层）----
         // 置于 PlayerDock 之后：绘制顺序在播放页之上；播放页仍在组合中、保持打开。

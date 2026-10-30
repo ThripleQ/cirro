@@ -1,13 +1,18 @@
 package com.thripleq.cirro.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,11 +34,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thripleq.cirro.BuildConfig
 import com.thripleq.cirro.core.playback.PlaybackPreferences
+import com.thripleq.cirro.core.update.UpdateChecker
+import com.thripleq.cirro.core.update.UpdateManager
+import com.thripleq.cirro.core.update.UpdateRelease
 import com.thripleq.cirro.ui.components.CirroPaperPage
 import com.thripleq.cirro.ui.theme.CirroShape
+import java.util.Locale
 
 /** 音质档的显示名，与播放页设置面板同一套文案。 */
 private val QualityLabels = mapOf(
@@ -57,6 +70,43 @@ internal fun SettingsScreen(
     val context = LocalContext.current
     var quality by remember { mutableStateOf(PlaybackPreferences.quality(context)) }
     val islandClearance = with(LocalDensity.current) { islandHeight.dp }
+
+    // 自更新状态机在进程级单例里（[UpdateManager]），设置页只负责展示与转发动作。
+    val updateState by UpdateManager.state.collectAsStateWithLifecycle()
+    // 「需要允许安装未知应用」这类一次性提示：状态机不关心 UI 文案，放在页面里。
+    var installHint by remember { mutableStateOf<String?>(null) }
+
+    fun installUpdate() {
+        when (val result = UpdateManager.install(context)) {
+            UpdateChecker.InstallResult.Started -> installHint = null
+            UpdateChecker.InstallResult.NeedsPermission -> {
+                installHint = "请允许 Cirro「安装未知应用」，然后回来再点安装"
+                runCatching {
+                    context.startActivity(
+                        Intent(
+                            android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            Uri.parse("package:${context.packageName}"),
+                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }.onFailure { installHint = "打不开系统设置：${it.message}" }
+            }
+            is UpdateChecker.InstallResult.Failed -> {
+                Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun onUpdateRowClick() {
+        installHint = null
+        when (updateState) {
+            is UpdateManager.State.Available -> UpdateManager.download(context)
+            is UpdateManager.State.Ready -> installUpdate()
+            is UpdateManager.State.Checking,
+            is UpdateManager.State.Downloading,
+            -> Unit
+            else -> UpdateManager.check(context)
+        }
+    }
 
     CirroPaperPage(title = "设置", onClose = onBack) { sheetTop ->
         LazyColumn(
@@ -97,7 +147,28 @@ internal fun SettingsScreen(
             item(key = "about") {
                 SettingsCard {
                     InfoRow(label = "版本", value = BuildConfig.VERSION_NAME)
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    UpdateRow(state = updateState, onClick = ::onUpdateRowClick)
                 }
+            }
+            if (updateState.latestRelease != null) {
+                item(key = "update_detail") {
+                    UpdateDetailCard(
+                        state = updateState,
+                        installHint = installHint,
+                        onDownload = { UpdateManager.download(context) },
+                        onInstall = ::installUpdate,
+                    )
+                }
+            }
+            item(key = "update_note") {
+                SettingsNote(
+                    "新版来自 GitHub Releases。下载后会先核对包名、版本号与签名，" +
+                        "再由系统安装器确认安装；应用数据会保留。",
+                )
             }
             item(key = "credit") {
                 SettingsNote("歌词与曲库数据来自网易云音乐。")
@@ -189,4 +260,178 @@ private fun SettingsNote(text: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp),
     )
+}
+
+/** 与更新相关的状态里，哪个还带着 Release（用于决定详情卡是否出现）。 */
+private val UpdateManager.State.latestRelease: UpdateRelease?
+    get() = when (this) {
+        is UpdateManager.State.Available -> release
+        is UpdateManager.State.Downloading -> release
+        is UpdateManager.State.Ready -> release
+        is UpdateManager.State.Failed -> release
+        else -> null
+    }
+
+/**
+ * 「检查更新」行：右侧就是**下一步该做什么**的答案，点整行执行那一步。
+ * 不必先点检查、再点下载、再点安装 —— 一行依次推进，少三次点击。
+ */
+@Composable
+private fun UpdateRow(state: UpdateManager.State, onClick: () -> Unit) {
+    val busy = state is UpdateManager.State.Checking || state is UpdateManager.State.Downloading
+    val (label, color) = when (state) {
+        is UpdateManager.State.Checking -> "检查中…" to MaterialTheme.colorScheme.onSurfaceVariant
+        is UpdateManager.State.UpToDate -> "已是最新" to MaterialTheme.colorScheme.onSurfaceVariant
+        is UpdateManager.State.Available ->
+            "v${state.release.versionName}" to MaterialTheme.colorScheme.primary
+        is UpdateManager.State.Downloading ->
+            "下载中 ${(state.progress * 100).toInt()}%" to MaterialTheme.colorScheme.primary
+        is UpdateManager.State.Ready -> "待安装" to MaterialTheme.colorScheme.primary
+        is UpdateManager.State.Failed -> "重试" to MaterialTheme.colorScheme.error
+        else -> "检查" to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !busy, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 15.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "检查更新",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = color,
+        )
+    }
+}
+
+/**
+ * 发现新版之后的详情卡：版本对比 + 更新日志 + 下载/安装（或进度、失败原因）。
+ *
+ * 更新日志直接展示 Release 正文（本项目的提交信息），不折叠 —— 它至多十几行，
+ * 真长了也在这一块里滚，不会把设置页撑爆。
+ */
+@Composable
+private fun UpdateDetailCard(
+    state: UpdateManager.State,
+    installHint: String?,
+    onDownload: () -> Unit,
+    onInstall: () -> Unit,
+) {
+    val release = state.latestRelease ?: return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(CirroShape.Card)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "新版本 v${release.versionName}",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = "当前 ${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (state is UpdateManager.State.Failed) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = state.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (release.notes.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = release.notes,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 14,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        when (state) {
+            is UpdateManager.State.Downloading -> {
+                // 总量未知（GitHub 没给 Content-Length 的极端情况）时不画假进度条。
+                if (state.progress > 0f) {
+                    LinearProgressIndicator(
+                        progress = { state.progress },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = buildString {
+                        append("正在下载 ")
+                        if (state.progress > 0f) append("${(state.progress * 100).toInt()}% · ")
+                        append(formatBytes(state.downloadedBytes))
+                        if (release.sizeBytes > 0) append(" / ${formatBytes(release.sizeBytes)}")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            is UpdateManager.State.Ready -> {
+                Text(
+                    text = "更新包已下载并通过校验。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                UpdateActionRow(label = "安装", onClick = onInstall)
+            }
+            is UpdateManager.State.Failed -> UpdateActionRow(label = "重试下载", onClick = onDownload)
+            else -> UpdateActionRow(
+                label = "下载更新（${formatBytes(release.sizeBytes)}）",
+                onClick = onDownload,
+            )
+        }
+        if (installHint != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = installHint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun UpdateActionRow(label: String, onClick: () -> Unit) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.bodyLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(CirroShape.Card)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+    )
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes <= 0L -> "大小未知"
+    bytes >= 1024L * 1024L -> String.format(Locale.US, "%.1f MB", bytes / 1048576.0)
+    bytes >= 1024L -> String.format(Locale.US, "%.0f KB", bytes / 1024.0)
+    else -> "$bytes B"
 }

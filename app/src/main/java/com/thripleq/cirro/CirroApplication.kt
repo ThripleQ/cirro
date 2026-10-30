@@ -13,6 +13,7 @@ import com.thripleq.cirro.core.playback.PlaybackStateStore
 import com.thripleq.cirro.core.playback.PlaybackUrls
 import com.thripleq.cirro.core.playback.PlayerHolder
 import com.thripleq.cirro.core.startup.StartupGate
+import com.thripleq.cirro.core.update.UpdateManager
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -70,6 +71,11 @@ class CirroApplication : Application() {
                 // 没有迷你条，不该为它把开屏多盖几秒。
                 startupGate.signal(StartupGate.Signal.Playback)
             }
+        }
+        // 启动静默检查新版（24h 节流，见 [UpdateManager.checkOnLaunch]）。结果只进状态机：
+        // 有新版时由根上的提示弹一次、设置页那一行持续可见；不自动下载。
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching { UpdateManager.checkOnLaunch(applicationContext) }
         }
     }
 
