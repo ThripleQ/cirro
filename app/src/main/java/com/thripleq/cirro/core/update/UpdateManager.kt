@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
  * **为什么每次进程重启都从 [State.Idle] 开始**：已下载的 APK 在 cacheDir 里，系统清
  * 缓存是常态；与其维护「文件还在不在」的对账，不如让用户再下一次（手动检查不节流）。
  */
-object UpdateManager {
+internal object UpdateManager {
 
     sealed interface State {
         data object Idle : State
