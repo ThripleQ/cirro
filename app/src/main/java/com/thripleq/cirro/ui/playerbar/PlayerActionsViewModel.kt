@@ -2,9 +2,9 @@ package com.thripleq.cirro.ui.playerbar
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.thripleq.cirro.core.repo.InteractionRepository
 import com.thripleq.cirro.core.repo.LibraryStateStore
 import com.thripleq.cirro.core.repo.ProfileRepository
+import com.thripleq.cirro.core.repo.SongLikeAction
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,8 +39,8 @@ import javax.inject.Inject
 @HiltViewModel
 class PlayerActionsViewModel @Inject constructor(
     private val profileRepo: ProfileRepository,
-    private val interactions: InteractionRepository,
     private val library: LibraryStateStore,
+    private val likeAction: SongLikeAction,
 ) : ViewModel() {
 
     private val trackId = MutableStateFlow<String?>(null)
@@ -63,24 +63,16 @@ class PlayerActionsViewModel @Inject constructor(
         viewModelScope.launch { loadLiked() }
     }
 
-    /** 点红心：当前已喜欢则取消，否则加喜欢。 */
+    /**
+     * 点红心：当前已喜欢则取消，否则加喜欢。
+     *
+     * 目标态判定、乐观更新、失败回滚都在 [SongLikeAction] 里 —— 通知栏那颗心走同一份，
+     * 两处点完对方立刻跟上（都读 [LibraryStateStore]）。
+     */
     fun toggleLike() {
         val id = trackId.value ?: return
-        val target = !liked.value
         viewModelScope.launch {
-            if (loadLiked() == null) {
-                _message.tryEmit("登录后才能收藏")
-                return@launch
-            }
-            library.markLiked(id, target)
-            val r = interactions.setSongLiked(id, target)
-            if (r.ok) {
-                // 「我的」页那份喜欢缓存已经旧了：清掉，下次进页面重算计数。
-                profileRepo.invalidateLikedCache()
-            } else {
-                library.markLiked(id, !target)
-                _message.tryEmit(r.message)
-            }
+            likeAction.toggle(id)?.let { _message.tryEmit(it) }
         }
     }
 
