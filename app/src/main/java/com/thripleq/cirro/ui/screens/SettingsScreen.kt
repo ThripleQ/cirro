@@ -15,14 +15,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +49,8 @@ import com.thripleq.cirro.core.update.UpdateChecker
 import com.thripleq.cirro.core.update.UpdateManager
 import com.thripleq.cirro.core.update.UpdateRelease
 import com.thripleq.cirro.ui.components.CirroPaperPage
+import com.thripleq.cirro.ui.profile.ProfileUiState
+import com.thripleq.cirro.ui.profile.ProfileViewModel
 import com.thripleq.cirro.ui.theme.CirroShape
 import java.util.Locale
 
@@ -56,20 +63,29 @@ private val QualityLabels = mapOf(
 )
 
 /**
- * 设置页：详情页骨架（圆角纸 + 右上收起键），内容按「播放 / 关于」分组。
+ * 设置页：详情页骨架（圆角纸 + 右上收起键），内容按「账号 / 播放 / 关于」分组。
  *
  * 音质直接读写 [PlaybackPreferences] —— 与播放页的设置面板共用同一份偏好，
  * 两边改完立刻互见（面板每次打开都重读）。
+ *
+ * [vm] 必须是 CirroApp 根部那个 Activity 作用域的 [ProfileViewModel]（与「我的」页同一实例）：
+ * 退出登录要落在同一份 [ProfileUiState] 上，否则回到「我的」还是已登录的样子。
  */
 @Composable
 internal fun SettingsScreen(
     onBack: () -> Unit,
+    vm: ProfileViewModel,
     islandHeight: Float = 0f,
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     var quality by remember { mutableStateOf(PlaybackPreferences.quality(context)) }
     val islandClearance = with(LocalDensity.current) { islandHeight.dp }
+
+    // 「账号」一组只在登录时存在：登出后这一组连同确认框一起消失。
+    val profileState by vm.uiState.collectAsStateWithLifecycle()
+    val loggedIn = profileState is ProfileUiState.LoggedIn
+    var confirmLogout by remember { mutableStateOf(false) }
 
     // 自更新状态机在进程级单例里（[UpdateManager]），设置页只负责展示与转发动作。
     val updateState by UpdateManager.state.collectAsStateWithLifecycle()
@@ -118,6 +134,13 @@ internal fun SettingsScreen(
                 bottom = islandClearance + 24.dp,
             ),
         ) {
+            if (loggedIn) {
+                item(key = "account_header") { SettingsSection("账号") }
+                item(key = "logout") {
+                    SettingsCard { LogoutRow(onClick = { confirmLogout = true }) }
+                }
+            }
+
             item(key = "play_header") { SettingsSection("播放") }
             item(key = "quality") {
                 SettingsCard {
@@ -174,6 +197,60 @@ internal fun SettingsScreen(
                 SettingsNote("歌词与曲库数据来自网易云音乐。")
             }
         }
+    }
+
+    if (confirmLogout) {
+        AlertDialog(
+            onDismissRequest = { confirmLogout = false },
+            title = { Text("退出登录？") },
+            text = { Text("会清除本机的登录状态，需要重新登录才能看到「我的」里的内容。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmLogout = false
+                        vm.logout()
+                        Toast.makeText(context, "已退出登录", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) { Text("退出") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmLogout = false }) { Text("取消") }
+            },
+        )
+    }
+}
+
+/**
+ * 退出登录：一行低调但认得出的按钮，点了**先确认**。
+ *
+ * 为什么必须确认：这不是「切个开关」，登出会清掉本机登录态 + 收藏/已购镜像，误触就得重走
+ * 一遍 WebView 登录。用 error 色（读作「有后果」）而不是 onSurfaceVariant —— 后者和上面的
+ * 行卡副标题一个色阶，会被当成又一个普通入口。
+ */
+@Composable
+private fun LogoutRow(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 15.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.Logout,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = "退出登录",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.error,
+        )
     }
 }
 

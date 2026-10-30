@@ -2,10 +2,13 @@ package com.thripleq.cirro.ui.screens
 
 /**
  * 「我的」页的**登录态版面**：未登录那一整套（登录引导卡 + 四个占位区块）与已登录那一整套
- * （账号行 / 各入口卡 / 退出登录）。
+ * （账号行 / 各入口卡）。
+ *
+ * 退出登录**不在这里**：它挪去了设置页「账号」一组（2026-10-30 用户要求）——「我的」页
+ * 只放内容入口，账号级动作与版本、音质这些放在一起。
  *
  * 从 `ProfileCards.kt` 分出来的边界是「谁和谁一起改」：那边是**卡片零件**（行卡、已购壳、
- * hero 卡），改版式动那边；这里是**登录态下的页面组合**，增删区块、改登录引导或退出登录
+ * hero 卡），改版式动那边；这里是**登录态下的页面组合**，增删区块、改登录引导
  * 动这边。两边共用那批卡片零件（`PurchasedEntry` / `VipBadge` …），所以它们被放宽成
  * `internal` —— 跨文件时**只放宽真正被用到的那几个**（顶层声明同包内不许同名，放宽多了
  * 容易撞上）。
@@ -28,7 +31,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -44,24 +46,17 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -201,8 +196,6 @@ internal fun LoggedInContent(
     data: ProfileData,
     onOpenTracks: (source: String, id: String, title: String) -> Unit,
     onOpenPanel: (ProfilePanel, Rect?, morphable: Boolean) -> Unit,
-    /** 退出登录（VM 里那套：清 cookie + 失效镜像 + 回未登录态）。 */
-    onLogout: () -> Unit,
     shared: SharedTransitionScope?,
     avScope: AnimatedVisibilityScope?,
     /** 滚动视口的源可见性守卫（见 [SharedSourceGuard]）。 */
@@ -314,60 +307,6 @@ internal fun LoggedInContent(
             }
             if (i < rows.lastIndex) Spacer(Modifier.height(10.dp))
         }
-
-        // 退出登录：放在所有内容之下，低调但找得到（见 [LogoutButton]）。
-        LogoutButton(onLogout = onLogout)
     }
-    }
-}
-
-/**
- * 退出登录：一行低调的按钮，点了**先确认**。
- *
- * 为什么必须确认：这不是「切个开关」，登出会清掉本机登录态 + 收藏/已购镜像，误触就得重走
- * 一遍 WebView 登录。三重降噪：放在页面最底部、用 error 色（读作「有后果」）、二次确认。
- *
- * 用 error 色而不是 onSurfaceVariant：后者和上面的行卡副标题一个色阶，会被当成又一个入口。
- */
-@Composable
-private fun LogoutButton(onLogout: () -> Unit) {
-    var confirm by remember { mutableStateOf(false) }
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = 20.dp, bottom = 4.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        TextButton(
-            onClick = { confirm = true },
-            colors = ButtonDefaults.textButtonColors(
-                contentColor = MaterialTheme.colorScheme.error,
-            ),
-        ) {
-            Icon(Icons.Filled.Logout, contentDescription = null, Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("退出登录")
-        }
-    }
-    if (confirm) {
-        AlertDialog(
-            onDismissRequest = { confirm = false },
-            title = { Text("退出登录？") },
-            text = { Text("会清除本机的登录状态，需要重新登录才能看到「我的」里的内容。") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirm = false
-                        onLogout()
-                    },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) { Text("退出") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirm = false }) { Text("取消") }
-            },
-        )
     }
 }

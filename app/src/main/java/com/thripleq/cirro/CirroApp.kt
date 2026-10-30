@@ -421,6 +421,9 @@ fun CirroApp(startupReady: Boolean = true) {
                 composable<Settings> {
                     SettingsScreen(
                         onBack = { goBack() },
+                        // 与「我的」页共用 Activity 作用域的 VM：设置页里的退出登录要
+                        // 落在同一份状态上，回到「我的」才立刻是未登录样子。
+                        vm = profileVm,
                         islandHeight = islandHeightDp,
                     )
                 }
