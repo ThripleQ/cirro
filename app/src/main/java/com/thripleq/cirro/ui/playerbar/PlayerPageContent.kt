@@ -71,6 +71,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -216,6 +217,21 @@ internal fun PlayerPageContent(
     val titleStyle = remember(typography, titleFont) {
         typography.headlineSmall.copy(fontSize = titleFont)
     }
+    // 歌词档的标题另用一份：与一级页大标题（`CirroPageTitleBar`）**同一口径** —— 行盒上下
+    // 那两条 leading 一并裁掉（`Trim.Both`），字的上沿才真的贴得上状态栏。24sp 的字装在
+    // 32sp 的行盒里，不裁的话上下各留 4sp 空白，上面那段 26dp 的留白去掉了也还差一截。
+    //
+    // 封面档**不**用它：那边的标题压在封面下方，行盒留白正是它要的呼吸位，且版式已定稿。
+    // 只在进出歌词档时换一次样式（key 是 typography / titleStyle，不随 sc 变），
+    // `FadingMarqueeText` 以样式为测量 key，所以不会每帧重排。
+    val lyricsTitleStyle = remember(typography, titleStyle) {
+        titleStyle.copy(
+            lineHeightStyle = LineHeightStyle(
+                alignment = LineHeightStyle.Alignment.Center,
+                trim = LineHeightStyle.Trim.Both,
+            ),
+        )
+    }
     val artistStyle = remember(typography, artistFont) {
         typography.bodyMedium.copy(fontSize = artistFont)
     }
@@ -291,17 +307,34 @@ internal fun PlayerPageContent(
             }
             .padding(horizontal = androidx.compose.ui.unit.lerp(24.dp, 16.dp, sc))
             // 封面到卡片上边的距离取左右边距的 5:4（30dp vs 24dp），略长一点更透气。
-            // 歌词档把顶 padding 收到 10dp（标题/艺人要「放高点」，见 [lyricsLayout]）；
+            // 歌词档把这段**整个收掉**（原先是收到 10dp）—— 标题要像一级页大标题那样贴着
+            // 状态栏（用户 2026-10-30），见下面那个 Spacer 的注释。
             // 底部额外让出导航栏（仅三键导航、且随全屏进度渐入）。歌词档把底 padding
             // 从 20 收到 6dp（连同下面两处间距一起下移）。
             .padding(
-                top = 30.dp - 20.dp * lyricsLayout,
+                top = 30.dp * (1f - lyricsLayout),
                 bottom = 20.dp - 14.dp * lyricsLayout + navBottomDp * sc,
             ),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // 全屏时顶部让出状态栏（卡片档壳顶已在状态栏下，无需让位）。
-        Spacer(Modifier.height(androidx.compose.ui.unit.lerp(0.dp, statusBarDp + 16.dp, sc)))
+        // 顶部留白：卡片档 0（壳顶已在状态栏下，无需让位）；全屏封面档 = 状态栏 + 16dp
+        // 呼吸位；**歌词档只让出状态栏本身** —— 标题像一级页大标题那样贴着状态栏
+        // （用户 2026-10-30：「探索页这种标题放得距状态栏很近，歌词页的标题也要这样做」）。
+        //
+        // 那 16dp 呼吸位只属于封面档（封面要离状态栏留一点空气）。歌词档把它连同上面
+        // 那 30dp 顶内边距一起收掉，一共上移 26dp —— 省下的正是歌词区多出来的高度。
+        // 用 `lyricsLayout` 做因子而不是 if 分支：换档时是 400ms 的平滑上移，与封面/歌词
+        // 的交叉淡化同一拍，不会看到标题「跳」一下。
+        //
+        // ⚠️ 前提是右上角那颗收起箭头已经让位。它在屏幕顶 0~40dp 处悬着，歌词档标题
+        // 贴上去就会和它抢同一块地方（评论键的触控区正好盖进箭头）—— 所以 `PlayerPage`
+        // 里那颗箭头随 `lyricsEngaged` 一起淡出。改这里之前先确认那边还让着位。
+        Spacer(
+            Modifier.height(
+                androidx.compose.ui.unit.lerp(0.dp, statusBarDp, sc) +
+                    16.dp * sc * (1f - lyricsLayout),
+            ),
+        )
 
         // 封面档 ↔ 歌词档：同一块弹性槽位内的**交叉淡化**（AnimatedContent）。两套版式
         // 高度结构完全不同（封面是固定方块+标题，歌词是撑满的列表），做不到共享元素级的
@@ -378,7 +411,8 @@ internal fun PlayerPageContent(
                     PlayerHeading(
                         state = state,
                         sc = sc,
-                        titleStyle = titleStyle,
+                        // 歌词档用裁掉 leading 的那份样式：标题要贴状态栏（见 [lyricsTitleStyle]）。
+                        titleStyle = lyricsTitleStyle,
                         titleColor = titleColor,
                         artistStyle = artistStyle,
                         liked = liked,

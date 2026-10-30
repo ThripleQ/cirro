@@ -6,6 +6,8 @@ import com.thripleq.cirro.ui.theme.CirroFade
 import com.thripleq.cirro.ui.theme.CirroShape
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -363,6 +365,22 @@ internal fun PlayerPage(
     // 下滑退出全屏播放页冲突」）。歌词页的退出改由「点歌词回封面 / 返回键逐级退」，
     // 回到封面档后这里自动恢复，下滑收起照旧。
     var lyricsEngaged by remember { mutableStateOf(false) }
+    // 歌词页在场时，顶部拉手与右上角收起键一起淡出。
+    //
+    // 那颗箭头悬在**屏幕顶 0~40dp** 处，而歌词页的标题要贴着状态栏（见 `PlayerPageContent`
+    // 顶部那个 Spacer 的注释）—— 两者会抢同一块位置：评论键（右端 80dp 那一栏）的触控区
+    // 正好盖进箭头的下沿，点评论有可能直接把整页收走。
+    //
+    // 收起改由「点歌词区回封面 / 返回键」承担：歌词页里本来也没有下滑收起（上面
+    // `lyricsEngaged` 已经把壳的竖向拖拽关掉了）。
+    //
+    // 用动画而不是条件组合：条件组合会把淡出砍成硬切，还会在换档那一帧重建整棵子树。
+    // 透明度在 `graphicsLayer` 的 lambda 里读（绘制期），不额外引发重组。
+    val headerLyricsFade = animateFloatAsState(
+        targetValue = if (lyricsEngaged) 0f else 1f,
+        animationSpec = tween(ImmersiveMs, easing = Motion.Standard),
+        label = "headerLyricsFade",
+    )
 
     Box(modifier = modifier.fillMaxSize()) {
         // 壳：显式宽高 + 平移（与 ExpandableShell 同构），随 progress 每帧布局。
@@ -438,7 +456,7 @@ internal fun PlayerPage(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .graphicsLayer { alpha = headerAlpha },
+                    .graphicsLayer { alpha = headerAlpha * headerLyricsFade.value },
             ) {
                 // 顶部：拉手 + 收起箭头。
                 Box(
@@ -462,7 +480,9 @@ internal fun PlayerPage(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                 ) {
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { doClose() }) {
+                    // 歌词页淡出时一并关掉点按：`alpha = 0` 的节点**仍然吃触摸**，而评论键
+                    // 的上沿正压在这颗箭头下面（见上面 headerLyricsFade 的注释）。
+                    IconButton(onClick = { doClose() }, enabled = !lyricsEngaged) {
                         Icon(
                             Icons.Filled.KeyboardArrowDown,
                             contentDescription = "收起",
