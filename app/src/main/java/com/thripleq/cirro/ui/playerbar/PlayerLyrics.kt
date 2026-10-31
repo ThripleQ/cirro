@@ -1,7 +1,6 @@
 package com.thripleq.cirro.ui.playerbar
 
 import android.os.SystemClock
-import android.util.Log
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
@@ -229,7 +228,6 @@ internal fun LyricsView(
             LaunchedEffect(listState) {
                 snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
                     if (scrolling && !programmatic) lastUserScrollAt = System.currentTimeMillis()
-                    Log.d("LyricDbg", "scrollInProgress=$scrolling programmatic=$programmatic")
                 }
             }
             // 「seek 后回到焦点」（用户 2026-10-31）。拖进度条 / 通知栏跳转都不经过歌词
@@ -247,31 +245,20 @@ internal fun LyricsView(
                     val expected = if (playing) lastPos + (now - lastAt) else lastPos
                     if (abs(pos - expected) > 1_000L) {
                         // 清抑制再触发重定位：seek 是「明确要去别处」，不是「想自己读一会儿」。
-                        Log.d("LyricDbg", "SEEK pos=$pos expected=$expected playing=$playing")
                         lastUserScrollAt = 0L
                         seekTick++
-                    } else if (abs(pos - expected) > 200L) {
-                        Log.d("LyricDbg", "drift pos=$pos expected=$expected playing=$playing")
                     }
                     lastPos = pos
                     lastAt = now
                 }
             }
             LaunchedEffect(currentIndex, anchorPx, seekTick) {
-                Log.d(
-                    "LyricDbg",
-                    "effect start idx=$currentIndex tick=$seekTick anchor=$anchorPx " +
-                        "top=$viewportTopPx wh=$windowHeightPx h=$viewportHeightPx " +
-                        "suppressLeft=${4_000L - (System.currentTimeMillis() - lastUserScrollAt)} " +
-                        "settled=$settled",
-                )
                 if (currentIndex < 0) return@LaunchedEffect
                 if (System.currentTimeMillis() - lastUserScrollAt < 4_000L) {
                     // 用户还在读，不抢滚动。但这一首到这里**已经不算首次定位**了 —— 他手
                     // 动翻过，下一次回来就该是滑动。若不记这一笔，「刚进播放页就翻两下、
                     // 4s 后再让它回焦点」会退化成一次硬跳。
                     settled = true
-                    Log.d("LyricDbg", "suppressed idx=$currentIndex")
                     return@LaunchedEffect
                 }
                 // 量到窗口尺寸就用黄金位（与档位无关的绝对值）；量不到退回视口比例，
@@ -301,13 +288,10 @@ internal fun LyricsView(
                     //    快进 + 缓停，而不是「先滑一段、再瞬移剩下的」。
                     var lastFrame = 0L
                     var startedAt = 0L
-                    var frames = 0
-                    var lastDelta = Float.NaN
                     while (true) {
                         val layout = listState.layoutInfo
                         val item = layout.visibleItemsInfo.firstOrNull { it.index == currentIndex }
                         val now = withFrameMillis { it }
-                        frames++
                         if (startedAt == 0L) startedAt = now
                         // 手指按下就交还控制权（pointerInput 会同时记 lastUserScrollAt）。
                         if (System.currentTimeMillis() - lastUserScrollAt < 4_000L) break
@@ -325,7 +309,6 @@ internal fun LyricsView(
                             }.coerceAtLeast(1f)
                             first.offset + (currentIndex - first.index) * pitch - targetPx
                         }
-                        lastDelta = delta
                         val dt = if (lastFrame == 0L) 16f else (now - lastFrame).toFloat().coerceIn(4f, 40f)
                         lastFrame = now
                         if (abs(delta) < 0.5f && now - startedAt >= Motion.MicroMs) break
@@ -343,10 +326,8 @@ internal fun LyricsView(
                     // 极端情况（估算失效 / 边界）没能把目标行带进视口：直接切，宁可硬一下
                     // 也不能停住不动。
                     if (listState.layoutInfo.visibleItemsInfo.none { it.index == currentIndex }) {
-                        Log.d("LyricDbg", "fallback jump idx=$currentIndex delta=$lastDelta frames=$frames")
                         listState.scrollToItem(currentIndex, -targetPx.roundToInt())
                     }
-                    Log.d("LyricDbg", "follow end frames=$frames delta=$lastDelta")
                 } finally {
                     programmatic = false
                     // 只要跑过一轮，这一首歌就算「定位过了」—— 之后从别处回来才走滑动。
@@ -400,7 +381,6 @@ internal fun LyricsView(
                         awaitPointerEventScope {
                             while (true) {
                                 awaitFirstDown(requireUnconsumed = false)
-                                Log.d("LyricDbg", "pointer down programmatic=$programmatic")
                                 if (programmatic) {
                                     lastUserScrollAt = System.currentTimeMillis()
                                 }
