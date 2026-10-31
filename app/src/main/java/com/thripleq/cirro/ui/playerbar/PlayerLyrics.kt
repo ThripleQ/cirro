@@ -193,7 +193,8 @@ private suspend fun LazyListState.glideToIndex(
  * 2026-10-24 明确「按歌词 seek」是以后的功能区域，现在歌词区的任何位置都算「无关地方」
  * （回封面由调用方的整块点击负责）。
  * 用户手动滚动后暂停自动滚动 4s，避免和阅读抢（用 [LazyListState.isScrollInProgress]
- * 分辨，本组件自己触发的滚动用 programmatic 标记排除）。
+ * 分辨，本组件自己触发的滚动用 programmatic 标记排除）。**seek 不受这条抑制**：位置是
+ * 用户明确指定的，跳完就该回到焦点（见 `seekTick`）。
  *
  * **[positionState] 收的是 State 而不是 Long**：进度是 250ms 一次的轮询，若在调用方解包成
  * Long 传进来，那份值的变化会落在调用方的重组作用域里（播放页内容区整块陪跑）。
@@ -268,7 +269,29 @@ internal fun LyricsView(
                     if (scrolling && !programmatic) lastUserScrollAt = System.currentTimeMillis()
                 }
             }
-            LaunchedEffect(currentIndex, anchorPx) {
+            // 「seek 后回到焦点」（用户 2026-10-31）。拖进度条 / 通知栏跳转都不经过歌词
+            // 列表，那 4 秒「用户刚翻过歌词」的抑制没有理由拦它 —— 位置都是用户自己指定的，
+            // 歌词就该回到新位置对应的焦点行。
+            //
+            // 这里不新增回调，直接盯进度跳变：把轮询节奏之外的位移认成 seek。判据先用
+            // elapsedRealtime 补上播放中的自然前进，轮询偶尔慢了也不会误判。
+            var seekTick by remember(lines) { mutableIntStateOf(0) }
+            LaunchedEffect(listState, playing) {
+                var lastPos = positionState.value
+                var lastAt = SystemClock.elapsedRealtime()
+                snapshotFlow { positionState.value }.collect { pos ->
+                    val now = SystemClock.elapsedRealtime()
+                    val expected = if (playing) lastPos + (now - lastAt) else lastPos
+                    if (abs(pos - expected) > 1_000L) {
+                        // 清抑制再触发重定位：seek 是「明确要去别处」，不是「想自己读一会儿」。
+                        lastUserScrollAt = 0L
+                        seekTick++
+                    }
+                    lastPos = pos
+                    lastAt = now
+                }
+            }
+            LaunchedEffect(currentIndex, anchorPx, seekTick) {
                 if (currentIndex < 0) return@LaunchedEffect
                 if (System.currentTimeMillis() - lastUserScrollAt < 4_000L) {
                     // 用户还在读，不抢滚动。但这一首到这里**已经不算首次定位**了 —— 他手
