@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -66,6 +67,13 @@ internal fun PlayerProgressRow(
                 seekFrozen.value = false
             },
             valueRange = 0f..durationMs.toFloat().coerceAtLeast(1f),
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                // 未播放段跟品牌红同色相、只降不透明度：默认的 surfaceContainerHighest 是
+                // 冷灰蓝，压在白底上像一条「脏轨」，与红色的已播段是两种语言。
+                inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = CirroFade.TRACK),
+            ),
             modifier = Modifier.fillMaxWidth(),
         )
     } else {
@@ -80,7 +88,9 @@ internal fun PlayerProgressRow(
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(CirroShape.Track)
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = CirroFade.TRACK)),
+                    .background(
+                        MaterialTheme.colorScheme.primary.copy(alpha = CirroFade.TRACK),
+                    ),
             )
         }
     }

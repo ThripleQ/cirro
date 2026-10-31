@@ -96,6 +96,9 @@ object CirroFade {
     /** 进度条 / 滑块未填充轨道底的弱化。 */
     const val TRACK: Float = 0.12f
 
+    /** 未激活功能胶囊的容器底：primaryContainer 按此倍率淡化（激活态是满值）。 */
+    const val IDLE_CONTAINER: Float = 0.45f
+
     // PROGRESS_SLOT 已删（2026-10-03）：它只服务于播放页「歌手下边那条 1dp 分割线」，
     // 用户要求删线，常量随之失去唯一用处。
 

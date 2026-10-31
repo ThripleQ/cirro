@@ -1,5 +1,6 @@
 package com.thripleq.cirro.ui.playerbar
 
+import com.thripleq.cirro.ui.theme.CirroFade
 import com.thripleq.cirro.ui.theme.CirroShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -47,7 +48,13 @@ import com.thripleq.cirro.core.playback.PlaybackPreferences
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** 全屏档功能胶囊：56×44 圆角矩形，激活态用 primaryContainer 高亮。 */
+/**
+ * 全屏档功能胶囊：56×44 圆角矩形。
+ *
+ * 激活态铺满 `primaryContainer` + 深色内容；未激活态用**同一色相的淡化版**
+ * （`primaryContainer` 半透明）配 `primary` 图标 —— 原先铺 `secondaryContainer`
+ * 是块冷蓝灰，与品牌红同屏时像两个体系的东西。
+ */
 @Composable
 internal fun FullChip(
     icon: ImageVector,
@@ -63,12 +70,12 @@ internal fun FullChip(
             containerColor = if (active) {
                 MaterialTheme.colorScheme.primaryContainer
             } else {
-                MaterialTheme.colorScheme.secondaryContainer
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = CirroFade.IDLE_CONTAINER)
             },
             contentColor = if (active) {
                 MaterialTheme.colorScheme.onPrimaryContainer
             } else {
-                MaterialTheme.colorScheme.onSecondaryContainer
+                MaterialTheme.colorScheme.primary
             },
         ),
     ) {
