@@ -393,9 +393,10 @@ internal fun LyricsView(
                         }
                     },
                 contentPadding = PaddingValues(
+                    start = 16.dp,
                     top = padVertical,
+                    end = 16.dp,
                     bottom = bottomPad,
-                    horizontal = 16.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(lineSpacing),
             ) {
