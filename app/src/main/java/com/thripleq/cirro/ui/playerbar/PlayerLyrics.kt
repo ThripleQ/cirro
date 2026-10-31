@@ -92,12 +92,15 @@ internal fun currentLyricIndex(lines: List<LyricLine>, positionMs: Long): Int {
 /** 歌词行距：内联/沉浸两档共用（原内联 14dp、沉浸 20dp —— 统一取沉浸档，字号也是同一套）。 */
 private val LyricLineSpacing = 20.dp
 
-/** 上下留白：两档共用；上下各留出一条渐隐带（36dp）的高度，首尾行不会被边缘蒙版裁掉。
+/** 顶部留白：两档共用；留出一条渐隐带（36dp）的高度，首行不会被边缘蒙版裁掉。
  *
- *  它同时也是列表的 `contentPadding`，比黄金位（见 [LyricGoldenAnchor]）小得多 —— 所以
- *  **开头几行贴视口顶、随着内容变多才逐渐落到黄金位**。这是刻意的：内联档视口只有约
- *  530dp，若把顶部留白直接按黄金位（约 210dp）铺开，第一句歌词要压到视口 4 成的位置，
- *  标题下方会空出一大片。中段之后焦点行稳稳停在黄金位，不受影响。 */
+ *  它比黄金位（见 [LyricGoldenAnchor]）小得多 —— 所以 **开头几行贴视口顶、随着内容变多
+ *  才逐渐落到黄金位**。这是刻意的：内联档视口只有约 530dp，若把顶部留白直接按黄金位
+ *  （约 210dp）铺开，第一句歌词要压到视口 4 成的位置，标题下方会空出一大片。中段之后
+ *  焦点行稳稳停在黄金位，不受影响。
+ *
+ *  尾部留白**不**用它 —— 底部要留到让最后一句也能升到黄金位，见 [LyricsView] 的
+ *  `bottomPad`。 */
 private val LyricVerticalPadding = 40.dp
 
 /**
@@ -240,9 +243,24 @@ internal fun LyricsView(
             // 未测量时 -1 标记，滚动逻辑等到测量完再动手，避免首帧按错值滚一下。
             val view = LocalView.current
             var viewportTopPx by remember { mutableIntStateOf(-1) }
+            var viewportHeightPx by remember { mutableIntStateOf(0) }
             var windowHeightPx by remember { mutableIntStateOf(0) }
             val anchorPx = remember(viewportTopPx, windowHeightPx) {
                 lyricAnchorPx(windowHeightPx, viewportTopPx)
+            }
+            // 尾部留白：**把黄金位以下整个视口都留出来**，最后一句才升得到焦点，落点之后
+            // 只剩空白（网易云同款观感）。只留 [LyricVerticalPadding] 的话，列表滚到底就
+            // 卡住 —— 末句永远停在视口下方，焦点「上不去」（用户 2026-10-31 报的问题）。
+            //
+            // 用「视口高 − 锚点」而不是「视口高」：锚点在屏幕 38.2%，视口下半截不可能再用
+            // 上，多留只是让人能拖出更长的空白。未测量时退回顶部留白，保证首帧不异常。
+            val bottomPad = if (viewportHeightPx <= 0) {
+                padVertical
+            } else {
+                val target = if (anchorPx >= 0f) anchorPx else viewportHeightPx * LyricFallbackAnchor
+                with(LocalDensity.current) {
+                    (viewportHeightPx - target).coerceAtLeast(padVertical.toPx()).toDp()
+                }
             }
 
             LaunchedEffect(listState) {
@@ -329,6 +347,7 @@ internal fun LyricsView(
                     // 这正是「焦点行换档后不再往下跑」的兑现方式。
                     .onGloballyPositioned {
                         viewportTopPx = it.boundsInWindow().top.roundToInt()
+                        viewportHeightPx = it.size.height
                         windowHeightPx = view.rootView.height
                     }
                     // 上下边缘淡出：歌词档的视口边界正好压在标题/页眉上，硬切会在
@@ -373,7 +392,11 @@ internal fun LyricsView(
                             }
                         }
                     },
-                contentPadding = PaddingValues(vertical = padVertical, horizontal = 16.dp),
+                contentPadding = PaddingValues(
+                    top = padVertical,
+                    bottom = bottomPad,
+                    horizontal = 16.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(lineSpacing),
             ) {
                 itemsIndexed(lines) { i, line ->
