@@ -10,7 +10,6 @@ import com.thripleq.cirro.ui.theme.CirroFade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -152,45 +151,6 @@ internal fun lyricAnchorPx(windowHeightPx: Int, viewportTopPx: Int): Float {
 }
 
 /**
- * 把来自「别处」的目标行滑到 [anchorPx]：按可见行的**真实行距**估算距离，一次带缓动的滚。
- *
- * **刻意不用 `LazyListState.animateScrollToItem`**，两个原因：
- * 1. 它对远距离走默认 spring（stiffness 1500、无回弹）—— 3000px 的距离一百多毫秒就冲完，
- *    观感仍然是「嗖」一下，没解决用户说的不顺滑；
- * 2. 它按「第几行 × 平均行高」分两段跳，长歌词行折行多时落点会差，回头还得再拽一次。
- *
- * 这里改成**按距离给时长**（约 3px/ms，180ms 起步、520ms 封顶）的单次缓动，落点偏差交给
- * 调用方的逐帧跟随收尾 —— 那段只剩几十 px，肉眼看不出是两段。
- *
- * @param anchorPx 目标行顶边在视口内的目标位置（[lyricAnchorPx] 或退化口径）
- * @param fallbackPitchPx 只见得到一行时算不出行距，用这个值兜底
- * @return 目标行是否已进入视口。false 表示估算完全失效（例如列表还没布局完），调用方退回瞬移。
- */
-private suspend fun LazyListState.glideToIndex(
-    index: Int,
-    anchorPx: Float,
-    fallbackPitchPx: Float,
-): Boolean {
-    val visible = layoutInfo.visibleItemsInfo
-    if (visible.isEmpty()) return false
-    val first = visible.first()
-    // 行距（含行间距）用可见行 offset 之差算，比「平均行高」准：长行折行多也不会把估算带偏。
-    val pitch = if (visible.size > 1) {
-        (visible.last().offset - first.offset).toFloat() / (visible.size - 1)
-    } else {
-        fallbackPitchPx
-    }.coerceAtLeast(1f)
-    val distance = first.offset + (index - first.index) * pitch - anchorPx
-    if (abs(distance) < 1f) return true
-    val durationMs = (abs(distance) / 3f).toInt().coerceIn(180, 520)
-    // ⚠️ 不要再包一层 `scroll { }`：animateScrollBy 自己就要拿滚动锁（内部 scroll 一次），
-    // 外面再套一层同优先级的 mutation，内层会把外层**取消掉** —— 表现是 effect 静默死掉、
-    // 列表一动不动，日志里只剩一句 "effect start"（2026-10-31 实测）。
-    animateScrollBy(distance, tween(durationMs, easing = Motion.Standard))
-    return layoutInfo.visibleItemsInfo.any { it.index == index }
-}
-
-/**
  * 歌词面板：随播放进度自动滚动 + 高亮当前行。**行本身不做任何点击/seek** —— 用户
  * 2026-10-24 明确「按歌词 seek」是以后的功能区域，现在歌词区的任何位置都算「无关地方」
  * （回封面由调用方的整块点击负责）。
@@ -238,7 +198,7 @@ internal fun LyricsView(
             var settled by remember(lines) { mutableStateOf(false) }
             val lineSpacing = LyricLineSpacing
             val padVertical = LyricVerticalPadding
-            // 行距的 px 值：远处滑回焦点时用它估算「差几行 = 差多少像素」（见 [glideToIndex]）。
+            // 行距的 px 值：目标行还在视口外时用它估算「差几行 = 差多少像素」。
             val lineSpacingPx = with(LocalDensity.current) { lineSpacing.toPx() }
             // 视口顶在窗口中的 y 与窗口高度：两者在**同一个** onGloballyPositioned 里取，
             // 坐标系自洽（都是 window 坐标）。视口顶用来把「屏幕 38.2%」换算成「视口内多少
@@ -323,40 +283,29 @@ internal fun LyricsView(
                 }
                 programmatic = true
                 try {
-                    // ① 目标行不在视口里（用户刚翻到别处 / seek 跳远）→ **滑过去，不瞬移**。
-                    //    原实现是 `scrollToItem`，一步到位；从远处回到焦点时观感像被人一把
-                    //    拽回去（用户 2026-10-30：「从别的地方回到焦点时候，顺滑过渡」）。
-                    //    现在按平均行距估算距离、一次缓动过去；估算失准时由 ② 收尾，
-                    //    完全失效才退回瞬移（宁可硬一下，也不能停住不动）。
-                    //
-                    //    ⚠️ 只有**这一首歌已经定位过**才滑。首次定位（刚进播放页 / 换歌）
-                    //    直接切到位 —— 那是「本来就该在那」的场景，让它从第一句往下飘一段
-                    //    反而像故障。判据是 [settled]，换歌时随 `lines` 一起重置。
-                    if (listState.layoutInfo.visibleItemsInfo.none { it.index == currentIndex }) {
-                        val reached = if (settled) {
-                            listState.glideToIndex(currentIndex, targetPx, lineSpacingPx)
-                        } else {
-                            false
-                        }
-                        Log.d("LyricDbg", "off-screen idx=$currentIndex reached=$reached settled=$settled")
-                        if (!reached) listState.scrollToItem(currentIndex, -targetPx.roundToInt())
-                    } else {
-                        val off = listState.layoutInfo.visibleItemsInfo
-                            .firstOrNull { it.index == currentIndex }?.offset
-                        Log.d("LyricDbg", "visible idx=$currentIndex offset=$off target=$targetPx")
+                    // ① **首次定位**（刚进播放页 / 换歌）直接切到位：那是「本来就该在那」的
+                    //    场景，让它从第一句往下飘一段反而像故障。判据是 [settled]，换歌时
+                    //    随 `lines` 一起重置。之后（手动翻过 / seek 跳远）才走 ② 滑回来。
+                    if (!settled) {
+                        listState.scrollToItem(currentIndex, -targetPx.roundToInt())
                     }
-                    // ② **逐帧跟随**而不是 animateScrollToItem：后者按“第几行”估算距离，一次性
-                    // 滚完；而选中切换会一步改字号（24sp↔19sp，长行折行数可能变化），
-                    // 列表行高随之跳变。这里每帧读目标行的真实 offset 再逼近，高度变化被
-                    // 持续吸收，最终精确停在 [LyricGoldenAnchor] 对应的 [targetPx]，没有尾巴。
-                    // ① 完成后这里只剩几十 px 的收尾，速度与缓动自然衔接。
+                    // ② **逐帧逼近**而不是 animateScrollToItem：后者按“第几行”估算距离，
+                    //    一次性滚完；而选中切换会一步改字号（24sp↔19sp，长行折行数可能
+                    //    变化），列表行高随之跳变。这里每帧重读一次目标位置再逼近，高度
+                    //    变化被持续吸收，最终精确停在 [LyricGoldenAnchor] 对应的 [targetPx]，
+                    //    没有尾巴。
+                    //
+                    //    目标行还在视口外时，用「首行 offset + 行数 × 当前行距」估算它
+                    //    「本该在」的位置。每帧都用**最新**的可见行重估，行高不匀（署名行
+                    //    与双行歌词混排）也不会把误差攒起来 —— 远距离因此是一条连续的
+                    //    快进 + 缓停，而不是「先滑一段、再瞬移剩下的」。
                     var lastFrame = 0L
                     var startedAt = 0L
                     var frames = 0
                     var lastDelta = Float.NaN
                     while (true) {
                         val layout = listState.layoutInfo
-                        val item = layout.visibleItemsInfo.firstOrNull { it.index == currentIndex } ?: break
+                        val item = layout.visibleItemsInfo.firstOrNull { it.index == currentIndex }
                         val now = withFrameMillis { it }
                         frames++
                         if (startedAt == 0L) startedAt = now
@@ -364,19 +313,38 @@ internal fun LyricsView(
                         if (System.currentTimeMillis() - lastUserScrollAt < 4_000L) break
                         // 首行贴顶时目标锚点不可达，delta 永远不为 0 —— 用超时兜底。
                         if (now - startedAt > Motion.MicroMs * 4) break
-                        val delta = item.offset - targetPx
+                        val delta = if (item != null) {
+                            item.offset - targetPx
+                        } else {
+                            val visible = layout.visibleItemsInfo
+                            val first = visible.firstOrNull() ?: break
+                            val pitch = if (visible.size > 1) {
+                                (visible.last().offset - first.offset).toFloat() / (visible.size - 1)
+                            } else {
+                                lineSpacingPx
+                            }.coerceAtLeast(1f)
+                            first.offset + (currentIndex - first.index) * pitch - targetPx
+                        }
                         lastDelta = delta
                         val dt = if (lastFrame == 0L) 16f else (now - lastFrame).toFloat().coerceIn(4f, 40f)
                         lastFrame = now
                         if (abs(delta) < 0.5f && now - startedAt >= Motion.MicroMs) break
                         // 70ms 时间常数：起步跟手、约 250ms 收敛；尾巴是渐变而不是回弹。
-                        val step = delta * (1f - exp(-dt / 70f))
+                        // 远景步长封顶半屏：跨整首歌的跳转也不至于一帧就飞到地方。
+                        val step = (delta * (1f - exp(-dt / 70f)))
+                            .coerceIn(-layout.viewportSize.height * 0.5f, layout.viewportSize.height * 0.5f)
                         if (abs(step) < 0.02f) {
                             if (now - startedAt >= Motion.MicroMs) break
                         } else {
                             // 已经到边界（列表首/尾）就停，别空转。
                             if (abs(listState.scrollBy(step)) < 0.02f) break
                         }
+                    }
+                    // 极端情况（估算失效 / 边界）没能把目标行带进视口：直接切，宁可硬一下
+                    // 也不能停住不动。
+                    if (listState.layoutInfo.visibleItemsInfo.none { it.index == currentIndex }) {
+                        Log.d("LyricDbg", "fallback jump idx=$currentIndex delta=$lastDelta frames=$frames")
+                        listState.scrollToItem(currentIndex, -targetPx.roundToInt())
                     }
                     Log.d("LyricDbg", "follow end frames=$frames delta=$lastDelta")
                 } finally {
