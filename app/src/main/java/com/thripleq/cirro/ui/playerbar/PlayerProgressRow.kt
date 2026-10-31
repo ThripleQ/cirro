@@ -400,7 +400,12 @@ private fun buildWaveHeights(seed: Int): FloatArray {
     return FloatArray(n) { i ->
         state = state * 1103515245 + 12345
         val noise = ((state ushr 16) and 0x7FFF) / 32767f
-        val envelope = 0.45f + 0.55f * sin(i / (n - 1f) * PI.toFloat() * 2.2f + 0.7f)
-        (envelope * (0.55f + noise * 0.6f)).coerceIn(0.12f, 1f)
+        // 两个不同周期的正弦叠成「几段起伏」，不压到地板：单条低频正弦走到负值再夹到
+        // 0.12 的话，轨道中段会排成一串 2dp 小点，看起来像整首歌中间没有声音。
+        val t = i / (n - 1f)
+        val hump = 0.62f +
+            0.24f * sin(t * PI.toFloat() * 3.4f + 0.5f) +
+            0.14f * sin(t * PI.toFloat() * 8.7f + 2.1f)
+        (hump * (0.55f + noise * 0.6f)).coerceIn(0.22f, 1f)
     }
 }
