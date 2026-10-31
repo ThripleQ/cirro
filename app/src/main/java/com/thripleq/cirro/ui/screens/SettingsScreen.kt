@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -45,10 +46,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thripleq.cirro.BuildConfig
 import com.thripleq.cirro.core.playback.PlaybackPreferences
+import com.thripleq.cirro.core.playback.ProgressBarStyle
 import com.thripleq.cirro.core.update.UpdateChecker
 import com.thripleq.cirro.core.update.UpdateManager
 import com.thripleq.cirro.core.update.UpdateRelease
 import com.thripleq.cirro.ui.components.CirroPaperPage
+import com.thripleq.cirro.ui.playerbar.ProgressStyleSample
+import com.thripleq.cirro.ui.playerbar.ProgressStyleState
 import com.thripleq.cirro.ui.profile.ProfileUiState
 import com.thripleq.cirro.ui.profile.ProfileViewModel
 import com.thripleq.cirro.ui.theme.CirroShape
@@ -62,8 +66,27 @@ private val QualityLabels = mapOf(
     "lossless" to "无损",
 )
 
+/** 进度条样式的显示名与一行说明（设置页 + 右侧静态小样）。 */
+private val ProgressStyleLabels = mapOf(
+    ProgressBarStyle.Capsule to "胶囊",
+    ProgressBarStyle.Hairline to "发丝线",
+    ProgressBarStyle.Dot to "细线圆点",
+    ProgressBarStyle.Solid to "细实线",
+    ProgressBarStyle.TimeChip to "时间胶囊",
+    ProgressBarStyle.Waveform to "波形",
+)
+
+private val ProgressStyleNotes = mapOf(
+    ProgressBarStyle.Capsule to "16dp 粗轨 + 竖条拇指（原来那款）",
+    ProgressBarStyle.Hairline to "2dp 细轨 + 5.5dp 圆点，网易云版式",
+    ProgressBarStyle.Dot to "3dp 轨道 + 7.5dp 圆点",
+    ProgressBarStyle.Solid to "2dp 实线 + 7dp 圆点",
+    ProgressBarStyle.TimeChip to "时长嵌在轨道左端，拖动时才见圆点",
+    ProgressBarStyle.Waveform to "柱状波形，按曲目固定（示意）",
+)
+
 /**
- * 设置页：详情页骨架（圆角纸 + 右上收起键），内容按「账号 / 播放 / 关于」分组。
+ * 设置页：详情页骨架（圆角纸 + 右上收起键），内容按「账号 / 播放 / 外观 / 关于」分组。
  *
  * 音质直接读写 [PlaybackPreferences] —— 与播放页的设置面板共用同一份偏好，
  * 两边改完立刻互见（面板每次打开都重读）。
@@ -80,6 +103,7 @@ internal fun SettingsScreen(
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     var quality by remember { mutableStateOf(PlaybackPreferences.quality(context)) }
+    var progressStyle by remember { mutableStateOf(ProgressStyleState.current(context)) }
     val islandClearance = with(LocalDensity.current) { islandHeight.dp }
 
     // 「账号」一组只在登录时存在：登出后这一组连同确认框一起消失。
@@ -164,6 +188,33 @@ internal fun SettingsScreen(
             }
             item(key = "quality_note") {
                 SettingsNote("在线播放取流时使用这一档；服务端没有该档位时自动降级。")
+            }
+
+            item(key = "appearance_header") { SettingsSection("外观") }
+            item(key = "progress_style") {
+                SettingsCard {
+                    ProgressBarStyle.entries.forEachIndexed { index, style ->
+                        if (index > 0) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                            )
+                        }
+                        ProgressStyleRow(
+                            style = style,
+                            label = ProgressStyleLabels.getValue(style),
+                            description = ProgressStyleNotes.getValue(style),
+                            selected = style == progressStyle,
+                            onSelect = {
+                                progressStyle = style
+                                ProgressStyleState.set(context, style)
+                            },
+                        )
+                    }
+                }
+            }
+            item(key = "progress_note") {
+                SettingsNote("只改播放页进度条的外观，拖动与 seek 不受影响。波形是按曲目固定的示意图形，不是真实音频波形。")
             }
 
             item(key = "about_header") { SettingsSection("关于") }
@@ -303,6 +354,59 @@ private fun QualityRow(
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
             )
+        }
+    }
+}
+
+/**
+ * 进度条样式行：左侧名称+一句说明，右侧直接画这个样式的静态小样 —— 选之前就能看见。
+ * 小样与播放页共用 `ProgressStyleSample` / `drawProgress`，改绘制只改一处。
+ */
+@Composable
+private fun ProgressStyleRow(
+    style: ProgressBarStyle,
+    label: String,
+    description: String,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onSelect)
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        ProgressStyleSample(
+            style = style,
+            modifier = Modifier.width(96.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Box(
+            modifier = Modifier.size(20.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    Icons.Filled.Check,
+                    contentDescription = "已选中",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }

@@ -96,6 +96,9 @@ object CirroFade {
     /** 进度条 / 滑块未填充轨道底的弱化。 */
     const val TRACK: Float = 0.12f
 
+    /** 波形样式里未播放的柱条：比细线轨略实，否则在浅底上几乎看不见。 */
+    const val WAVE_IDLE: Float = 0.24f
+
     /** 未激活功能胶囊的容器底：primaryContainer 按此倍率淡化（激活态是满值）。 */
     const val IDLE_CONTAINER: Float = 0.45f
 
