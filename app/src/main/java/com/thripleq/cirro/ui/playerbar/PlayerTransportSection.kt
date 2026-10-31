@@ -83,17 +83,19 @@ internal fun PlayerTransportSection(
     val bottomCtlGap = lerp(ctrlGap, 10.dp, lyricsLayout)
     // 三键之下、胶囊行之上的间距。歌词档再收掉约 47%（57→30dp），三键跟着下移。
     val capsuleGap = TransportBottomGap * sc * (1f - 0.47f * lyricsLayout)
-    // 三档尺寸拉开主次（2026-10-31 用户：这一行「需要调整大小，彰显主次关系」）：
-    // 播放 46→56（主）＞ 切歌 26→36（次）＞ 顺序/列表 22→27（辅）。
-    // 之前四枚侧键同尺寸：Repeat / QueueMusic 的笔画几乎占满视口，而 SkipPrevious /
+    // 三档尺寸拉开主次（2026-10-31 用户：「参考一下网易云的大小」）。照着同屏网易云
+    // 播放页量了字形（本机密度 2.75）：播放三角高约 35dp、切歌约 20dp、顺序/列表约 18dp。
+    // 换算成我们的圆角字形盒子就是 62 / 44 / 27 —— 播放和切歌各比上一版大一圈，
+    // 顺序/列表不动（那一档本来就与网易云相当）。
+    // 之前四枚侧键同尺寸时：Repeat / QueueMusic 的笔画几乎占满视口，而 SkipPrevious /
     // SkipNext 是窄字形，看上去顺序/列表反而比切歌更大，主次正好是反的。
-    val skipBtnDim = lerp(26.dp, 36.dp, sc)
+    val skipBtnDim = lerp(29.dp, 44.dp, sc)
     val utilBtnDim = lerp(22.dp, 27.dp, sc)
-    // 播放键：用户「不要这种有红色圆圈的」「更大」。盒子 48→64 只当触控区（图标变大后要
-    // 留余量），图标 46→56（比切歌那档再大一圈，整行的视觉重心落在播放上）。
-    val playBox = lerp(48.dp, 64.dp, sc)
-    val playIcon = lerp(46.dp, 56.dp, sc)
-    // 没有容器色了，播放图标与切歌图标同色 —— 靠尺寸（56 vs 36 vs 27）分主次。
+    // 播放键：用户「不要这种有红色圆圈的」「更大」。盒子 54→72 只当触控区（图标变大后要
+    // 留余量），图标 50→62。
+    val playBox = lerp(54.dp, 72.dp, sc)
+    val playIcon = lerp(50.dp, 62.dp, sc)
+    // 没有容器色了，播放图标与切歌图标同色 —— 靠尺寸（62 vs 44 vs 27）分主次。
     val playTint = MaterialTheme.colorScheme.onSurface
 
     AnimatedVisibility(
