@@ -103,7 +103,8 @@ internal fun SettingsScreen(
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     var quality by remember { mutableStateOf(PlaybackPreferences.quality(context)) }
-    var progressStyle by remember { mutableStateOf(ProgressStyleState.current(context)) }
+    // 直接读共享状态（Compose 状态，写入会触发重组），不另存本地副本 —— 与播放页同一份真相。
+    val progressStyle = ProgressStyleState.current(context)
     val islandClearance = with(LocalDensity.current) { islandHeight.dp }
 
     // 「账号」一组只在登录时存在：登出后这一组连同确认框一起消失。
@@ -206,7 +207,6 @@ internal fun SettingsScreen(
                             description = ProgressStyleNotes.getValue(style),
                             selected = style == progressStyle,
                             onSelect = {
-                                progressStyle = style
                                 ProgressStyleState.set(context, style)
                             },
                         )
