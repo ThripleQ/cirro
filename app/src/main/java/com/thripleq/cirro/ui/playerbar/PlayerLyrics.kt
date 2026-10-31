@@ -183,9 +183,10 @@ private suspend fun LazyListState.glideToIndex(
     val distance = first.offset + (index - first.index) * pitch - anchorPx
     if (abs(distance) < 1f) return true
     val durationMs = (abs(distance) / 3f).toInt().coerceIn(180, 520)
-    scroll {
-        animateScrollBy(distance, tween(durationMs, easing = Motion.Standard))
-    }
+    // ⚠️ 不要再包一层 `scroll { }`：animateScrollBy 自己就要拿滚动锁（内部 scroll 一次），
+    // 外面再套一层同优先级的 mutation，内层会把外层**取消掉** —— 表现是 effect 静默死掉、
+    // 列表一动不动，日志里只剩一句 "effect start"（2026-10-31 实测）。
+    animateScrollBy(distance, tween(durationMs, easing = Motion.Standard))
     return layoutInfo.visibleItemsInfo.any { it.index == index }
 }
 
