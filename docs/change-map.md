@@ -93,6 +93,9 @@
 | **VIP 歌要能拿到 URL / 试听，请求必须带 `os` + `appver`** | 服务端**按权益发 URL**：`/weapi/song/enhance/player/url/v1` 对未购 VIP 歌要求请求**同时带非空的 `os` 与 `appver`**，缺任一个一律回 `{code:200, data:[{code:-110, url:null, freeTrialInfo:null}]}`（免费与低音质免费歌不看这两个字段 ⇒ 症状恰好是「只有 VIP 歌播不了、连 30 秒试听都没有」）。内核里**只有这条端点**依赖「活 jar 恰好带这两个字段」（它走 `ne_call_weapi`，而那只发活 jar；别处的注入写的是 `jar_snapshot()` 的 scratch，不落回活 jar），所以它改走注入版 `ne_call_weapi_cookies(url, data, COOKIES_OS_IOS)` —— 见 `libnetease/src/service/services.c` 的 `ne_song_url_v1`。**别改回 `ne_call_weapi`，也别用 `COOKIES_OS_PC`**（后者 `appver` 会变空串，实测同样 -110） |
 | **「试听」标**与「试听已结束 · 开通 VIP 可听完整版」提示 | 标：`ui/components/TrialBadge.kt`（形制抄 `CirroPayBadge`，颜色用 `tertiary` —— 主色红已被红心占用）。挂载点：`PlayerDock.kt` 迷你条、`PlayerPageContent.kt` 歌手行 + 进度行下方；状态字段是 `PlayerUiState.trial` / `.trialEnded`（`ui/playerbar/PlayerState.kt`） |
 | 播放页：改**壳**（圆角/投影/展开手势/系统栏）还是改**壳里排什么** | 壳 = `ui/playerbar/PlayerPage.kt`；内容区（封面→标题→进度→控制整列）= `ui/playerbar/PlayerPageContent.kt`（2026-10-17 从 1009 行拆出）。⚠️ 内容区是全项目**唯一逐帧重组**的组合，往里加东西按「每帧都会重跑」估价 |
+| 播放页**进度条的画法与样式**（六款 / 圆点 / 时间胶囊 / 波形） | `ui/playerbar/PlayerProgressRow.kt` —— `drawProgress` 一处 `when` 分叉，设置页小样（`ProgressStyleSample`）复用同一函数。**别改回 M3 默认轨道**：它有起步阈值，已播段会「先看不见、再蹦一块」（2026-10-31 修） |
+| 进度条样式的枚举与落盘 | `core/playback/ProgressBarStyle.kt`（key **只追加**）＋ `core/playback/PlaybackPreferences.kt` 的 `progressBarStyle` / `setProgressBarStyle`（读不到 key 就落回 `Capsule`）＋ `ui/playerbar/ProgressStyleState.kt`（进程内 Compose 状态，改完播放页立刻重绘） |
+| 设置页的分组与行（账号 / 播放 / 外观 / 关于） | `ui/screens/SettingsScreen.kt`；行都是同文件的 `private` 组合函数，「外观」分组就是进度条样式列表 |
 | 「我的」页：改**卡片零件**还是改**登录态版面** | 零件（行卡 / 已购壳 / hero 卡）= `ui/screens/ProfileCards.kt`；登录态版面（未登录引导 + 已登录组合 + 退出登录）= `ui/screens/ProfileLoginCards.kt`（2026-10-17 拆出）。共用的零件是 `internal`，**只放宽真正被跨文件用到的那几个** |
 
 ## 4. 装配与其他

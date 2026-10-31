@@ -27,6 +27,7 @@ ui/
 ├── profile/       # 我的（ProfileViewModel：登录态+区块数据；TrackListViewModel：统一"壳+列表"页状态）
 ├── playerbar/     # 播放（PlayerDock.kt：常驻 dock + 全屏播放页**合体**，一份 PlayerDockState；
 │                  #   rememberPlayerState/rememberPlayerPosition 是播放状态的唯一真相源；
+│                  #   PlayerProgressRow.kt：进度行（六种样式，轨道/拇指全自绘）；
 │                  #   ActionNavRow 为滚动操作行（滑出头部按钮后出现），列表只负责上报）
 ├── components/    # 跨功能通用组件（ExpandableShell：胶囊→全屏通用伸展壳；
 │                  #   CommentsOpener：评论浮层的打开入口，由 CirroApp 在根上提供；
@@ -34,6 +35,7 @@ ui/
 └── screens/       # 布局主体（哑组件，跨功能）
     ├── HomeScreen.kt        # 探索 tab 首页（横滑卡片行 + 展开壳内嵌 TrackListScreen）
     ├── SearchScreen.kt      # 搜索 tab（落地页 + 结果列表）
+    ├── SettingsScreen.kt    # 设置：账号 / 播放 / 外观（进度条样式）/ 关于
     ├── ProfileScreen.kt     # 我的：登录入口 + 喜欢/已购/歌单区块
     ├── ProfileCards.kt      # 我的页的卡片零件（行卡 / hero 卡 / 已购壳）— 2026-10-17 拆出
     ├── ProfileLoginCards.kt # 我的页的登录态版面（未登录引导 / 已登录组合 / 退出登录）— 同上

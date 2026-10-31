@@ -141,6 +141,14 @@ libnetease 以 `NE_USE_CURL=OFF` 编译，**不依赖 curl**。所有请求照�
   `primaryContainer` 圆；标题/歌手全程在封面下方。
 - **状态与真相源**：`rememberPlayerState`（元数据/播放态，低频）与 `rememberPlayerPosition`
   （进度，高频）拆开订阅，避免 250ms 轮询触发整页重组；播放控制走 `PlayerHolder`。
+- **进度行自绘**（2026-10-31）：`PlayerProgressRow.kt` 把轨道与拇指全画在 Canvas 上（Slider 的
+  `thumb` 留空），因为 M3 默认轨道有**起步阈值**——已播段要先宽过拇指间隙 + 圆角才画得出来，
+  4 分钟的歌前十几秒一点红都没有、越线时一次蹦出一大块。自绘从 0 连续生长；拇指留空后轨道
+  铺满整宽，`width * fraction` 正好是触摸解算的原点，拖动 / seek 仍走同一条 M3 Slider 手势。
+  六种样式（胶囊 / 发丝线 / 细线圆点 / 细实线 / 时间胶囊 / 波形）只在 `drawProgress` 的一个
+  `when` 里分叉，设置页的小样复用同一函数。样式选择是 `ProgressBarStyle`（key 落盘）+
+  `ProgressStyleState`（进程内 Compose 状态：暂停时没有轮询，只有状态变化能触发重绘）+
+  `PlaybackPreferences`。波形按 `mediaId` 固定生成，是示意图形而非真实音频数据。
 - **通用伸展壳**：`ui/components/ExpandableShell.kt` 提供「胶囊 → 全屏面板」的通用过渡
   （我的页「喜欢的音乐」等复用），动画/尾帧/BackHandler 内聚，并约定与起点胶囊同构的对齐契约。
 - **单一时间基（伸展壳）**：整只壳只有**一个** `progressAnim: 0..1`，宽 / 高 / 平移 / 圆角 / hero /
@@ -455,6 +463,8 @@ lambda 内）—— 进度变化只作废绘制，不重跑组合。首帧还是
 - [x] 我的页：登录（Cookie 粘贴 / 短信验证码）+ 喜欢的音乐 + 已购 + 收藏/创建的歌单
 - [ ] 登录二维码（另做）
 - [x] 播放页打磨（PlayerDock 合体：迷你条↔卡片↔全屏两段式、单布局连续形变、随机/循环接 ExoPlayer）
+- [x] 播放页进度条六种样式 + 设置页「外观」分组（2026-10-31）：轨道/拇指全自绘，样式落盘、
+      切换即时生效；波形是按曲目固定的示意图形（见 §六）
 - [x] 探索(Home) / 搜索页（2026-10 起已实现：探索页横滑卡片行 + 展开壳，搜索页落地页 + 结果列表）
 - [x] 交互按钮接线（2026-10-06）：歌单页 分享 / 评论 / 收藏 / 排序、播放页 红心、评论页 点赞
       —— 写操作统一走 `core/repo/InteractionRepository.kt`，收藏态走 `core/repo/LibraryStateStore.kt`
