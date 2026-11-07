@@ -50,6 +50,28 @@ class PlaybackLauncher @Inject constructor() {
         PlayerHolder.insertNext(context, track)
     }
 
+    /**
+     * 列表页「播放全部 / 随机播放」专用：按 [kind] 定好队列顺序，再整单播放。
+     *
+     * 与 [play] 的差别只有一处 —— 入队前按 [planListPlayback] 的决定关掉播放器的随机模式，
+     * 让传入的队列顺序真正生效（理由见 `ListPlaybackPolicy.kt`）。其余（落盘队列、URL
+     * 惰性解析、试听身份、前台服务）全复用 [play]，不另写第二份。
+     *
+     * ⚠️ 关随机必须发生在 `setMediaItems` **之前**：换队列时 Media3 会重建 ShuffleOrder，
+     * 之后再关，中间那一帧的当前曲目已经按旧随机序定位过了。也因此这里先
+     * [PlayerHolder.get] 拿播放器 —— 冷启动那次 `restore()` 会在此刻把上次的 shuffle 态
+     * 写回来，之后读到的才是真实当前值。
+     *
+     * 线程要求同 [play]：主线程（ViewModels 用 `viewModelScope` 满足）。
+     */
+    fun playList(context: Context, tracks: List<Track>, kind: ListPlaybackKind) {
+        if (tracks.isEmpty()) return
+        val player = PlayerHolder.get(context)
+        val plan = planListPlayback(tracks, kind, player.shuffleModeEnabled)
+        if (plan.clearShuffle) player.shuffleModeEnabled = false
+        play(context, plan.tracks, 0)
+    }
+
     /** Plays [tracks] as the queue, starting at [index]. */
     fun play(context: Context, tracks: List<Track>, index: Int) {
         if (tracks.isEmpty()) return

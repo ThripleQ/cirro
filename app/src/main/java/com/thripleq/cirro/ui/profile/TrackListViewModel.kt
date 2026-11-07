@@ -3,6 +3,7 @@ package com.thripleq.cirro.ui.profile
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.thripleq.cirro.core.playback.ListPlaybackKind
 import com.thripleq.cirro.core.playback.PlaybackLauncher
 import com.thripleq.cirro.core.repo.ChartRepository
 import com.thripleq.cirro.core.repo.HomeRepository
@@ -303,20 +304,23 @@ class TrackListViewModel @Inject constructor(
     /* ── 列表级动作 ───────────────────────────────────────────────── */
 
     /**
-     * 「随机播放」这一张列表：把**当前视图顺序**（含用户选的排序）打乱后整单播。
+     * 「随机播放」这一张列表：把**当前屏幕这份顺序**（含用户选的排序）打乱后整单播。
      *
-     * 走「预先打乱的队列」而不是打开 ExoPlayer 的 shuffle 开关：
-     *   · 播放页看到的就是**真实播放顺序**（队列 UI 与听到的一致）；
-     *   · 不改动用户那个 shuffle 开关的状态 —— 官方那也是「随机播一次」，不是替他改设置。
+     * 与 [onPlayAll] 走同一条 [PlaybackLauncher.playList]、读**同一份**视图集合 —— 旧实现
+     * 在这里从 `loaded.applySort(_sort.value)` 现算一份，与「播放全部」拿到的 UI 快照来源
+     * 不同，排序刚切完那一瞬两枚按钮可能给出不一样的「眼前顺序」。
+     *
+     * 走「预先打乱的队列」而不是打开 ExoPlayer 的 shuffle 开关：播放页看到的队列就是
+     * **真实播放顺序**（队列 UI 与听到的一致）。随机模式若本来开着，会由 playList 先关掉，
+     * 免得打乱过的队列被播放器再随机一次（判据见 `ListPlaybackPolicy.kt`）。
      *
      * 会弹出播放页，与 [onPlayAll] 同一条路（列表里点某一首才不弹，见 [onTrackClick]）。
      */
     fun shuffleAll() {
-        val base = loaded ?: return
-        val tracks = base.applySort(_sort.value).tracks.shuffled()
-        if (tracks.isEmpty()) return
+        val collection = (uiState.value as? TrackListUiState.Ready)?.collection ?: return
+        if (collection.tracks.isEmpty()) return
         viewModelScope.launch {
-            playback.play(context, tracks, 0)
+            playback.playList(context, collection.tracks, ListPlaybackKind.SHUFFLED)
             _openPlayer.tryEmit(Unit)
         }
     }
@@ -360,12 +364,18 @@ class TrackListViewModel @Inject constructor(
         }
     }
 
-    /** 头部「播放」按钮：从第一首开始整单播放。**仍然弹出播放页** —— 用户那条「点了不要
-     *  进播放页」说的是列表里点某一首（[onTrackClick]）；「播放全部」是整单播放的入口，
-     *  官方也是弹播放页的。若这条也要去掉，删下面那行 emit 即可（本类是该 flow 的唯一生产者）。 */
+    /** 「播放全部」：按列表**眼前这份顺序**从第一首开始整单播放。
+     *
+     * 播放器随机模式若开着，[PlaybackLauncher.playList] 会先关掉它 —— 否则传入的队列只是
+     * 「未随机序」，点完播放全部之后仍按随机走，与按钮字面意思相反（2026-11-07 用户：
+     * 「理顺随机与顺序」）。排序选了什么就按什么播，因为 [collection] 就是当前显示的视图。
+     *
+     * **仍然弹出播放页** —— 用户那条「点了不要进播放页」说的是列表里点某一首
+     * （[onTrackClick]）；「播放全部」是整单播放的入口，官方也是弹播放页的。若这条也要去掉，
+     * 删下面那行 emit 即可（本类是该 flow 的唯一生产者）。 */
     fun onPlayAll(collection: TrackCollection) {
         viewModelScope.launch {
-            playback.play(context, collection.tracks, 0)
+            playback.playList(context, collection.tracks, ListPlaybackKind.IN_ORDER)
             _openPlayer.tryEmit(Unit)
         }
     }
