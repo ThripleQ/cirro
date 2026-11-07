@@ -51,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thripleq.cirro.ui.components.CirroMiniTitleBar
 import com.thripleq.cirro.ui.components.CirroPageTitleBar
 import com.thripleq.cirro.ui.components.cirroCollapsingSheet
+import com.thripleq.cirro.ui.components.cirroSheetLift
 import com.thripleq.cirro.ui.components.cirroTitleCollapse
 import com.thripleq.cirro.ui.components.rememberCirroSheetTop
 import com.thripleq.cirro.ui.components.rememberCirroTitleCollapse
@@ -92,10 +93,11 @@ fun SearchScreen(
     // 2026-10-16 起外层是 `Box`：纸顶会随滚动上抬把「搜索」吞掉（滑进半遮），需要纸能
     // 向上画进标题条那一段 —— `Column` 里第二个子项够不到那里。见 [CirroTitleCollapse]。
     //
-    // ⚠️ **搜索条不跟着纸顶上抬**，它是纸里布局位置固定的一行。理由：纸顶是**绘制期**
-    // 的裁剪边界，纸里的一切都不动；要让搜索条跟着抬，就得把整块纸（含内容）上移再给
-    // 内容补偿一份，内容是滚动的、补偿等于再叠一条时间线。代价是纸顶抬起后、搜索条上方
-    // 会露出一小段纸色（上限 = 标题条高），换来的是搜索条位置恒定、不会滑进状态栏下。
+    // 2026-11-07 起**纸内整块骨架跟着纸沿上抬**（[cirroSheetLift]）：搜索条是这张纸的顶盖、
+    // 不随内容滚动，而下方列表视口的布局起点又被顶盖钉死 —— 纸沿上抬让出的那 29px
+    // 谁也填不进去，顶盖上方就空出一截纸色，像顶盖和纸脱了节（用户：「搜索框没有配合」）。
+    // 让顶盖与列表一起按纸沿的同一个 offsetPx 上移：内容相对纸沿一像素不动，
+    // 既贴住纸沿、也不会在顶盖和列表之间裂开第二条缝。位移是绘制期的，不改布局。
     val collapse = rememberCirroTitleCollapse()
     val sheetTop = rememberCirroSheetTop()
     Box(
@@ -111,6 +113,9 @@ fun SearchScreen(
             Modifier
                 .fillMaxSize()
                 .cirroCollapsingSheet(collapse, sheetTop)
+                // ⚠️ 必须挂在 cirroCollapsingSheet **之后**（内层）：挂反了会连纸色一起平移，
+                // 纸顶变成 topPx - 2×offsetPx。见 [cirroSheetLift]。
+                .cirroSheetLift(collapse)
                 // 纸内内容让开标题条：垫在纸顶上（与改动前的布局位置一致）。
                 .padding(top = sheetTop),
         ) {
@@ -162,6 +167,10 @@ fun SearchScreen(
 
 /* ── 搜索条：壳子纸的顶盖 ───────────────────────────────── */
 
+/**
+ * 纸沿上抬时的跟随位移不由本函数负责，由外层内容容器挂 [cirroSheetLift] 统一处理
+ * （顶盖和下方列表必须一起走，只抬这一行会在两者之间裂开一条缝）。
+ */
 @Composable
 private fun SearchField(
     query: String,

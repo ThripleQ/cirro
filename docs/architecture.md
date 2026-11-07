@@ -468,6 +468,9 @@ lambda 内）—— 进度变化只作废绘制，不重跑组合。首帧还是
 - [x] 设置页「允许与其他应用同时播放」（2026-11-07）：默认关 = Media3 申请 `AUDIOFOCUS_GAIN`；
       开启后不接管音频焦点，可与别的 App 一起出声。运行期用 `setAudioAttributes(attrs, false)`
       切换，不用重建播放器；语义由 `AudioFocusPolicyTest` 锁定
+- [x] 搜索页搜索条配合「滑进半遮」（2026-11-07）：纸内骨架（顶盖 + 下方列表）整块按纸沿
+      的 `offsetPx` 在绘制期上抬，顶盖不再与圆角纸脱节；见 `TitleCollapse.kt` 的
+      `cirroSheetLift`（必须挂在 `cirroCollapsingSheet` 内层）
 - [x] 探索(Home) / 搜索页（2026-10 起已实现：探索页横滑卡片行 + 展开壳，搜索页落地页 + 结果列表）
 - [x] 交互按钮接线（2026-10-06）：歌单页 分享 / 评论 / 收藏 / 排序、播放页 红心、评论页 点赞
       —— 写操作统一走 `core/repo/InteractionRepository.kt`，收藏态走 `core/repo/LibraryStateStore.kt`

@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -239,6 +240,46 @@ fun rememberCirroTitleCollapse(): CirroTitleCollapse {
  */
 fun Modifier.cirroTitleCollapse(collapse: CirroTitleCollapse?): Modifier =
     if (collapse == null) this else nestedScroll(collapse.connection)
+
+/**
+ * **纸内固定骨架**跟随纸沿上抬：纸沿上移多少，这块内容就在绘制期上移多少。
+ *
+ * ## 用途（目前只有搜索页）
+ *
+ * 探索 / 我的两页的内容是 `LazyColumn` 铺满整屏，纸顶抬起让出的那一段会被**滚上来的内容**
+ * 自己填掉（见 [cirroCollapsingSheet]）。搜索页不一样：它有一行**不滚动的搜索条**当纸的
+ * 顶盖，顶盖下面才是 `weight(1f)` 的结果/落地列表，列表视口的布局起点被顶盖钉死 ——
+ * 纸沿抬起后，那 29px 谁也填不进去，于是顶盖上方空出一截纸色，看着像「顶盖和纸脱了节」
+ * （2026-11-07 用户：「搜索框没有配合」）。
+ *
+ * 把 [cirroSheetLift] 挂在**内容容器**上（在 [cirroCollapsingSheet] 之内），整块骨架连顶盖
+ * 带列表一起上移同样的距离：顶盖重新贴住纸沿，顶盖与列表之间也不会裂开第二条缝。
+ *
+ * ## ⚠️ 挂的位置：必须在 [cirroCollapsingSheet] **之后**（更内层）
+ *
+ * 那个 Modifier 的 `drawWithContent` 负责画纸色和裁剪边界；若挂到它外层，连纸色一起被平移，
+ * 纸顶就变成 `topPx - 2 × offsetPx`，整个半遮几何全错。挂在内层则只有 `drawContent()`
+ * 里的内容被抬，纸色与裁剪仍按原样画，而且内容抬上去后照样落在 `clipPath` 内。
+ *
+ * ## 为什么不会「多走一份」/ 不会漂
+ *
+ * 位移读的是与纸沿**同一个** [CirroTitleCollapse.offsetPx]、同一帧：纸沿是
+ * `topPx - offsetPx`、内容是 `translationY = -offsetPx` ⇒ 内容相对纸沿**一像素都没动**，
+ * 滚动手感完全不变。这与「让纸顶跟手」那种随滚动累积的位移不是一回事，不会叠出第二条时间线。
+ * 读值在 `graphicsLayer` 的绘制期 lambda 里 ⇒ 补间全程只重绘、不重组、不重新布局；
+ * 命中测试随 layer 矩阵一起变换，搜索框输入与图标不会点空。
+ *
+ * ## 静止态逐像素不变
+ *
+ * `offsetPx = 0` ⇒ 位移 0，展开态与改造前完全一样：圆角纸顶角、搜索条内缩、纸顶线契约
+ * 都不动。行程只有条高的 1/3（≈11dp），顶盖不会滑进状态栏下。纸沿之下 [SoftBand]
+ * 那 6dp 内容浮出带会盖到顶盖上沿，但顶盖自己有 12dp 上内缩（图标/文字从 12dp 起），
+ * 渐变只落在那段空白内缩里，碰不到内容。
+ *
+ * @param collapse 本页的收起点；`null` = 不参与半遮，内容静止（原样返回）。
+ */
+fun Modifier.cirroSheetLift(collapse: CirroTitleCollapse?): Modifier =
+    if (collapse == null) this else graphicsLayer { translationY = -collapse.offsetPx }
 
 /**
  * **初始纸顶**（相对本屏顶）：状态栏让位 + 标题条高度 = 标题条下沿。
