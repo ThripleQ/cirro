@@ -8,6 +8,7 @@ object PlaybackPreferences {
     private const val FILE = "playback"
     private const val KEY_QUALITY = "quality"
     private const val KEY_PROGRESS_STYLE = "progress_style"
+    private const val KEY_ALLOW_CONCURRENT_PLAYBACK = "allow_concurrent_playback"
 
     /** 音质档位，从低到高；`exhigh`(320k) 为默认。 */
     val QUALITIES = listOf("standard", "higher", "exhigh", "lossless")
@@ -28,6 +29,20 @@ object PlaybackPreferences {
 
     fun setProgressBarStyle(context: Context, style: ProgressBarStyle) {
         prefs(context).edit().putString(KEY_PROGRESS_STYLE, style.key).apply()
+    }
+
+    /**
+     * 「允许与其他应用同时播放音频」。默认关 = 独占音频焦点（老行为）。
+     * 只存偏好的**值**，怎么作用到播放器由 [AudioFocusPolicy] 与 `PlayerHolder` 负责。
+     */
+    fun allowConcurrentPlayback(context: Context): Boolean =
+        prefs(context).getBoolean(
+            KEY_ALLOW_CONCURRENT_PLAYBACK,
+            AudioFocusPolicy.DEFAULT_ALLOW_CONCURRENT_PLAYBACK,
+        )
+
+    fun setAllowConcurrentPlayback(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ALLOW_CONCURRENT_PLAYBACK, value).apply()
     }
 
     /** 选定的音质档取不到时，逐级向下回退，最终兜底 standard。 */

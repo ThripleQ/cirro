@@ -465,6 +465,9 @@ lambda 内）—— 进度变化只作废绘制，不重跑组合。首帧还是
 - [x] 播放页打磨（PlayerDock 合体：迷你条↔卡片↔全屏两段式、单布局连续形变、随机/循环接 ExoPlayer）
 - [x] 播放页进度条六种样式 + 设置页「外观」分组（2026-10-31）：轨道/拇指全自绘，样式落盘、
       切换即时生效；波形是按曲目固定的示意图形（见 §六）
+- [x] 设置页「允许与其他应用同时播放」（2026-11-07）：默认关 = Media3 申请 `AUDIOFOCUS_GAIN`；
+      开启后不接管音频焦点，可与别的 App 一起出声。运行期用 `setAudioAttributes(attrs, false)`
+      切换，不用重建播放器；语义由 `AudioFocusPolicyTest` 锁定
 - [x] 探索(Home) / 搜索页（2026-10 起已实现：探索页横滑卡片行 + 展开壳，搜索页落地页 + 结果列表）
 - [x] 交互按钮接线（2026-10-06）：歌单页 分享 / 评论 / 收藏 / 排序、播放页 红心、评论页 点赞
       —— 写操作统一走 `core/repo/InteractionRepository.kt`，收藏态走 `core/repo/LibraryStateStore.kt`

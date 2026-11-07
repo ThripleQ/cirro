@@ -161,6 +161,22 @@ object PlayerHolder {
     }
 
     /**
+     * 设置页切「允许与其他应用同时播放」后**立刻生效**。
+     *
+     * player 是进程级单例、只 build 一次，光落盘要等下次冷启动才见效；Media3 的
+     * [Player.setAudioAttributes] 支持运行期改 `handleAudioFocus`（true→false 会顺带
+     * 释放已持有的焦点）。必须在主线程调用（ExoPlayer 非线程安全）。
+     * 播放器还没建时直接返回 —— [get] 创建时会读同一份偏好，不会漏掉。
+     */
+    fun applyAudioFocusPolicy(context: Context) {
+        val p = player ?: return
+        val handle = AudioFocusPolicy.handlesAudioFocus(
+            PlaybackPreferences.allowConcurrentPlayback(context.applicationContext),
+        )
+        p.setAudioAttributes(p.audioAttributes, handle)
+    }
+
+    /**
      * 播放失败的处理，分两种：
      * - **可恢复的 IO 错误**（CDN 403 签名过期、网络抖动）：失效该曲 URL 缓存、
      *   原地 `prepare()` 重解析一次，而不是直接跳歌（成熟播放器的做法）。
@@ -561,9 +577,15 @@ object PlayerHolder {
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
 
+        // 创建时读一次偏好：关（默认）→ Media3 申请 AUDIOFOCUS_GAIN，独占焦点；
+        // 开 → 不申请，两路声音并存。运行期在设置页改走 [applyAudioFocusPolicy]。
+        val handleAudioFocus = AudioFocusPolicy.handlesAudioFocus(
+            PlaybackPreferences.allowConcurrentPlayback(context),
+        )
+
         return ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaFactory)
-            .setAudioAttributes(audioAttributes, /* handleAudioFocus= */ true)
+            .setAudioAttributes(audioAttributes, handleAudioFocus)
             // 流媒体用 NETWORK 唤醒锁（LOCAL 只持 CPU 锁，息屏后 WiFi 可能休眠，
             // 弱网/长缓冲时断流）。成熟播放器（Media3 示例 / ViMusic）均用 NETWORK。
             .setWakeMode(C.WAKE_MODE_NETWORK)

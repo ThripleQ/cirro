@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Logout
@@ -27,6 +28,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thripleq.cirro.BuildConfig
 import com.thripleq.cirro.core.playback.PlaybackPreferences
+import com.thripleq.cirro.core.playback.PlayerHolder
 import com.thripleq.cirro.core.playback.ProgressBarStyle
 import com.thripleq.cirro.core.update.UpdateChecker
 import com.thripleq.cirro.core.update.UpdateManager
@@ -103,6 +107,9 @@ internal fun SettingsScreen(
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     var quality by remember { mutableStateOf(PlaybackPreferences.quality(context)) }
+    var allowConcurrentPlayback by remember {
+        mutableStateOf(PlaybackPreferences.allowConcurrentPlayback(context))
+    }
     // 直接读共享状态（Compose 状态，写入会触发重组），不另存本地副本 —— 与播放页同一份真相。
     val progressStyle = ProgressStyleState.current(context)
     val islandClearance = with(LocalDensity.current) { islandHeight.dp }
@@ -189,6 +196,27 @@ internal fun SettingsScreen(
             }
             item(key = "quality_note") {
                 SettingsNote("在线播放取流时使用这一档；服务端没有该档位时自动降级。")
+            }
+            item(key = "concurrent_playback") {
+                SettingsCard {
+                    SettingsSwitchRow(
+                        label = "允许与其他应用同时播放",
+                        checked = allowConcurrentPlayback,
+                        onCheckedChange = { enabled ->
+                            allowConcurrentPlayback = enabled
+                            PlaybackPreferences.setAllowConcurrentPlayback(context, enabled)
+                            // 播放器是进程级单例，不等下次冷启动：当场改音频焦点策略。
+                            PlayerHolder.applyAudioFocusPolicy(context)
+                        },
+                    )
+                }
+            }
+            item(key = "concurrent_note") {
+                SettingsNote(
+                    "开启后 Cirro 不再抢占音频焦点，可与视频、游戏、其他音乐一起出声；" +
+                        "代价是别的 App 播放、来电或导航播报时也不会自动暂停 Cirro。" +
+                        "拔掉耳机仍会自动暂停，切换后立刻生效。",
+                )
             }
 
             item(key = "appearance_header") { SettingsSection("外观") }
@@ -355,6 +383,38 @@ private fun QualityRow(
                 modifier = Modifier.size(20.dp),
             )
         }
+    }
+}
+
+/**
+ * 开关行：整行 `toggleable`（单一事件源 + 无障碍语义），右侧 Switch 只负责显示，
+ * 免得「点开关」和「点整行」各触发一次。内边距与 [QualityRow] 同一套。
+ */
+@Composable
+private fun SettingsSwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            )
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
