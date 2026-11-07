@@ -84,7 +84,7 @@
 | 我想… | 去改 |
 |---|---|
 | 开始播放的入口 / 行为 | `core/playback/PlaybackLauncher.kt` |
-| **列表页「播放全部 / 随机播放」按什么顺序播**（播放器随机模式开着时） | `core/playback/ListPlaybackPolicy.kt` 的 `planListPlayback`（纯判定，单测锁语义）+ `PlaybackLauncher.playList`（入队前关随机）；调用点只有 `ui/profile/TrackListViewModel.kt` 的 `onPlayAll` / `shuffleAll`。**别再让这两枚按钮直接调 `play()`** —— 那样入队顺序会变成 Media3 眼里的「未随机序」 |
+| **列表页「播放全部 / 随机播放」按什么顺序、从哪首开播** | `core/playback/ListPlaybackPolicy.kt` 的 `planListPlayback`（纯判定，单测锁语义）+ `PlaybackLauncher.playList` / 私有 `playInternal`（`setMediaItems` 之后 `setShuffleOrder`）；调用点只有 `ui/profile/TrackListViewModel.kt` 的 `onPlayAll` / `shuffleAll`。**随机模式是全局的，两枚按钮都不许改 `shuffleModeEnabled`** —— 开着时起点是那份随机队列的头一首、不是列表第一首；没开时「播放全部」给原序、「随机播放」打乱一次。别让这两枚按钮直接调 `play()` —— 那条路不知道随机队列 |
 | 播放状态（当前歌、暂停 / 继续、进度、随机 / 循环）给界面用 | `core/playback/PlayerHolder.kt` |
 | 播放控制（播放 / 切歌 / seek / 随机 / 循环） | `core/playback/PlayerHolder.kt` |
 | 后台播放通知 / 服务生命周期 | `core/playback/PlaybackService.kt` |

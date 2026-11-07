@@ -10,6 +10,7 @@ import android.os.Bundle
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import com.thripleq.cirro.core.model.Track
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -51,16 +52,18 @@ class PlaybackLauncher @Inject constructor() {
     }
 
     /**
-     * 列表页「播放全部 / 随机播放」专用：按 [kind] 定好队列顺序，再整单播放。
+     * 列表页「播放全部 / 随机播放」专用：按 [kind] 与播放器**当前的随机模式**定好队列和起点，
+     * 再整单播放。
      *
-     * 与 [play] 的差别只有一处 —— 入队前按 [planListPlayback] 的决定关掉播放器的随机模式，
-     * 让传入的队列顺序真正生效（理由见 `ListPlaybackPolicy.kt`）。其余（落盘队列、URL
-     * 惰性解析、试听身份、前台服务）全复用 [play]，不另写第二份。
+     * 与 [play] 的差别只有两处，都由 [planListPlayback] 决定（理由见 `ListPlaybackPolicy.kt`）：
+     *   1. 起点不一定是队头 —— 随机模式开着时是随机队列的头一首；
+     *   2. 随机模式开着时，把那一份随机队列通过 `setShuffleOrder` 交给播放器。
      *
-     * ⚠️ 关随机必须发生在 `setMediaItems` **之前**：换队列时 Media3 会重建 ShuffleOrder，
-     * 之后再关，中间那一帧的当前曲目已经按旧随机序定位过了。也因此这里先
-     * [PlayerHolder.get] 拿播放器 —— 冷启动那次 `restore()` 会在此刻把上次的 shuffle 态
-     * 写回来，之后读到的才是真实当前值。
+     * **绝不改 `shuffleModeEnabled`**：随机是全局设置，按钮无权接管（2026-11-07 用户明确纠正）。
+     * 其余（落盘队列、URL 惰性解析、试听身份、前台服务）全复用同一份入队实现，不另写第二份。
+     *
+     * ⚠️ 先 [PlayerHolder.get] 拿播放器再读 `shuffleModeEnabled`：冷启动那次 `restore()`
+     * 会在此刻把上次的 shuffle 态写回来，之后读到的才是真实当前值。
      *
      * 线程要求同 [play]：主线程（ViewModels 用 `viewModelScope` 满足）。
      */
@@ -68,12 +71,28 @@ class PlaybackLauncher @Inject constructor() {
         if (tracks.isEmpty()) return
         val player = PlayerHolder.get(context)
         val plan = planListPlayback(tracks, kind, player.shuffleModeEnabled)
-        if (plan.clearShuffle) player.shuffleModeEnabled = false
-        play(context, plan.tracks, 0)
+        playInternal(context, plan.tracks, plan.startIndex, plan.shuffleOrder)
     }
 
-    /** Plays [tracks] as the queue, starting at [index]. */
-    fun play(context: Context, tracks: List<Track>, index: Int) {
+    /** Plays [tracks] as the queue, starting at [index]. 单曲点播 / 「下一首播放」走这条。 */
+    fun play(context: Context, tracks: List<Track>, index: Int) =
+        playInternal(context, tracks, index, shuffleOrder = null)
+
+    /**
+     * 唯一的入队实现。[shuffleOrder] 非 null 时把它装成 Media3 的随机队列交给播放器。
+     *
+     * ⚠️ `setShuffleOrder` 必须排在 `setMediaItems` **之后**：`ExoPlayerImpl` 会校验
+     * `order.length == mediaItemCount`（队列还没建好就抛出 `IllegalArgumentException`），
+     * 而且换队列本身会重建一次默认随机序，先设会被覆盖掉。设上去之后 Media3 只重建
+     * timeline、保留当前曲目与进度（`maskTimelineAndPosition` 用的是当前 index/position），
+     * 于是 `startIndex`（= 随机队列头一首）仍是实际开播的那一首。
+     */
+    private fun playInternal(
+        context: Context,
+        tracks: List<Track>,
+        index: Int,
+        shuffleOrder: IntArray?,
+    ) {
         if (tracks.isEmpty()) return
         val player = PlayerHolder.get(context)
 
@@ -82,6 +101,11 @@ class PlaybackLauncher @Inject constructor() {
 
         val idx = index.coerceIn(0, tracks.lastIndex)
         player.setMediaItems(tracks.map(::trackMediaItem), idx, 0L)
+        if (shuffleOrder != null) {
+            // 第二个参数只是后续 cloneAndInsert（「下一首播放」）重新洗牌用的种子，
+            // 本单的播放顺序完全由传入的排列决定。
+            player.setShuffleOrder(DefaultShuffleOrder(shuffleOrder, System.nanoTime()))
+        }
         // 换队列后按新的当前曲重算试听身份。onMediaItemTransition 在 setMediaItems 时的触发
         // 走的是 Media3 的 PLAYLIST_CHANGED 分支，这里不赌那条语义 —— 它是**上一首试听留下的
         // `pauseAtEndOfMediaItems` 是否会误作用到这一首**的唯一闸门（见 PlayerHolder.refreshTrial）。

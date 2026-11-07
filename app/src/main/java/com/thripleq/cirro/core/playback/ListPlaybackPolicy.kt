@@ -6,70 +6,94 @@ import kotlin.random.Random
 /**
  * 曲目列表页两枚「整单播放」按钮各自要的顺序。
  *
- * 两枚按钮共用 [PlaybackLauncher.playList] 这一条路，差别只在队列怎么排。
+ * 两枚按钮共用 [PlaybackLauncher.playList] 这一条路，差别只在**没开全局随机时**队列怎么排。
  */
 enum class ListPlaybackKind {
     /** 「播放全部」：严格按列表**眼前这份顺序**（含用户选的排序）。 */
     IN_ORDER,
 
-    /** 「随机播放」：把眼前这份顺序**打乱一次**，作为队列顺序。 */
+    /** 「随机播放」：把眼前这份顺序**打乱一次**，作为队列顺序（随机播一次，不改全局开关）。 */
     SHUFFLED,
 }
 
 /**
- * 一次整单播放的决定：入队用的曲目顺序 + 要不要先关掉播放器的随机模式。
+ * 一次整单播放的决定。
  *
- * [tracks] 就是实际交给 `setMediaItems` 的那一份，播放页队列看到的与听到的是同一个顺序。
+ * @property tracks 实际交给 `setMediaItems` 的那一份顺序。
+ * @property startIndex 从 [tracks] 的第几首开播（0 = 队头）。
+ * @property shuffleOrder 非 null 表示**全局随机开着**：这是播放器该采用的随机队列，
+ *   数组按「播放顺序 → [tracks] 里的下标」排列，是一个 0..lastIndex 的排列。
+ *   [PlaybackLauncher] 会把它装成 Media3 的 `DefaultShuffleOrder` 交给播放器。
+ *   null = 播放器没开随机，队列顺序自己就是播放顺序，不用动播放器的随机序。
  */
 data class ListPlaybackPlan(
     val tracks: List<Track>,
-    /** 为 true 时 [PlaybackLauncher.playList] 会在入队前把 `shuffleModeEnabled` 置 false。 */
-    val clearShuffle: Boolean,
+    val startIndex: Int,
+    val shuffleOrder: IntArray?,
 )
 
 /**
  * 把「点了哪枚按钮 + 播放器当前什么模式」算成一份 [ListPlaybackPlan]。
  *
- * ## 为什么随机模式开着就一定要关
+ * ## 随机是全局的，按钮不许接管
  *
- * `shuffleModeEnabled` 是播放器**全局**属性，`setMediaItems` 换队列不会重置它。它开着时，
- * 真正播放顺序由 Media3 自己的 ShuffleOrder 决定，传入的 [tracks] 只是「未随机序」：
+ * `shuffleModeEnabled` 是播放器**全局**属性，切队列不会重置它 —— 这是设计，不是 bug。
+ * 2026-11-07 用户明确纠正过：不要为了「播放全部」把它关掉，那等于替用户改播放设置。
+ * 上一版实现（入队前 `shuffleModeEnabled = false`）在这条上做错了，已废弃。
  *
- * - 点「播放全部」→ 名义从第 1 首开始，之后却按随机序走，与「按眼前这份清单播整单」相反；
- * - 点「随机播放」→ 队列已经被 [ListPlaybackKind.SHUFFLED] 打乱一次，播放器再随机一次，
- *   成了双重随机；而且播放页队列画的顺序与耳朵听到的顺序对不上。
+ * ## 随机开着时：从随机队列的第一首起步
  *
- * 于是两枚按钮都在入队前关掉随机，让**队列顺序成为唯一真相**：顺序按钮给原序，随机按钮
- * 给打乱一次的那份。这正是 2026-11-07 用户要的「理顺随机与顺序」。
+ * 用户要的是「点播放全部不该从列表第一首开始，而是从**打乱过的随机队列**的第一首开始」。
+ * Media3 在 shuffle 开着时，`setMediaItems(items, startIndex, 0)` 里的 startIndex 仍是
+ * **原始下标**；旧实现固定传 0，于是第一首永远是列表第一首，之后才按随机走 —— 这就是
+ * 违和感的来源。
  *
- * ## 关掉的是当前播放模式，界面会如实反映
+ * 这里改为自己生成一份随机队列 [ListPlaybackPlan.shuffleOrder]，把
+ * [ListPlaybackPlan.startIndex] 定成它的第 0 项，再由 [PlaybackLauncher] 通过
+ * `setShuffleOrder` 把**同一份**随机队列交给播放器。于是：
  *
- * 播放顺序是三档轮换（列表循环 → 单曲循环 → 随机，见 [PlayerHolder.cyclePlayOrder]），
- * 随机态固定 `repeatMode = REPEAT_MODE_ALL`，所以只把 shuffle 关掉正好落到「列表循环」，
- * 整单播完从头绕圈，符合「播完整张列表」。播放页那枚模式按钮读的就是
- * `player.shuffleModeEnabled`（`PlayerState.kt`），会如实显示成列表循环，不会嘴上说随机、
- * 实际按顺序；想再随机，点一下模式按钮即可。这个状态会随队列一起落盘
- * （`PlaybackStateStore.shuffle`），不是一次性的临时绕开 —— 点整单播放本就是一次明确的
- * 「按这份清单播」指令，接管当前模式是它的语义。
+ * - 第一首 = 随机队列头一首（不再是列表头一首）；
+ * - 之后的每一首都按这份随机队列走，全局随机照常生效；
+ * - 队列本身保持原序（播放页 `getMediaItemAt` 读到的就是列表顺序），**只有一份**随机序，
+ *   不存在「预先打乱的队列又被播放器随机一次」的双重随机。
  *
- * 旧实现刻意「不碰用户的 shuffle 开关」，代价就是上面那两种失序；这条约定在此被取代，
- * 别再照旧注释把随机模式留着。
+ * 两枚按钮此时合流：全局已经随机了，「随机播放」再自己打乱一遍只会叠出第二份随机序，
+ * 所以同样只是重新生成一份随机队列、从它的头一首开始 —— 每次点都是一次新的洗牌。
+ *
+ * ## 随机没开时：按钮自己决定队列顺序
+ *
+ * - [ListPlaybackKind.IN_ORDER]：原序、`startIndex = 0`；
+ * - [ListPlaybackKind.SHUFFLED]：打乱一次、`startIndex = 0`。这枚按钮是「随机播一次」，
+ *   **不打开**全局 shuffle（那也是替用户改设置），播完这一单模式仍在列表循环。
+ *
+ * 两种情况下 [ListPlaybackPlan.shuffleOrder] 都是 null，播放器随机模式一个字节都不动。
  *
  * ## 为什么抽成纯函数
  *
  * 判定不依赖 Android / ExoPlayer，可以单测锁住语义（见 `ListPlaybackPolicyTest`）。
- * [random] 可注入，好让「只打乱一次」的断言可复现。
+ * [random] 可注入，好让「洗牌恰好一次」「起始下标 == 随机队列头一首」可复现。
  */
 internal fun planListPlayback(
     tracks: List<Track>,
     kind: ListPlaybackKind,
     shuffleModeEnabled: Boolean,
     random: Random = Random,
-): ListPlaybackPlan = ListPlaybackPlan(
-    tracks = when (kind) {
-        ListPlaybackKind.IN_ORDER -> tracks
-        ListPlaybackKind.SHUFFLED -> tracks.shuffled(random)
-    },
-    // 原本就没开随机 ⇒ 什么也不用动；开了才需要接管。
-    clearShuffle = shuffleModeEnabled,
-)
+): ListPlaybackPlan {
+    if (shuffleModeEnabled) {
+        // 全局随机开着：不碰开关、不预先打乱队列，只给出唯一一份随机队列和它的头一首。
+        val order = tracks.indices.toList().shuffled(random).toIntArray()
+        return ListPlaybackPlan(
+            tracks = tracks,
+            startIndex = if (order.isEmpty()) 0 else order[0],
+            shuffleOrder = order,
+        )
+    }
+    return ListPlaybackPlan(
+        tracks = when (kind) {
+            ListPlaybackKind.IN_ORDER -> tracks
+            ListPlaybackKind.SHUFFLED -> tracks.shuffled(random)
+        },
+        startIndex = 0,
+        shuffleOrder = null,
+    )
+}

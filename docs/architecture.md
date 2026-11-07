@@ -476,9 +476,11 @@ lambda 内）—— 进度变化只作废绘制，不重跑组合。首帧还是
       —— 写操作统一走 `core/repo/InteractionRepository.kt`，收藏态走 `core/repo/LibraryStateStore.kt`
 - [x] 封面按需缩放（2026-10-07）：封面地址统一过 `coverSizedUrl`，由 CDN 按 `?param=WxH` 缩放 ——
       进一个 117 首的列表，封面流量从约 90MB 降到约 3.5MB，视觉零变化（见 §八·补1）
-- [x] 列表页「播放全部 / 随机播放」理顺顺序（2026-11-07）：两枚按钮共用 `PlaybackLauncher.playList`
-      和**同一份当前视图集合**；随机模式开着时入队前先关掉，队列顺序成为唯一真相（顺序按钮给
-      眼前顺序、随机按钮给打乱一次的那份），不再出现「点了播放全部却按随机走」或双重随机。
-      判定抽成 `ListPlaybackPolicy.kt` 纯函数，由 `ListPlaybackPolicyTest` 锁定；模式按钮读的
-      就是播放器真实状态，关掉后会如实显示「列表循环」
+- [x] 列表页「播放全部 / 随机播放」按全局随机模式起步（2026-11-07）：两枚按钮共用
+      `PlaybackLauncher.playList` 和**同一份当前视图集合**；随机是全局设置，**按钮不接管开关**。
+      开着时自己生成一份随机队列（`DefaultShuffleOrder`）交给播放器，起点是该队列头一首而非
+      列表第一首，之后整单按这唯一一份随机序走（不双重随机）；没开时「播放全部」给原序、
+      「随机播放」打乱一次，都从队头起播。`setShuffleOrder` 必须排在 `setMediaItems` 之后
+      （Media3 校验 `order.length == mediaItemCount`）。判定抽成 `ListPlaybackPolicy.kt` 纯
+      函数，由 `ListPlaybackPolicyTest` 锁定
 - [ ] 离线下载（DownloadManager）—— 歌单页那枚「下载」图标仍是占位
