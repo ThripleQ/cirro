@@ -403,8 +403,13 @@ fun TrackListScreen(
                     when (display) {
                         is TrackCollection -> {
                             val target = display
+                            // 「滑到底仍继续拉」时系统会给整张列表做拉伸回弹，吸顶的「播放全部」
+                            // 行也在这一层里，圆角会被拉变形。只在**到底**时不再生成底部拉伸，
+                            // 顶部原样、其它页面不动 —— 判据见 TrackListOverscroll.kt。
+                            val bottomGuardOverscroll = rememberBottomGuardOverscrollEffect(listState)
                             LazyColumn(
                                 state = listState,
+                                overscrollEffect = bottomGuardOverscroll,
                                 // 顶部让开标题条实测下沿（stickyTopDp，高度跟文字走），做成
                                 // 吸顶停靠线 = 壳子顶 = 标题条下沿，**零内缩**：LazyColumn 本就
                                 // 装在壳子里（壳子顶已在标题条之下），「播放全部」吸顶后紧贴标题条、

@@ -483,4 +483,8 @@ lambda 内）—— 进度变化只作废绘制，不重跑组合。首帧还是
       「随机播放」打乱一次，都从队头起播。`setShuffleOrder` 必须排在 `setMediaItems` 之后
       （Media3 校验 `order.length == mediaItemCount`）。判定抽成 `ListPlaybackPolicy.kt` 纯
       函数，由 `ListPlaybackPolicyTest` 锁定
+- [x] 列表页滑到底不再拉伸变形（2026-11-07）：Android 12+ 系统 overscroll stretch 作用于整个
+      `LazyColumn` 绘制层，吸顶的「播放全部」行无法单独豁免 ⇒ 只在「已到底」时把滚动量直接交给
+      `performScroll`、不喂给 overscroll；顶部逐帧原样（用户「到顶不用管」）。见
+      `ui/screens/TrackListOverscroll.kt` 的 `rememberBottomGuardOverscrollEffect`
 - [ ] 离线下载（DownloadManager）—— 歌单页那枚「下载」图标仍是占位
