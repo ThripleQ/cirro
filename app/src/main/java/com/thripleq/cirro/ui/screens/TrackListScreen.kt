@@ -52,6 +52,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -356,6 +357,11 @@ fun TrackListScreen(
             // 壳子顶）。布局阶段回传、draw 阶段读，不触发重组。
             // 首帧给正无穷 = 先不裁，第二帧即修正（发生在壳动画 / 骨架期，不可见）。
             var panelTopInRootPx by remember { mutableFloatStateOf(Float.POSITIVE_INFINITY) }
+            // 壳子顶在根坐标系里的 y。「播放全部」的可见副本画在列表**外面**，得靠这两个
+            // 根坐标相减，把列表内 stickyHeader 的布局位置换算成壳内偏移。两者都是布局
+            // 坐标（不含任何绘制变换）：页面动画 / 系统拉伸同时加减到两者上，相减即抵消，
+            // 所以按钮永远贴在被拉之前的位置。见 [playAllOverlayOffsetY]。
+            var shellTopInRootPx by remember { mutableFloatStateOf(0f) }
             // 标题条区：搜索页同款（headlineSmall 粗体、高度跟文字走）。
             //
             // 让位方向按路径分（2026-10-03 用户：「歌单上边的标题不要给收起按钮让位，收起按钮放
@@ -388,6 +394,7 @@ fun TrackListScreen(
                 Modifier
                     .fillMaxSize()
                     .weight(1f)
+                    .onGloballyPositioned { shellTopInRootPx = it.positionInRoot().y }
                     .clip(paperShape)
                     .background(MaterialTheme.colorScheme.surface),
             ) {
@@ -403,13 +410,10 @@ fun TrackListScreen(
                     when (display) {
                         is TrackCollection -> {
                             val target = display
-                            // 「滑到底仍继续拉」时系统会给整张列表做拉伸回弹，吸顶的「播放全部」
-                            // 行也在这一层里，圆角会被拉变形。只在**到底**时不再生成底部拉伸，
-                            // 顶部原样、其它页面不动 —— 判据见 TrackListOverscroll.kt。
-                            val bottomGuardOverscroll = rememberBottomGuardOverscrollEffect(listState)
+                            // 列表用系统默认那套 overscroll，一处不改：曲目行该拉伸还拉伸。
+                            // 「播放全部」行不吃拉伸的办法在下面壳内那份覆盖层 —— 见那里的说明。
                             LazyColumn(
                                 state = listState,
-                                overscrollEffect = bottomGuardOverscroll,
                                 // 顶部让开标题条实测下沿（stickyTopDp，高度跟文字走），做成
                                 // 吸顶停靠线 = 壳子顶 = 标题条下沿，**零内缩**：LazyColumn 本就
                                 // 装在壳子里（壳子顶已在标题条之下），「播放全部」吸顶后紧贴标题条、
@@ -482,13 +486,20 @@ fun TrackListScreen(
                                 // 3. 布局坐标回传用 `onGloballyPositioned`：它只是**测量**，
                                 //    不给这一行加任何绘制。
                                 stickyHeader(key = "playall") { _ ->
+                                    // 这一份**只占位 + 报位置，不画**：真正可见的那一行画在
+                                    // LazyColumn 之外（见下面那段覆盖层）。仍放同一份 [PlayAllRow]
+                                    // 是为了让占位高度逐像素等于可见行（字体缩放也跟着一致），
+                                    // 列表里曲目行的位置一格不动；stickyHeader 照旧负责吸顶停靠，
+                                    // 它回传的**布局 y** 就是可见行该待的位置（不含拉伸变换）。
+                                    // 透明副本不该被无障碍读成第二个「播放全部」按钮。
                                     Column(
                                         Modifier
                                             .fillMaxWidth()
                                             .onGloballyPositioned {
                                                 panelTopInRootPx = it.positionInRoot().y
                                             }
-                                            .graphicsLayer { alpha = contentReveal.value }
+                                            .graphicsLayer { alpha = 0f }
+                                            .clearAndSetSemantics { }
                                             .clip(playAllShape)
                                             .background(MaterialTheme.colorScheme.surface),
                                     ) {
@@ -553,6 +564,49 @@ fun TrackListScreen(
                             modifier = Modifier.background(MaterialTheme.colorScheme.surface),
                         )
                     }
+
+                    // 「播放全部」行真正可见的那一份：画在 LazyColumn **之外**的兄弟层。
+                    //
+                    // ## 为什么非得挪出来
+                    // Android 12+ 的 stretch（用户说的「吃力变形」）是系统 EdgeEffect 加在
+                    // **整个滚动容器绘制层**上的一次变换；stickyHeader 与曲目行同在一次
+                    // layout / draw 里，官方 `OverscrollEffect` / `EdgeEffect` 没有「豁免某一个
+                    // item」的开关 —— 社区自己实现回弹效果也得接管整张容器的变换。上一版用
+                    // `rememberBottomGuardOverscrollEffect` 在到底时掐掉整张列表的拉伸，按钮
+                    // 是不歪了，可曲目行该有的手感也一起没了，被用户否掉。
+                    //
+                    // 现在列表原封不动（顶部、到底都照常拉伸），只把这一行挪出那张绘制层：
+                    // 位置跟随上面透明占位回传的 y，那是**布局坐标**、不含 stretch 的绘制
+                    // 变换，按钮于是永远待在没被拉过的位置。`graphicsLayer` 在 draw 阶段读
+                    // 两个坐标，滚动时只重绘、不重组不重排；命中测试随 layer 一起走。
+                    // 首帧哨兵值 / 壳子位移的换算见 [playAllOverlayOffsetY]。
+                    val overlayTarget = display as? TrackCollection
+                    if (overlayTarget != null) {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer {
+                                    alpha = contentReveal.value
+                                    translationY = playAllOverlayOffsetY(
+                                        panelTopInRootPx,
+                                        shellTopInRootPx,
+                                    )
+                                }
+                                .clip(playAllShape)
+                                .background(MaterialTheme.colorScheme.surface),
+                        ) {
+                            PlayAllRow(
+                                overlayTarget,
+                                accent = coverAccent,
+                                subscribeEnabled = capabilities.subscribe,
+                                onPlayAll = { vm.onPlayAll(overlayTarget) },
+                                onSubscribe = vm::toggleSubscribe,
+                                onShuffle = vm::shuffleAll,
+                                onSort = { sortSheetOpen = true },
+                            )
+                        }
+                    }
+
                     // 用派生布尔（!skeletonGone）而非直接读 skeletonAlpha.value：后者每帧变化都会让
                     // 整个 TrackListScreen 重组（含头部/列表），前者只在跨阈值时翻一次。
                     if (!skeletonGone) {

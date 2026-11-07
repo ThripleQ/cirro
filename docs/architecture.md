@@ -483,8 +483,13 @@ lambda 内）—— 进度变化只作废绘制，不重跑组合。首帧还是
       「随机播放」打乱一次，都从队头起播。`setShuffleOrder` 必须排在 `setMediaItems` 之后
       （Media3 校验 `order.length == mediaItemCount`）。判定抽成 `ListPlaybackPolicy.kt` 纯
       函数，由 `ListPlaybackPolicyTest` 锁定
-- [x] 列表页滑到底不再拉伸变形（2026-11-07）：Android 12+ 系统 overscroll stretch 作用于整个
-      `LazyColumn` 绘制层，吸顶的「播放全部」行无法单独豁免 ⇒ 只在「已到底」时把滚动量直接交给
-      `performScroll`、不喂给 overscroll；顶部逐帧原样（用户「到顶不用管」）。见
-      `ui/screens/TrackListOverscroll.kt` 的 `rememberBottomGuardOverscrollEffect`
+- [x] 列表页**只有**「播放全部」行不吃拉伸变形（2026-11-07 第二版）：Android 12+ 系统
+      overscroll stretch 加在整个 `LazyColumn` 绘制层，`stickyHeader` 与曲目行同层，官方没有
+      「豁免单个 item」的开关。上一版「到底时掐掉整张列表的拉伸」（`TrackListOverscroll.kt`）
+      把曲目行该有的手感也一起拿掉了，被用户否掉。现在列表用系统默认 overscroll 原封不动，
+      可见的那份 `PlayAllRow` 画在 `LazyColumn` **之外**的壳内兄弟层，列表内 `stickyHeader`
+      只留透明占位（撑高度 + 回报布局 y）；覆盖层在 `graphicsLayer` 的 draw 阶段读
+      `playAllOverlayOffsetY(panelTop, shellTop)` 跟随吸顶。布局坐标不含 EdgeEffect 绘制变换，
+      所以按钮永远待在未变形的位置。纯函数 + `TrackListOverlayPositionTest` 锁住首帧无穷哨兵
+      与「壳位移不影响相对偏移」。真机**未验**
 - [ ] 离线下载（DownloadManager）—— 歌单页那枚「下载」图标仍是占位
