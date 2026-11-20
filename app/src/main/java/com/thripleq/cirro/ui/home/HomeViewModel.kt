@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.thripleq.cirro.core.playback.PlaybackLauncher
 import com.thripleq.cirro.core.repo.HomeRepository
+import com.thripleq.cirro.core.repo.pickStyleTag
+import com.thripleq.cirro.core.repo.styleWordFromTitle
 import com.thripleq.cirro.core.model.PlaylistCard
 import com.thripleq.cirro.core.model.StyleTag
 import com.thripleq.cirro.core.model.Track
@@ -35,6 +37,19 @@ sealed interface HomeUiState {
     data class Ready(
         val loggedIn: Boolean,
         val playlists: List<PlaylistCard>?,
+        /**
+         * 「推荐歌单」区：**优先**首页 block 流里服务端按歌曲画像出的 6 张
+         * （`HOMEPAGE_BLOCK_PLAYLIST_RCMD`），block 没给才退到每日推荐歌单
+         * （`/weapi/v1/discovery/recommend/resource`）。
+         *
+         * 两个来源都带登录 cookie 才是个口味结果；这就是探索页新增的那一栏，
+         * 以前只有 block 流却没解析，页面上自然显得「推荐很少」。
+         */
+        val recommended: List<PlaylistCard>? = null,
+        /** 「推荐歌单」区的服务端栏目标题。 */
+        val recommendedTitle: String? = null,
+        /** 每日推荐歌单（`/weapi/v1/discovery/recommend/resource`，需登录），首张通常是私人雷达。 */
+        val dailyPlaylists: List<PlaylistCard>? = null,
         val dailySongs: List<Track>?,
         /**
          * 「雷达歌单」区的卡（首页 block 流里 HOMEPAGE_BLOCK_MGC_PLAYLIST 那个
@@ -150,6 +165,25 @@ sealed interface HomeUiState {
         val radarCards: List<PlaylistCard> get() = radar.orEmpty()
 
         /**
+         * 「推荐歌单」区的最终卡面：block 流的按口味 6 张优先，拿不到才用每日推荐歌单。
+         * 两者都是同一档「服务端按画像/口味出」的内容，不与 `/personalized/playlist`
+         * 的大众池混用。
+         */
+        val recommendedCards: List<PlaylistCard>
+            get() = recommended.orEmpty().ifEmpty { dailyPlaylists.orEmpty() }
+
+        /** 「推荐歌单」区标题：服务端原文优先。 */
+        val recommendedHeadline: String
+            get() = recommendedTitle?.takeIf { it.isNotBlank() } ?: "推荐歌单"
+
+        /**
+         * 「猜你喜欢」是不是正拿着每日推荐在兜底（block 流没给内容时）。
+         * 每日歌榜单曲区据此决定要不要再画一遍，避免同屏重复。
+         */
+        val guessFellBackToDaily: Boolean
+            get() = guessPages.isEmpty() && dailySongs != null
+
+        /**
          * 「精选推荐」横滑功能卡（布局与**内容**都照 kanade 主页，2026-10-17 复测）。
          *
          * kanade 登录态实测（uiautomator，逐张横滑到头）恰好 6 张，徽标 = 卡名、
@@ -176,15 +210,20 @@ sealed interface HomeUiState {
             // 「今天从《X》听起|私人雷达」）。**必须按名过滤**：推荐池绝大多数条目
             // 是普通歌单，firstOrNull() 会把一张普通歌单当成私人雷达。
             //
-            // 数据源是 RECOMMEND_PLAYLISTS 而不是下面的 radar —— 2026-10-04 起
-            // radar 改指「雷达歌单」区块（首页 block 流里那 6 张雷达卡），
-            // 而这张功能卡要的是「从你喜欢的歌听起」那条私人雷达，
-            // 两者混用会让功能卡与雷达区第一张卡撞成同一张封面。
-            val privateRadar = playlists?.firstOrNull { it.name.contains("雷达") }
-            // 补位去重：雷达区块与私人雷达卡已经展示过的歌单，补位卡不再重复取，
+            // 优先用「每日推荐歌单」里的私人雷达（`recommend/resource` 首张就是），
+            // 再退到 block 的推荐歌单 / `/personalized/playlist` 大众池。数据源是
+            // 这几处而不是下面的 radar —— 2026-10-04 起 radar 指「雷达歌单」区块
+            // （首页 block 流里那 6 张雷达卡），而这张功能卡要的是「从你喜欢的歌
+            // 听起」那条私人雷达；两者混用会让功能卡与雷达区第一张卡撞成同一张封面。
+            val privateRadar = dailyPlaylists?.firstOrNull { it.name.contains("雷达") }
+                ?: recommended?.firstOrNull { it.name.contains("雷达") }
+                ?: playlists?.firstOrNull { it.name.contains("雷达") }
+            // 补位去重：雷达区、推荐歌单区与私人雷达卡已经展示过的歌单，补位卡不再取，
             // 避免同一条歌单在一屏里出现两次（各区块 wire 不同只保证共享元素
             // 键唯一，视觉上还是会重复）。
-            val used = radar.orEmpty().map { it.id }.toSet() + listOfNotNull(privateRadar?.id)
+            val used = radar.orEmpty().map { it.id }.toSet() +
+                recommendedCards.map { it.id } +
+                listOfNotNull(privateRadar?.id)
             // 「私人漫游 / 相似歌曲 / 相似艺人」不是歌单，没有歌单封面可用 ——
             // 卡面各自走 [Ready.radioCover] / [Ready.songCover] / [Ready.artistCover]
             //（各自的**内容源**）。
@@ -203,7 +242,7 @@ sealed interface HomeUiState {
                     add(
                         FeaturedCard(
                             "daily", dailySongs.first().artworkUrl,
-                            "每日推荐", "符合你口味的新鲜好歌", "daily", "",
+                            "每日推荐", "符合你口味的新鲜好歌", HomeViewModel.DAILY_WIRE, "",
                         ),
                     )
                 }
@@ -245,14 +284,19 @@ sealed interface HomeUiState {
                         ),
                     )
                 }
-                stylePlaylists?.firstOrNull()?.let { p ->
-                    val s = styles?.firstOrNull()?.name
+                // 「XX日推」的口味词必须来自服务端（block 标题里的「华语」等），
+                // 不能拿全局曲风表的第 1/2 个标签 —— 那是所有人的固定顺序。
+                // 口味词在曲风表里匹配不到（如「日文」）就整张卡不出场，交给补位卡。
+                val tasteWord = styleWordFromTitle(guessTitle)
+                val styleTag = pickStyleTag(styles, tasteWord)
+                val stylePick = stylePlaylists?.firstOrNull()
+                if (styleTag != null && stylePick != null) {
+                    val s = tasteWord ?: styleTag.name
                     add(
                         FeaturedCard(
-                            "style_daily", p.coverUrl,
-                            if (s.isNullOrBlank()) "曲风日推" else "${s}日推",
-                            if (s.isNullOrBlank()) "你喜欢的歌曲" else "你喜欢的${s}歌曲",
-                            HomeViewModel.FEATURED_PLAYLIST_WIRE, p.id,
+                            "style_daily", stylePick.coverUrl,
+                            "${s}日推", "你喜欢的${s}歌曲",
+                            HomeViewModel.FEATURED_PLAYLIST_WIRE, stylePick.id,
                         ),
                     )
                 }
@@ -341,6 +385,12 @@ class HomeViewModel @Inject constructor(
          * 源端 key = `shell:radar:<id>`，目标端由 `ExpandTarget("radar", …)` 原样拼出。
          */
         const val RADAR_WIRE = "radar"
+
+        /** 「推荐歌单」区的 wire（同理由：避免与其它区块的同一条歌单撞共享元素键）。 */
+        const val RECOMMENDED_WIRE = "rcmd"
+
+        /** 每日推荐歌曲列表的 wire（与 [com.thripleq.cirro.ui.profile.TrackListSource.DAILY] 一致）。 */
+        const val DAILY_WIRE = "daily"
     }
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
@@ -414,8 +464,15 @@ class HomeViewModel @Inject constructor(
             // 前置条件，与其余四块无依赖，async 并行。
             val loggedInAsync = async { homeRepo.loggedIn() }
             val playlists = async { homeRepo.recommendPlaylists() }
-            // 首页 block 流：**一次请求喂两块** —— 雷达歌单 + 猜你喜欢的标题与单曲。
-            val homePage = async { homeRepo.homePage() }
+            // 每日推荐歌单（recommend/resource）：私人雷达卡的正经来源，也是
+            // 「推荐歌单」区的兜底。静默刷新不必重拉（同一天的口味结果）。
+            val dailyPlaylists = async {
+                if (silent) null else homeRepo.dailyPlaylists()
+            }
+            // 首页 block 流：**一次请求喂三块** —— 推荐歌单 + 雷达歌单 + 猜你喜欢。
+            // 非静默刷新强制服务端按当前账号重新出卡（refresh=true）：缓存若来自
+            // 登录前/游客态，口味会一直停在大众池（见 [HomeRepository.homePage]）。
+            val homePage = async { homeRepo.homePage(refresh = !silent) }
             val styles = async { homeRepo.styleList() }
             // 「私人漫游」卡的卡面：**不依赖任何别的数据**，所以和上面几块一起发，
             // 不要等到 block 流回来才发（原来它挂在 homePage.await() 之后，白等一整个
@@ -424,14 +481,16 @@ class HomeViewModel @Inject constructor(
             // 场景音乐：先拿场景/情感标签，再为每个标签各取一张热门歌单当封面
             // （分类表里标签没有封面）。标签之间无依赖 → 并行。
             //
-            // **静默刷新（切回 tab）不打这一块**。它是全页唯一「1 次分类表 + 每标签
+            // **登录后整块不打**：它用的是全站分类热门歌单，与账号口味无关；登录态
+            // 下探索页已经有「推荐歌单 / 猜你喜欢 / 每日推荐」这些真正的口味内容，
+            // 再塞一栏大众热门只会稀释。未登录时保留它当浏览入口。
+            //
+            // **静默刷新（切回 tab）也不打**：它是全页唯一「1 次分类表 + 每标签
             // 各 1 次歌单」= 9 个请求的区块，也是唯一一次对同一端点并发 8 枪的地方；
             // 而场景标签与它们的热门歌单几乎不变 —— 每次回 tab 都重打 9 枪换不来任何
-            // 新东西，只让它成为全页最容易因抖动/限流而整块消失的一块（空结果会让
-            // UI 连「场景音乐」标题一起不画）。返回 null，由 `keep` 把上次那份留在
-            // 页面上；手动点刷新键仍然重取。
+            // 新东西，只让它成为全页最容易因抖动/限流而整块消失的一块。
             val scene = async {
-                if (silent) {
+                if (silent || loggedInAsync.await()) {
                     null
                 } else {
                     val tags = homeRepo.sceneTags(SCENE_TAG_COUNT)
@@ -451,8 +510,13 @@ class HomeViewModel @Inject constructor(
             // 逐块回填：每一块一就绪就整体发布，最慢的那块不再拖慢整页首屏。
             // 全部聚齐后统一判空，全部为空才落到 Error。
             // 有旧内容时以**它**为底（首屏那趟才从空壳起手）。
-            // 位置参数：loggedIn / playlists / dailySongs / radar。
-            var ready = previous ?: HomeUiState.Ready(false, null, null, null)
+            // 首屏从空壳起手；字段多且顺序会变，一律具名，别再依赖位置。
+            var ready = previous ?: HomeUiState.Ready(
+                loggedIn = false,
+                playlists = null,
+                dailySongs = null,
+                radar = null,
+            )
 
             /** 发布一块进度，并把这份记成「页面上现在有的内容」（见 [lastContent]）。 */
             fun publish() {
@@ -478,6 +542,8 @@ class HomeViewModel @Inject constructor(
 
             val hp = homePage.await()
             ready = ready.copy(
+                recommended = keep(hp.recommendedPlaylists, ready.recommended) { it.isEmpty() },
+                recommendedTitle = keep(hp.recommendedTitle, ready.recommendedTitle) { it.isEmpty() },
                 radar = keep(hp.radar, ready.radar) { it.isEmpty() },
                 radarTitle = keep(hp.radarTitle, ready.radarTitle) { it.isEmpty() },
                 guessTitle = keep(hp.guessTitle, ready.guessTitle) { it.isEmpty() },
@@ -498,13 +564,15 @@ class HomeViewModel @Inject constructor(
                 }
             }
 
-            // 曲风表：只为「XX日推」功能卡取风格词 / 该曲风下的歌单。
+            // 曲风表：只为「XX日推」功能卡服务。口味词**取自服务端 block 标题**
+            // （「猜你喜欢的「华语」好歌」→ 华语），再匹配到二级曲风标签；
+            // 匹配不到就不出这张卡（以前拿全局表第 2 个标签凑，与账号无关）。
             val st = styles.await()
             ready = ready.copy(styles = keep(st, ready.styles) { it.isEmpty() })
             publish()
-            val tag2 = st.getOrNull(1)?.id
+            val tasteTag = pickStyleTag(st, styleWordFromTitle(ready.guessTitle))
             val stylePlaylists = async {
-                if (tag2 != null) homeRepo.stylePlaylists(tag2, "6") else emptyList()
+                if (tasteTag != null) homeRepo.stylePlaylists(tasteTag.id, "6") else emptyList()
             }
 
             val da = daily.await()
@@ -517,12 +585,29 @@ class HomeViewModel @Inject constructor(
                 // 未定就放行会看到它在退场后凭空长出来（见 [StartupGate.Signal.Session]）。
                 startupGate.signal(StartupGate.Signal.Session)
             }
+            val wasLoggedIn = ready.loggedIn
+            // 登录态是单向的上升：只有未登录 → 登录才有信息量。静默刷新时抖动返回的
+            // false 不该把已经登录的页面退回登录引导。
+            val nowLoggedIn = if (silent) ready.loggedIn || online else online
+            val dpl = dailyPlaylists.await()
             ready = ready.copy(
-                dailySongs = keep(da, ready.dailySongs) { it.isEmpty() },
-                // 登录态是单向的上升：只有未登录 → 登录才有信息量。静默刷新时抖动返回的
-                // false 不该把已经登录的页面退回登录引导。
-                loggedIn = if (silent) ready.loggedIn || online else online,
+                // 登出（非静默刷新、确认未登录）要**真的清掉**每日推荐：`keep` 会在拉空时
+                // 保留旧值，登录态翻了还留着上一份个性化内容就成了越权展示。
+                dailySongs = if (nowLoggedIn) {
+                    keep(da, ready.dailySongs) { it.isEmpty() }
+                } else {
+                    emptyList()
+                },
+                dailyPlaylists = if (nowLoggedIn) {
+                    keep(dpl, ready.dailyPlaylists) { it.isEmpty() }
+                } else {
+                    null
+                },
+                loggedIn = nowLoggedIn,
             )
+            // 登录态变了（WebView 刚导完 cookie / 登出）→ 下次切回本页必须真刷一次，
+            // 否则 30s 冷却会把「刚登录却还是游客推荐」挡在门外。
+            if (wasLoggedIn != ready.loggedIn) enterGate.reset()
             publish()
 
             // 曲风歌单与场景音乐**各自发布**：原来这一块是攒到最后跟卡面一起发的，
@@ -548,6 +633,8 @@ class HomeViewModel @Inject constructor(
             )
 
             val allEmpty = ready.playlists.isNullOrEmpty() &&
+                ready.recommended.isNullOrEmpty() &&
+                ready.dailyPlaylists.isNullOrEmpty() &&
                 ready.radar.isNullOrEmpty() &&
                 ready.dailySongs.isNullOrEmpty() &&
                 ready.guessPages.isEmpty() &&

@@ -1,6 +1,7 @@
 package com.thripleq.cirro.core.repo
 
 import com.google.common.truth.Truth.assertThat
+import com.thripleq.cirro.core.model.StyleTag
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Test
@@ -232,6 +233,42 @@ class HomeParsersTest {
             .put(JSONObject().put("creativeId", ""))
             .put(JSONObject().put("creativeId", "9").put("uiElement", JSONObject()))
         assertThat(parseRadarCards(arr).map { it.id }).containsExactly("9")
+    }
+
+    // ---------------------------------------------------------- styleWordFromTitle
+
+    /**
+     * 「XX日推」的口味词只能取自服务端拼的标题。以前拿全局曲风表第 2 个标签凑
+     * （所有人都是「粤语流行」），与账号口味无关。
+     */
+    @Test
+    fun styleWord_extractsQuotedWordFromServerTitle() {
+        assertThat(styleWordFromTitle("猜你喜欢的「华语」好歌")).isEqualTo("华语")
+        assertThat(styleWordFromTitle("猜你喜欢的「日文」好歌")).isEqualTo("日文")
+    }
+
+    @Test
+    fun styleWord_missingQuoteOrBlankYieldsNull() {
+        assertThat(styleWordFromTitle(null)).isNull()
+        assertThat(styleWordFromTitle("猜你喜欢的好歌")).isNull()
+        assertThat(styleWordFromTitle("猜你喜欢的「 」好歌")).isNull()
+    }
+
+    /** 先精确匹配；服务端给「华语」而二级标签是「华语流行」时用包含匹配。 */
+    @Test
+    fun pickStyleTag_prefersExactThenContains() {
+        val styles = listOf(StyleTag("1", "华语流行"), StyleTag("2", "日文"))
+        assertThat(pickStyleTag(styles, "日文")?.id).isEqualTo("2")
+        assertThat(pickStyleTag(styles, "华语")?.id).isEqualTo("1")
+    }
+
+    /** 口味词在表里找不到（或表还没到）⇒ null，调用方据此不出这张卡。 */
+    @Test
+    fun pickStyleTag_unknownWordOrEmptyTableYieldsNull() {
+        val styles = listOf(StyleTag("1", "华语流行"))
+        assertThat(pickStyleTag(styles, "古典")).isNull()
+        assertThat(pickStyleTag(null, "华语")).isNull()
+        assertThat(pickStyleTag(styles, null)).isNull()
     }
 
     // ------------------------------------------------------------------ firstArray

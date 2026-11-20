@@ -236,6 +236,7 @@ private fun HomeBodyUi(
 @Composable
 private fun rememberRowStates(): HomeRowStates = HomeRowStates(
     featured = rememberLazyListState(),
+    rcmd = rememberLazyListState(),
     guess = rememberLazyListState(),
     radar = rememberLazyListState(),
     scene = rememberLazyListState(),

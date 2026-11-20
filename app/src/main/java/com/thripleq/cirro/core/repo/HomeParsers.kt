@@ -1,6 +1,7 @@
 package com.thripleq.cirro.core.repo
 
 import com.thripleq.cirro.core.model.PlaylistCard
+import com.thripleq.cirro.core.model.StyleTag
 import com.thripleq.cirro.core.model.Track
 import org.json.JSONArray
 import org.json.JSONObject
@@ -99,6 +100,36 @@ internal fun parseCards(root: JSONObject): List<PlaylistCard> {
 
 /** 首页 block 流里「雷达歌单」区的 blockCode（官方移动端固定值）。 */
 internal const val RADAR_BLOCK_CODE = "HOMEPAGE_BLOCK_MGC_PLAYLIST"
+
+/**
+ * 首页 block 流里「推荐歌单」区的 blockCode。
+ *
+ * 这是服务端**按歌曲画像**出的 6 张歌单（每张卡的 `alg` 是 `bysong_profile_ol`），
+ * 与「猜你喜欢」同源、同一次请求，不是 `/weapi/personalized/playlist` 那批
+ * 面向所有人的推荐池。带登录 cookie 时才是口味结果；未登录也会返回，但只是大众池。
+ */
+internal const val RECOMMEND_PLAYLIST_BLOCK_CODE = "HOMEPAGE_BLOCK_PLAYLIST_RCMD"
+
+/**
+ * 从服务端拼的栏目标题里取口味词，如「猜你喜欢的「华语」好歌」→ `华语`。
+ *
+ * 「XX日推」卡必须用**服务端按口味算出的**这个词，不能拿全局曲风表的前两个
+ * 标签凑（那是所有人的固定顺序，与账号无关）。
+ */
+internal fun styleWordFromTitle(title: String?): String? =
+    title?.let { Regex("「([^」]+)」").find(it)?.groupValues?.getOrNull(1) }
+        ?.trim()?.takeIf { it.isNotBlank() }
+
+/**
+ * 在曲风表里给口味词找对应标签：先精确、再包含匹配
+ * （服务端给「华语」，二级标签是「华语流行」）。
+ */
+internal fun pickStyleTag(styles: List<StyleTag>?, word: String?): StyleTag? {
+    if (styles.isNullOrEmpty() || word.isNullOrBlank()) return null
+    return styles.firstOrNull { it.name == word }
+        ?: styles.firstOrNull { it.name.contains(word) }
+        ?: styles.firstOrNull { word.contains(it.name) }
+}
 
 /**
  * 首页 block 流里「猜你喜欢的「XX」好歌」区的 blockCode。

@@ -46,6 +46,25 @@ class HomeRepository @Inject constructor(
         }
     }
 
+    /**
+     * 每日推荐歌单（`/weapi/v1/discovery/recommend/resource`，需登录）。
+     *
+     * 服务端按收听画像给 6 张（首张通常是「私人雷达」）—— 这是账号口味的
+     * **歌单**侧入口；以前这条端点（[NeteaseOp.RECOMMEND_RESOURCE]）从未被调用，
+     * 「私人雷达」只能从 `/weapi/personalized/playlist` 的 30 条大众推荐池里
+     * 按名字捞，既多打一次请求又拿不到每日口径。返回壳是 `recommend[]`。
+     */
+    suspend fun dailyPlaylists(): List<PlaylistCard> = withContext(Dispatchers.IO) {
+        val r = gateway.call(NeteaseOp.RECOMMEND_RESOURCE)
+        dbg { "dailyPlaylists err=${r.err} len=${r.body.size}" }
+        if (r.err != 0 || r.body.isEmpty()) return@withContext emptyList()
+        try {
+            parseCards(JSONObject(String(r.body, Charsets.UTF_8)))
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     /** 每日推荐歌曲（需登录）。 */
     suspend fun dailySongs(): List<Track> = withContext(Dispatchers.IO) {
         val r = gateway.call(NeteaseOp.RECOMMEND_SONGS)
@@ -60,10 +79,14 @@ class HomeRepository @Inject constructor(
     }
 
     /**
-     * 首页 block 流（`/api/homepage/block/page`）—— **一次请求喂两块内容**。
+     * 首页 block 流（`/api/homepage/block/page`）—— **一次请求喂三块内容**。
      *
-     * 这条通用流里同时住着探索页的两个区块，原先各请求一次等于同一条流拉两遍，
+     * 这条通用流里住着探索页的三个区块，各请求一次等于同一条流拉三遍，
      * 现在一次解析、一起返回（见 [HomePageBlocks]）：
+     *
+     * - `HOMEPAGE_BLOCK_PLAYLIST_RCMD` → **推荐歌单** `creatives[]`（实测 6 张）。
+     *   每张卡的 `alg = bysong_profile_ol`，是服务端按歌曲画像出的口味歌单 ——
+     *   游客态只是大众池，带登录 cookie 才是「根据用户喜好」的那批。
      *
      * - `HOMEPAGE_BLOCK_MGC_PLAYLIST` → **雷达歌单** `creatives[]`（实测 6 张）。
      *   每张卡 `creativeId` 即歌单 id、`uiElement.mainTitle.title` 是名称、
@@ -77,7 +100,13 @@ class HomeRepository @Inject constructor(
      *   所以这一栏看起来「没有固定标题」；内容 4 组 × 3 首 = 12 首单曲，
      *   `showType = HOMEPAGE_SLIDE_SONGLIST_ALIGN` —— 它是**横滑翻页**的。
      *
-     * refresh 传 false：首次进页走服务端当日缓存，不必每次重新出卡。
+     * refresh 由调用方决定（[refresh]）：
+     * - 首屏 / 手动刷新 → true：强制服务端按**当前账号**重新出卡。2026-11 实测，同一
+     *   账号 `refresh=false` 可能返回上一份缓存 —— 如果那份是登录前/游客态生成的，
+     *   「猜你喜欢」会一直停在「古典乐 旧时光的美人」这类大众卡，看起来就是
+     *   「推荐没按我的口味」；refresh=true 才会变成「猜你喜欢的「华语」好歌」。
+     * - 静默刷新（切回 tab）→ false：服务端当日缓存已经是这份口味结果，没必要再出一次。
+     *
      * **这个 "false" 曾经是假的**：C 层原先按「不等于 "0" 就算真」解析，于是它被判成
      * true，等于每次进探索页都在强制服务端重新出卡（2026-10-05 在 `ne_homepage_block_page`
      * 里改成「只有 "true"/"1" 算真」）。改 C 层时别把这里换成 "0" 来将就旧口径。
@@ -93,9 +122,9 @@ class HomeRepository @Inject constructor(
      * 将来真要按 cursor 翻 block 流，得让 C 层改走 /api/ 老网关（ne_create_weapi_asis），
      * 光把这里填上值只会拿到 50002。
      */
-    suspend fun homePage(): HomePageBlocks = withContext(Dispatchers.IO) {
+    suspend fun homePage(refresh: Boolean = false): HomePageBlocks = withContext(Dispatchers.IO) {
         // 第三个参数是 cursor：留空 = 不传，原因见上。
-        val r = gateway.call(NeteaseOp.HOME_BLOCK_PAGE, "false", "")
+        val r = gateway.call(NeteaseOp.HOME_BLOCK_PAGE, if (refresh) "true" else "false", "")
         dbg { "blockPage err=${r.err} len=${r.body.size}" }
         // 哨兵：正常响应 100KB+。短响应只剩「路径或参数又变了」一种可能，整段
         // 打出来，省掉再猜一轮。
@@ -107,6 +136,8 @@ class HomeRepository @Inject constructor(
             val blocks = JSONObject(String(r.body, Charsets.UTF_8))
                 .optJSONObject("data")?.optJSONArray("blocks")
                 ?: return@withContext HomePageBlocks()
+            var rcmd: List<PlaylistCard> = emptyList()
+            var rcmdTitle: String? = null
             var radar: List<PlaylistCard> = emptyList()
             var radarTitle: String? = null
             var guessTitle: String? = null
@@ -120,6 +151,11 @@ class HomeRepository @Inject constructor(
                     ?.takeIf { it.isNotBlank() }
                     ?: ui?.optJSONObject("mainTitle")?.optString("title")?.takeIf { it.isNotBlank() }
                 when (b.optString("blockCode")) {
+                    RECOMMEND_PLAYLIST_BLOCK_CODE -> {
+                        rcmd = parseRadarCards(b.optJSONArray("creatives"))
+                        rcmdTitle = blockTitle
+                        dbg { "rcmdBlock cards=${rcmd.size} ${rcmd.map { it.name }}" }
+                    }
                     RADAR_BLOCK_CODE -> {
                         radar = parseRadarCards(b.optJSONArray("creatives"))
                         radarTitle = blockTitle
@@ -143,10 +179,13 @@ class HomeRepository @Inject constructor(
             // 与 UI 层 bug 的表象一模一样，真机排查时没有这行就只能靠猜。
             Log.e(
                 "HomeApi",
-                "homePage blocks=${blocks.length()} radar=${radar.size} pages=${guessPages.map { it.size }} " +
-                    "radarTitle=$radarTitle guessTitle=$guessTitle",
+                "homePage blocks=${blocks.length()} rcmd=${rcmd.size} radar=${radar.size} " +
+                    "pages=${guessPages.map { it.size }} " +
+                    "rcmdTitle=$rcmdTitle radarTitle=$radarTitle guessTitle=$guessTitle",
             )
             HomePageBlocks(
+                recommendedPlaylists = rcmd,
+                recommendedTitle = rcmdTitle,
                 radar = radar,
                 radarTitle = radarTitle,
                 guessTitle = guessTitle,
@@ -261,19 +300,34 @@ class HomeRepository @Inject constructor(
      * 就是这个。服务端每次调用按口味随机出一批歌，**没有分页**，也不保证两次
      * 调用结果不同 —— 所以调用方只能「拉一批直接播」，不能当歌单列表缓存。
      * mode/subMode 留空 = 官方 App 的默认模式（官方没公开取值表）。
+     *
+     * ⚠️ 2026-11 实测：`limit` 参数服务端并不照办，**一次只回 2~3 首**（传 10 也只给 3）。
+     * 原先「私人漫游」点开只有 2~3 首歌就结束，是「推荐内容很少」的直接来源之一。
+     * 现在要一批够听的队列时并发拉几轮再按 id 去重；只要封面（limit ≤ 3）仍只打一枪。
      */
     suspend fun radioSongs(limit: String = "10"): List<Track> =
         withContext(Dispatchers.IO) {
-            val r = gateway.call(NeteaseOp.RADIO, "", "", limit)
-            dbg { "radio err=${r.err} len=${r.body.size} body=${String(r.body, Charsets.UTF_8).take(300)}" }
-            if (r.err != 0 || r.body.isEmpty()) return@withContext emptyList()
-            try {
-                findTrackArray(JSONObject(String(r.body, Charsets.UTF_8)))?.let { parseTracks(it) }
-                    ?: emptyList()
-            } catch (_: Exception) {
-                emptyList()
+            val want = limit.toIntOrNull()?.coerceAtLeast(1) ?: 10
+            if (want <= RADIO_BATCH) return@withContext radioBatch(want.toString())
+            val rounds = ((want + RADIO_BATCH - 1) / RADIO_BATCH).coerceIn(2, MAX_RADIO_ROUNDS)
+            val batches = coroutineScope {
+                (1..rounds).map { async { radioBatch(RADIO_BATCH.toString()) } }.awaitAll()
             }
+            batches.flatten().distinctBy { it.id }.take(want)
         }
+
+    /** 单轮私人漫游（服务端单轮只给 2~3 首，见 [radioSongs]）。 */
+    private suspend fun radioBatch(limit: String): List<Track> {
+        val r = gateway.call(NeteaseOp.RADIO, "", "", limit)
+        dbg { "radio limit=$limit err=${r.err} len=${r.body.size} body=${String(r.body, Charsets.UTF_8).take(300)}" }
+        if (r.err != 0 || r.body.isEmpty()) return emptyList()
+        return try {
+            findTrackArray(JSONObject(String(r.body, Charsets.UTF_8)))?.let { parseTracks(it) }
+                ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
 
     /**
      * 「相似艺人」卡的内容（kanade 源码里这张卡的标识就是 `artist_fm`）。
@@ -462,6 +516,12 @@ class HomeRepository @Inject constructor(
             }
         }
 }
+
+/** 私人漫游服务端单轮实际给的量（传更大的 limit 也不生效，2026-11 实测）。 */
+private const val RADIO_BATCH = 3
+
+/** 私人漫游一次播放最多并发拉几轮（避免点一下打太多请求）。 */
+private const val MAX_RADIO_ROUNDS = 6
 
 /**
  * 探索页这几个新端点没有公开文档，返回壳子全靠猜 —— 解析不出来时 UI 只会

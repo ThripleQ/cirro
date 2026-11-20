@@ -79,6 +79,8 @@ import com.valentinilk.shimmer.shimmer
  */
 internal data class HomeRowStates(
     val featured: LazyListState,
+    /** 推荐歌单（首页 block 流按画像出的 6 张）。 */
+    val rcmd: LazyListState,
     /** 猜你喜欢的横向分页（一页 3 行，左右翻页）。 */
     val guess: LazyListState,
     val radar: LazyListState,
@@ -195,6 +197,47 @@ internal fun HomeContent(
             }
         }
 
+        // 推荐歌单：首页 block 流里 HOMEPAGE_BLOCK_PLAYLIST_RCMD 的 6 张
+        // （服务端按歌曲画像出，alg = bysong_profile_ol），以前整块被丢掉，
+        // 探索页只剩个人口味的「猜你喜欢」+ 大众池，看起来推荐很少。
+        //
+        // 数据兜底见 [HomeUiState.Ready.recommendedCards]：block 没给时退到
+        // 每日推荐歌单（recommend/resource），同样带登录 cookie 才是口味结果。
+        //
+        // 去重：这批 block 卡里可能就有一张「…|私人雷达」（实测 2026-11），而精选推荐
+        // 已经把它做成功能卡了。同一条歌单同屏出现两次，封面会并排撞在一起。
+        val featuredRadarId = data.featured.firstOrNull { it.key == "radar_private" }?.id
+        val recommended = data.recommendedCards.filter { it.id != featuredRadarId }
+        if (recommended.isNotEmpty()) {
+            item(key = "h_rcmd") { CirroSectionHeader(data.recommendedHeadline) }
+            item(key = "row_rcmd") {
+                // 同 row_featured：卡片模型按数据 remember，别每次重组重建（见那里的注释）。
+                val cards = remember(recommended) {
+                    recommended.map {
+                        KanadeCardModel(
+                            it.id, it.coverUrl, it.name, null,
+                            HomeViewModel.RECOMMENDED_WIRE, it.id,
+                        )
+                    }
+                }
+                KanadeCardRow(
+                    cards = cards,
+                    spec = RecommendedCardSpec,
+                    state = rowStates.rcmd,
+                    guard = guard,
+                    shared = shared,
+                    avScope = avScope,
+                ) { c, rect, morphable ->
+                    onExpand(
+                        ExpandTarget(
+                            HomeViewModel.RECOMMENDED_WIRE, c.id, c.title, c.coverUrl, rect,
+                            morph = morphable,
+                        ),
+                    )
+                }
+            }
+        }
+
         // 猜你喜欢：「猜你喜欢的「XX」好歌」—— **一屏 3 行、左右翻页**。
         //
         // 标题与分页都是首页 block 流 HOMEPAGE_BLOCK_STYLE_RCMD 的原生形态
@@ -224,6 +267,44 @@ internal fun HomeContent(
                 }
             } else {
                 item(key = "login_daily") { LoginPrompt(onWebLogin) }
+            }
+        }
+
+        // 每日推荐：登录后服务端每天按口味给 31 首（`/api/v3/discovery/recommend/songs`），
+        // 以前只在精选推荐里占一张卡，点开才见。这里直接铺前 3 首 + 「查看全部」，
+        // 探索页一屏就能听到每日口味内容。
+        //
+        // `guessFellBackToDaily` 时必须让位：猜你喜欢自己拿不到内容、已用这批歌兜底，
+        // 再画一遍就是同屏重复。
+        val daily = data.dailySongs.orEmpty()
+        if (daily.isNotEmpty() && !data.guessFellBackToDaily) {
+            item(key = "h_daily") { CirroSectionHeader("每日推荐") }
+            items(
+                items = daily.take(DAILY_PREVIEW_COUNT),
+                key = { "daily_${it.id}" },
+            ) { track ->
+                CirroMediaRow(
+                    title = track.name,
+                    subtitle = guessSubtitle(track),
+                    coverUrl = track.artworkUrl,
+                    payTags = rememberPayTags(track),
+                    onClick = {
+                        val i = daily.indexOfFirst { it.id == track.id }
+                        onPlay(daily, if (i >= 0) i else 0)
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                )
+            }
+            item(key = "daily_more") {
+                MoreRow("查看全部 ${daily.size} 首") { rect ->
+                    // morph = false：起点是整行文字而不是封面，没有可飞的对侧。
+                    onExpand(
+                        ExpandTarget(
+                            HomeViewModel.DAILY_WIRE, "", "每日推荐",
+                            daily.first().artworkUrl, rect, morph = false,
+                        ),
+                    )
+                }
             }
         }
 
@@ -281,8 +362,11 @@ internal fun HomeContent(
         // 但官方歌单分类（/weapi/playlist/catalogue）里 category 2 = 场景、
         // 3 = 情感，标签名与它高度重合（清晨/夜晚/学习/伤感/治愈/放松…），
         // 所以用标签卡；封面取该标签下第一张热门歌单（分类表里的标签本身没图）。
+        // **只给未登录用户看**：这是全站分类热门歌单，与账号口味无关。登录后页面已有
+        // 推荐歌单 / 猜你喜欢 / 每日推荐这些真口味内容，再挂一栏大众热门只会稀释。
+        // VM 在登录态下也不再发这 9 个请求；这里再挡一道，避免首屏回填时旧场景数据残留。
         val scene = data.sceneCards.take(SCENE_CARD_COUNT)
-        if (scene.isNotEmpty()) {
+        if (!data.loggedIn && scene.isNotEmpty()) {
             item(key = "h_scene") { CirroSectionHeader("场景音乐") }
             item(key = "row_scene") {
                 // 同 row_featured：卡片模型按数据 remember，别每次重组重建（见那里的注释）。
@@ -409,8 +493,19 @@ internal val RadarCardSpec = KanadeCardSpec(120.dp, 120.dp, 0.dp, showTitleBar =
 /** 场景音乐：330×363px = 120×132dp（封面 120×100 + 名称条 32）。 */
 internal val SceneCardSpec = KanadeCardSpec(120.dp, 100.dp, 32.dp, showTitleBar = true)
 
+/**
+ * 推荐歌单：**120dp 方形封面 + 32dp 单行名称条**。
+ *
+ * 这一栏是 cirro 从 block 流补出来的（kanade 没有对应区），尺寸沿用场景行的档位：
+ * 与雷达行的 120 方同宽，但歌单名不在图里，需要一条名称条，所以高度多 32。
+ */
+internal val RecommendedCardSpec = KanadeCardSpec(120.dp, 120.dp, 32.dp, showTitleBar = true)
+
 /** 猜你喜欢好歌展示行数（kanade 实测 3 行）。 */
 private const val GUESS_ROW_COUNT = 3
+
+/** 每日推荐在探索页直接铺几首（其余走「查看全部」的面板）。 */
+private const val DAILY_PREVIEW_COUNT = 3
 
 /** 场景音乐展示张数（kanade 频道首屏 3 张，多给几张可横滑）。 */
 private const val SCENE_CARD_COUNT = 6
@@ -623,6 +718,38 @@ private fun GuessSongPager(
                 }
             }
         }
+    }
+}
+
+/**
+ * 区块末尾的「查看全部」行。把自身几何量出来交给 [onClick]：面板壳（非共享元素
+ * 路径）要用起点矩形做伸展动画，所以不能只传一个无参 lambda。
+ */
+@Composable
+private fun MoreRow(text: String, onClick: (Rect) -> Unit) {
+    var rect by remember { mutableStateOf<Rect?>(null) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coords ->
+                rect = Rect(coords.localToWindow(Offset.Zero), coords.size.toSize())
+            }
+            .clickable { rect?.let(onClick) }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = "›",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
 

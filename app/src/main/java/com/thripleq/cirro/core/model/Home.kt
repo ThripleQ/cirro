@@ -28,6 +28,14 @@ data class SimiArtist(
  * 拍平就退化成一条纵向长列表，与 kanade 不像。
  */
 data class HomePageBlocks(
+    /**
+     * 「推荐歌单」区（`HOMEPAGE_BLOCK_PLAYLIST_RCMD`）。服务端按歌曲画像出的 6 张，
+     * 是探索页最贴近口味的一批歌单；以前整块丢掉，只剩 `/weapi/personalized/playlist`
+     * 那批大众池在功能卡里补位。
+     */
+    val recommendedPlaylists: List<PlaylistCard> = emptyList(),
+    /** 「推荐歌单」区的服务端栏目标题（通常就是「推荐歌单」）。 */
+    val recommendedTitle: String? = null,
     val radar: List<PlaylistCard> = emptyList(),
     /**
      * 雷达 block 的服务端栏目标题。**必须用服务端给的，不要写死「雷达歌单」**：

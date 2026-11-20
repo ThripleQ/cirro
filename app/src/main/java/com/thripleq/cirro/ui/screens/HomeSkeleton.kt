@@ -55,9 +55,12 @@ internal fun HomeSkeleton(bottomPadding: Dp) {
         }
 
         // 内容圆角纸，与真内容的 LazyColumn 同形（区块顺序照 kanade 主页，2026-10-04）：
-        // 精选推荐大卡 → 猜你喜欢单曲行 → 雷达歌单方卡 → 场景音乐窄卡。
+        // 精选推荐大卡 → 推荐歌单方卡 → 猜你喜欢单曲行 → 雷达歌单方卡 → 场景音乐窄卡。
         // 卡片尺寸直接引用真内容的 [KanadeCardSpec]，骨架与真内容不会走偏
         // （雷达行是 110 方形、场景行是 110×121，两者不等高）。
+        //
+        // 每日推荐那一段（单曲行 + 查看全部）没有画：它只在登录后出现，骨架阶段
+        // 登录态还没回来，画了反而会让未登录用户看到一节凭空消失的占位。
         Column(
             Modifier
                 .fillMaxWidth()
@@ -69,6 +72,9 @@ internal fun HomeSkeleton(bottomPadding: Dp) {
         ) {
             CirroSectionHeaderSkeleton()
             SkeletonCarousel(FeaturedCardSpec)
+
+            CirroSectionHeaderSkeleton()
+            SkeletonCarousel(RecommendedCardSpec)
 
             CirroSectionHeaderSkeleton()
             repeat(3) { CirroMediaRowSkeleton() }
