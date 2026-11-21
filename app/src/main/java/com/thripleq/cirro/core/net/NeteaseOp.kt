@@ -133,4 +133,13 @@ object NeteaseOp {
      * 专辑详情里**没有** subscribed 字段，所以「这张专辑收没收藏」只能靠它查。
      */
     const val ALBUM_SUBLIST = 52
+
+    /**
+     * 播放上报 `clientlog.music.163.com/eapi/feedback/weblog`（args: songId, sourceId, timeSec, source）。
+     *
+     * **写**接口：登录账号里会出现这条听歌记录。`/weapi/feedback/weblog` 虽然
+     * 回 200 但不计入排行（实测），所以 C 层走 clientlog + eapi，并冒充桌面端
+     * 身份（见 libnetease `ne_scrobble`）。调用方必须先过用户开关（默认关）。
+     */
+    const val SCROBBLE = 54
 }

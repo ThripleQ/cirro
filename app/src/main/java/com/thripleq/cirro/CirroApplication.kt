@@ -12,6 +12,7 @@ import coil.disk.DiskCache
 import com.thripleq.cirro.core.playback.PlaybackStateStore
 import com.thripleq.cirro.core.playback.PlaybackUrls
 import com.thripleq.cirro.core.playback.PlayerHolder
+import com.thripleq.cirro.core.playback.ScrobbleReporter
 import com.thripleq.cirro.core.startup.StartupGate
 import com.thripleq.cirro.core.update.UpdateManager
 import dagger.hilt.android.HiltAndroidApp
@@ -30,6 +31,11 @@ class CirroApplication : Application() {
     @Inject
     lateinit var playbackUrls: PlaybackUrls
 
+    // 可选播放上报的出口（设置页开关默认关）。安装时机同 URL 解析器：必须早于
+    // 任何 PlayerHolder.get()，否则第一次播放的判据会漏掉。
+    @Inject
+    lateinit var scrobbleReporter: ScrobbleReporter
+
     /** 开屏的「就绪」判据之一见 [com.thripleq.cirro.core.startup.StartupGate]。 */
     @Inject
     lateinit var startupGate: StartupGate
@@ -37,6 +43,7 @@ class CirroApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         PlayerHolder.installUrlSource(playbackUrls)
+        PlayerHolder.installScrobbleSink(scrobbleReporter)
         if (BuildConfig.DEBUG) enableStrictMode()
         // 封面加载策略对齐成熟 Compose 播放器（InnerTune/ViMusic）的验证过路径：
         // 不预载、不限制并发（Coil 默认线程池 + LRU 已是千万设备验证过的行为）、磁盘缓存兜底。

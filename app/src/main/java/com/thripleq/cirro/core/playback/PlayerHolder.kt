@@ -5,6 +5,7 @@ package com.thripleq.cirro.core.playback
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.AudioAttributes
@@ -51,6 +52,17 @@ interface PlaybackUrlSource {
 }
 
 /**
+ * 播放上报的出口：由 [ScrobbleReporter] 实现、在 `CirroApplication` 启动时安装。
+ *
+ * 由 [PlayerHolder] 在**主线程**回调；实现方负责开关 / 登录判断与后台请求，
+ * 不得阻塞。
+ */
+fun interface ScrobbleSink {
+    /** 一首歌累计真正播放 [listenedSeconds] 秒后回调一次（同一次播放只回一次）。 */
+    fun onScrobble(songId: String, listenedSeconds: Long)
+}
+
+/**
  * Process-scoped [ExoPlayer]. Built once with the byte-cache wired into its
  * media-source factory so every stream flows through [PlaybackCache].
  */
@@ -63,6 +75,21 @@ object PlayerHolder {
     // 线程上被调用，实现必须阻塞且线程安全。
     @Volatile
     private var urlSource: PlaybackUrlSource? = null
+
+    // 播放上报出口（见 installScrobbleSink）。默认 null = 不追踪也不上报。
+    @Volatile
+    private var scrobbleSink: ScrobbleSink? = null
+
+    // ── 播放上报的累计状态（只在主线程读写）────────────────────────────────
+    // 用「实际在播时长」而不是播放头位置：拖动进度条不该让一首没听的歌算作已听。
+    private var scrobbleItemId: String? = null
+    private var scrobbleDurationMs = 0L
+    private var scrobbleListenedMs = 0L
+    private var scrobbleAnchorMs = -1L
+    private var scrobbled = false
+    // 这一单是不是试听片段。按曲目记住而不是 flush 时读全局 currentTrial：
+    // 切歌时试听监听器会先把身份换成**下一首**的，flush 旧歌就判错了。
+    private var scrobbleTrial = false
 
     // 已为某首歌重试过一次的标记（签名过期原地重试，最多一次，避免死循环）。
     @Volatile
@@ -93,6 +120,11 @@ object PlayerHolder {
     /** Installs the lazy URL source used by the [ResolvingDataSource]. Call once at startup. */
     fun installUrlSource(source: PlaybackUrlSource) {
         urlSource = source
+    }
+
+    /** Installs the optional play-report sink. Call once at startup. */
+    fun installScrobbleSink(sink: ScrobbleSink) {
+        scrobbleSink = sink
     }
 
     /** 登记当前队列（供状态持久化落盘）。 */
@@ -154,6 +186,7 @@ object PlayerHolder {
         player ?: build(context).also {
             it.addErrorRecovery()
             it.attachTrialTracking()
+            it.attachScrobbleTracking()
             it.attachStatePersistence(context.applicationContext)
             player = it
             restore(it, context.applicationContext)
@@ -402,9 +435,92 @@ object PlayerHolder {
         persistScope.launch {
             while (true) {
                 delay(POSITION_SAVE_INTERVAL_MS)
-                if (p.isPlaying) persist(context, p)
+                if (p.isPlaying) {
+                    persist(context, p)
+                    // 上报判据也在同一条 5s 心跳里推进：不另起轮询，暂停/切歌时立即 flush。
+                    p.tickScrobble()
+                }
             }
         }
+    }
+
+    // ── 播放上报（可选，设置页开关；判据见 ScrobbleReporter）─────────────────────
+
+    /**
+     * 追踪「这首歌真正播了多久」，够条件就交给 [scrobbleSink] 回调一次。
+     *
+     * 只在**实际播放**时累计（isPlaying 区间），暂停/拖动不计；切歌、暂停、
+     * 播完都 flush 一次。试听片段不上报 —— 那不是完整播放（见 [currentTrial]）。
+     *
+     * 阈值 = min(曲长一半, [MAX_SCROBBLE_MS])，对齐成熟播放器的 scrobble 口径：
+     * 正常歌听一半就算一次，超长歌最多听到 4 分钟即算。
+     */
+    private fun ExoPlayer.attachScrobbleTracking() {
+        val p = this
+        addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // 先给上一首结账（此时 scrobbleItemId 还是它），再开新的一单。
+                p.flushScrobble()
+                beginScrobble(mediaItem, p)
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    scrobbleAnchorMs = SystemClock.elapsedRealtime()
+                } else {
+                    p.flushScrobble()
+                    scrobbleAnchorMs = -1L
+                }
+            }
+
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED) p.flushScrobble()
+            }
+        })
+        // 监听器装上时可能已有当前曲目（恢复队列在 attach 之后才 setMediaItems，
+        // 但别赌那条回调的顺序）—— 先按当前状态开一单。
+        beginScrobble(p.currentMediaItem, p)
+    }
+
+    private fun beginScrobble(item: MediaItem?, p: Player) {
+        scrobbleItemId = item?.mediaId
+        scrobbleDurationMs = item?.mediaMetadata?.durationMs ?: 0L
+        scrobbleListenedMs = 0L
+        scrobbled = false
+        scrobbleTrial = currentTrial != null
+        scrobbleAnchorMs = if (p.isPlaying) SystemClock.elapsedRealtime() else -1L
+    }
+
+    /** 把上次锚点到此刻的真实在播时长记入账本；没在播时是空操作。 */
+    private fun accumulateScrobble() {
+        val now = SystemClock.elapsedRealtime()
+        if (scrobbleAnchorMs < 0L) return
+        scrobbleListenedMs += (now - scrobbleAnchorMs).coerceAtLeast(0L)
+        scrobbleAnchorMs = now
+    }
+
+    private fun ExoPlayer.tickScrobble() {
+        accumulateScrobble()
+        flushScrobble()
+    }
+
+    /** 够条件就回调一次；同一次播放（到下次切歌为止）只回一次。 */
+    private fun ExoPlayer.flushScrobble() {
+        val id = scrobbleItemId ?: return
+        if (scrobbled) return
+        // 试听身份可能是起播后才解析出来的：仍停在这一首时刷新本单的判据。
+        if (currentMediaItem?.mediaId == id) scrobbleTrial = currentTrial != null
+        if (scrobbleTrial) return
+        var duration = scrobbleDurationMs
+        if (duration <= 0L && currentMediaItem?.mediaId == id) {
+            duration = this.duration.coerceAtLeast(0L)
+        }
+        if (duration <= 0L) return
+        val listened = scrobbleListenedMs
+        if (listened < minOf(duration / 2, MAX_SCROBBLE_MS)) return
+        scrobbled = true
+        // 秒数取整：服务端 time 字段是秒。至少 1 秒，避免极短曲报 0。
+        scrobbleSink?.onScrobble(id, (listened / 1000).coerceAtLeast(1L))
     }
 
     private fun persist(context: Context, p: ExoPlayer) {
@@ -607,4 +723,7 @@ object PlayerHolder {
 
     // 「播放头已在试听片段末尾」的容差：比 UI 的 250ms 轮询粗一档。
     private const val TRIAL_END_EPS_MS = 400L
+
+    // 上报判据的上限：再长的歌听到 4 分钟也算一次（曲长一半更小时取一半）。
+    private const val MAX_SCROBBLE_MS = 240_000L
 }

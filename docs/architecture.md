@@ -468,6 +468,9 @@ lambda 内）—— 进度变化只作废绘制，不重跑组合。首帧还是
 - [x] 设置页「允许与其他应用同时播放」（2026-11-07）：默认关 = Media3 申请 `AUDIOFOCUS_GAIN`；
       开启后不接管音频焦点，可与别的 App 一起出声。运行期用 `setAudioAttributes(attrs, false)`
       切换，不用重建播放器；语义由 `AudioFocusPolicyTest` 锁定
+- [x] 设置页「上报播放记录到网易云」（2026-11-21）：默认关 + 开启前风险确认。实际在播
+      ≥ min(曲长一半, 4 分钟) 才上报一次，试听片段与未登录不上报；走 clientlog eapi
+      （`/weapi/feedback/weblog` 不计排行），`ScrobbleReporter` 后台发送，失败静默。
 - [x] 搜索页搜索条配合「滑进半遮」（2026-11-07）：纸内骨架（顶盖 + 下方列表）整块按纸沿
       的 `offsetPx` 在绘制期上抬，顶盖不再与圆角纸脱节；见 `TitleCollapse.kt` 的
       `cirroSheetLift`（必须挂在 `cirroCollapsingSheet` 内层）

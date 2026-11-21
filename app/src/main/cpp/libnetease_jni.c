@@ -247,6 +247,9 @@ static ne_resp *dispatch(int op, int narg, const char *const a[]) {
         case 50: return ne_comment_like(A(0), A(1), A(2));
         case 51: return ne_album_subscribe(A(0), A(1));
         case 52: return ne_album_sublist(A(0), A(1));
+        /* 54: 播放上报 clientlog eapi（args: songId, sourceId, timeSec, source）。
+         * 写接口 —— 只在设置页开关打开且已登录时由 ScrobbleReporter 调用。 */
+        case 54: return ne_scrobble(A(0), A(1), A(2), A(3));
         default: return NULL;
     }
 #undef A

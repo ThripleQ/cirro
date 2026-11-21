@@ -110,6 +110,11 @@ internal fun SettingsScreen(
     var allowConcurrentPlayback by remember {
         mutableStateOf(PlaybackPreferences.allowConcurrentPlayback(context))
     }
+    var scrobbleEnabled by remember {
+        mutableStateOf(PlaybackPreferences.scrobbleEnabled(context))
+    }
+    // 打开上报是写账号数据的操作：先弹风险确认，确认后才真正落偏好。
+    var confirmScrobble by remember { mutableStateOf(false) }
     // 直接读共享状态（Compose 状态，写入会触发重组），不另存本地副本 —— 与播放页同一份真相。
     val progressStyle = ProgressStyleState.current(context)
     val islandClearance = with(LocalDensity.current) { islandHeight.dp }
@@ -218,6 +223,29 @@ internal fun SettingsScreen(
                         "拔掉耳机仍会自动暂停，切换后立刻生效。",
                 )
             }
+            item(key = "scrobble") {
+                SettingsCard {
+                    SettingsSwitchRow(
+                        label = "上报播放记录到网易云",
+                        checked = scrobbleEnabled,
+                        onCheckedChange = { enabled ->
+                            if (enabled) {
+                                confirmScrobble = true
+                            } else {
+                                scrobbleEnabled = false
+                                PlaybackPreferences.setScrobbleEnabled(context, false)
+                            }
+                        },
+                    )
+                }
+            }
+            item(key = "scrobble_note") {
+                SettingsNote(
+                    "默认关闭。开启后，每首歌实际播放过半（最长 4 分钟）会向网易云上报一次，" +
+                        "这条播放会出现在你的听歌记录与听歌排行里。上报走的是非官方接口，" +
+                        "存在账号风控风险；未登录或试听片段不上报。",
+                )
+            }
 
             item(key = "appearance_header") { SettingsSection("外观") }
             item(key = "progress_style") {
@@ -297,6 +325,40 @@ internal fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmLogout = false }) { Text("取消") }
+            },
+        )
+    }
+
+    if (confirmScrobble) {
+        AlertDialog(
+            onDismissRequest = { confirmScrobble = false },
+            title = { Text("开启播放上报？") },
+            text = {
+                Text(
+                    "开启后，每首歌实际播放过半（最长 4 分钟）时，Cirro 会把歌曲 ID 与" +
+                        "收听时长发往网易云，让这条播放计入你的听歌记录和听歌排行。\n\n" +
+                        "风险提示：\n" +
+                        "· 该上报走的是非官方接口，并需要冒充桌面版客户端；第三方写入数据" +
+                        "可能触发账号风控（限流甚至封号）。\n" +
+                        "· 接口随时可能失效，失败时不会提示，只是不再记录。\n" +
+                        "· 未登录时不上报，试听片段也不上报。\n\n" +
+                        "介意账号风险的话，建议保持关闭。",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmScrobble = false
+                        scrobbleEnabled = true
+                        PlaybackPreferences.setScrobbleEnabled(context, true)
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) { Text("仍要开启") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmScrobble = false }) { Text("取消") }
             },
         )
     }
